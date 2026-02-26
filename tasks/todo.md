@@ -31,8 +31,8 @@
 
 ## Phase 3: Virtualized Rendering UI
 - [x] Implement core virtualized `NSCollectionView` (macOS) layout
-- [/] Implement core virtualized `UICollectionView` (iOS) layout
-- [ ] Create Native component: `MarkdownTextView`
+- [x] Implement core virtualized `UICollectionView` (iOS) layout
+- [/] Create Native component: `MarkdownTextView`
 - [ ] Create Native component: `MarkdownImageView`
 - [ ] Create Native component: `MarkdownCodeView`
 - [ ] Implement `Texture`-style Display State logic: Asynchronously render text to `CGContext` on background thread
