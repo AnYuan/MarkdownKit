@@ -20,11 +20,13 @@ public final class LayoutSolver {
     private let theme: Theme
     private let textCalculator: TextKitCalculator
     private let cache: LayoutCache
+    private let highlighter: SplashHighlighter
     
     public init(theme: Theme = .default, cache: LayoutCache = LayoutCache()) {
         self.theme = theme
         self.textCalculator = TextKitCalculator()
         self.cache = cache
+        self.highlighter = SplashHighlighter(theme: theme)
     }
     
     /// Recursively calculates the layout for a node and all its children.
@@ -95,8 +97,9 @@ public final class LayoutSolver {
             }
             
         case let code as CodeBlockNode:
-            let attributes = defaultAttributes(for: theme.codeBlock)
-            string.append(NSAttributedString(string: code.code, attributes: attributes))
+            // Process the raw string through our Splash syntax highlighter
+            let highlighted = highlighter.highlight(code.code, language: code.language)
+            string.append(highlighted)
             
         default:
             break

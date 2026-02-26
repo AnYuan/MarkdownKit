@@ -51,4 +51,36 @@ final class LayoutTests: XCTestCase {
         let nilLayout = cache.getLayout(for: docNode, constrainedToWidth: tightWidth)
         XCTAssertNil(nilLayout)
     }
+    
+    func testSyntaxHighlighting() async throws {
+        let parser = MarkdownParser()
+        let swiftCode = """
+        ```swift
+        let username = "Anyuan"
+        print(username)
+        ```
+        """
+        
+        let docNode = parser.parse(swiftCode)
+        let solver = LayoutSolver()
+        let layoutRoot = await solver.solve(node: docNode, constrainedToWidth: 400.0)
+        
+        XCTAssertEqual(layoutRoot.children.count, 1)
+        let codeLayout = layoutRoot.children[0]
+        
+        guard let attributedString = codeLayout.attributedString else {
+            XCTFail("Code block layout is missing its attributed string.")
+            return
+        }
+        
+        // Splash syntax highlighting applies multiple different foreground color attributes
+        // (e.g., keyword `let`, string `"Anyuan"`, etc.).
+        // If highlighting works, the attributed string will NOT just have one single run.
+        var attributesCount = 0
+        attributedString.enumerateAttributes(in: NSRange(location: 0, length: attributedString.length), options: []) { _, _, _ in
+            attributesCount += 1
+        }
+        
+        XCTAssertGreaterThan(attributesCount, 1, "Expected Splash to generate multiple syntax-highlighted attributes for Swift code. Got only \(attributesCount).")
+    }
 }
