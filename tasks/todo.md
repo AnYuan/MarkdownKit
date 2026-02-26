@@ -7,9 +7,9 @@
 - [x] Implement `PerformanceProfiler` utility for benchmarking AST and Layout speeds
 
 ## Phase 1: Parsing Engine (AST)
-- [ ] Define internal `MarkdownNode` protocol and base element structures
-- [ ] Implement `DocumentNode`, `BlockNode`, and `InlineNode` models
-- [ ] Implement `HeaderNode`, `ParagraphNode`, and `TextNode` models
+- [x] Define internal `MarkdownNode` protocol and base element structures
+- [x] Implement `DocumentNode`, `BlockNode`, and `InlineNode` models
+- [/] Implement `HeaderNode`, `ParagraphNode`, and `TextNode` models
 - [ ] Implement `CodeBlockNode` and `InlineCodeNode` models
 - [ ] Implement `MathNode` (block `$$` and inline `$`) models
 - [ ] Implement `ImageNode` and `LinkNode` models
