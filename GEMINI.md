@@ -53,6 +53,7 @@
 4. **Explain Changes**: High-level summary at each step
 5. **Document Results**: Add review section to `tasks/todo.md`
 6. **Capture Lessons**: Update `tasks/lessons.md` after corrections
+7. **Living Documentation**: If new items or requirements are discovered during development, continuously update `tasks/todo.md` and `docs/PRD.md` to reflect the latest state.
 
 ## Core Principles
 
