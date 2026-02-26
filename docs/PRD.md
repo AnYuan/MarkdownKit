@@ -55,6 +55,8 @@ The renderer must support the exact Markdown syntax subset utilized by the offic
    - Scroll performance must be buttery smooth. Heavy operations like syntax highlighting code blocks must be debounced and executed asynchronously.
 4. **Memory Efficiency**:
    - AST nodes should be dropped or highly compressed if off-screen in massive documents, relying on virtualized ranges. Memory footprint must stay below 100MB even for 10MB+ Markdown strings.
+5. **In-Built Performance Benchmarking**:
+   - The framework must expose a `PerformanceProfiler` API to statically measure and log precisely how many milliseconds the AST parsing and Layout generations took, ensuring transparency for developers using the library.
 
 ## 5. Technical Stack
 

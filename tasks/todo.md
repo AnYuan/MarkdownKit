@@ -1,9 +1,10 @@
 # Implementation Checklist (Atomic Commits)
 
 ## Setup
-- [ ] Initialize standard Swift Package `MyMarkdown` workspace
-- [ ] Add Apple's `swift-markdown` library as a dependency
-- [ ] Setup base XCTest target `MyMarkdownTests`
+- [x] Initialize standard Swift Package `MyMarkdown` workspace
+- [x] Add Apple's `swift-markdown` library as a dependency
+- [x] Setup base XCTest target `MyMarkdownTests`
+- [x] Implement `PerformanceProfiler` utility for benchmarking AST and Layout speeds
 
 ## Phase 1: Parsing Engine (AST)
 - [ ] Define internal `MarkdownNode` protocol and base element structures
