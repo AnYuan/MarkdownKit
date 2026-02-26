@@ -42,7 +42,7 @@
 - [/] Add Unit Tests: Verify node virtualization limits memory consumption
 
 ## Phase 4: Extended Features (ChatGPT Parity)
-- [ ] Integrate native "Copy Paste" UX for Code Blocks
+- [x] Integrate native "Copy Paste" UX for Code Blocks
 - [x] Integrate lightweight syntax highlighter for Code Blocks
 - [ ] Add UI styling for Markdown Tables and Checkbox Task Lists
 - [ ] Integrate lightweight LaTeX renderer (MathJax/iosMath) for $$ MathNodes
