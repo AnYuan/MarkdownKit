@@ -30,8 +30,8 @@
 - [x] Add Unit Tests: Verify exact framing dimension logic for varying strings
 
 ## Phase 3: Virtualized Rendering UI
-- [/] Implement core virtualized `NSCollectionView` (macOS) layout
-- [ ] Implement core virtualized `UICollectionView` (iOS) layout
+- [x] Implement core virtualized `NSCollectionView` (macOS) layout
+- [/] Implement core virtualized `UICollectionView` (iOS) layout
 - [ ] Create Native component: `MarkdownTextView`
 - [ ] Create Native component: `MarkdownImageView`
 - [ ] Create Native component: `MarkdownCodeView`
