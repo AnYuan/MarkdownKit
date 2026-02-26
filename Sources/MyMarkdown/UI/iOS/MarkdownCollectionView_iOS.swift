@@ -6,9 +6,15 @@
 #if canImport(UIKit) && !os(watchOS)
 import UIKit
 
+public protocol MarkdownCollectionViewThemeDelegate: AnyObject {
+    func markdownCollectionViewDidRequestThemeReload(_ view: MarkdownCollectionView)
+}
+
 /// The core iOS rendering interface. This wraps a `UICollectionView` tailored 
 /// explicitly for extremely high-performance vertically scrolling text blocks.
 public class MarkdownCollectionView: UIView {
+    
+    public weak var themeDelegate: MarkdownCollectionViewThemeDelegate?
     
     private let flowLayout = UICollectionViewFlowLayout()
     private lazy var collectionView: UICollectionView = {
@@ -53,6 +59,13 @@ public class MarkdownCollectionView: UIView {
         collectionView.frame = bounds
         // Width dictates text wrapping; when view resizes, 
         // a new background LayoutSolver pass should be triggered externally.
+    }
+    
+    public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) {
+            themeDelegate?.markdownCollectionViewDidRequestThemeReload(self)
+        }
     }
 }
 

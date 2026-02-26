@@ -46,7 +46,7 @@
 - [x] Integrate lightweight syntax highlighter for Code Blocks
 - [x] Add UI styling for Markdown Tables and Checkbox Task Lists
 - [x] Integrate lightweight LaTeX renderer (MathJax/iosMath) for $$ MathNodes
-- [ ] Implement smooth transitioning between Light/Dark mode themes
+- [x] Implement smooth transitioning between Light/Dark mode themes
 - [ ] Add UI Snapshot Tests for Code Block and Math rendering parity
 
 ## Phase 5: Delivery & Polish

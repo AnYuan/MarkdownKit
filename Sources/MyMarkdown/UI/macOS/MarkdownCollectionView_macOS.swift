@@ -6,9 +6,15 @@
 #if canImport(AppKit) && !targetEnvironment(macCatalyst)
 import AppKit
 
+public protocol MarkdownCollectionViewThemeDelegate: AnyObject {
+    func markdownCollectionViewDidRequestThemeReload(_ view: MarkdownCollectionView)
+}
+
 /// The core macOS rendering interface. This wraps an `NSCollectionView` tailored 
 /// explicitly for extremely high-performance vertically scrolling text blocks.
 public class MarkdownCollectionView: NSView {
+    
+    public weak var themeDelegate: MarkdownCollectionViewThemeDelegate?
     
     private let scrollView = NSScrollView()
     private let collectionView = NSCollectionView()
@@ -56,6 +62,11 @@ public class MarkdownCollectionView: NSView {
         scrollView.frame = bounds
         // Width dictates text wrapping; when view resizes, 
         // a new background LayoutSolver pass should be triggered externally.
+    }
+    
+    public override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        themeDelegate?.markdownCollectionViewDidRequestThemeReload(self)
     }
 }
 
