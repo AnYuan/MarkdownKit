@@ -17,11 +17,11 @@
 - [x] Implement `MarkupVisitor` parsing for basic blocks (Headers, Paragraphs)
 - [x] Implement `MarkupVisitor` parsing for complex blocks (Code, Images, Lists)
 - [x] Implement AST Extensibility mechanism (Middleware Plugin protocol)
-- [/] Add Unit Tests: CommonMark standard parsing fidelity
-- [ ] Add Unit Tests: GitHub Flavored Markdown parsing fidelity
+- [x] Add Unit Tests: CommonMark standard parsing fidelity
+- [x] Add Unit Tests: GitHub Flavored Markdown parsing fidelity
 
 ## Phase 2: Asynchronous Layout Engine
-- [ ] Implement `TypographyToken` and `ColorToken` theme structures
+- [/] Implement `TypographyToken` and `ColorToken` theme structures
 - [ ] Create `LayoutResult` models containing exact `CGRect` dimensions
 - [ ] Create base `TextKit 2` calculator class running on background queue
 - [ ] Implement background sizing solver for standard text blocks
