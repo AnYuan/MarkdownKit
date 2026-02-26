@@ -35,6 +35,12 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
             self.hostedView = imageView
             imageView.configure(with: layout)
             
+        case is CodeBlockNode:
+            let codeView = AsyncCodeView(frame: CGRect(origin: .zero, size: layout.size))
+            self.contentView.addSubview(codeView)
+            self.hostedView = codeView
+            codeView.configure(with: layout)
+            
         default:
             // Text or generic block containers
             let textView = AsyncTextView(frame: CGRect(origin: .zero, size: layout.size))
