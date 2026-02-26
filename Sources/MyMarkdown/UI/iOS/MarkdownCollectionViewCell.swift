@@ -29,13 +29,17 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
         hostedView?.removeFromSuperview()
         
         switch layout.node {
+        case is ImageNode:
+            let imageView = AsyncImageView(frame: CGRect(origin: .zero, size: layout.size))
+            self.contentView.addSubview(imageView)
+            self.hostedView = imageView
+            imageView.configure(with: layout)
+            
         default:
-            // For now, assume all items are text-based or container nodes holding text
+            // Text or generic block containers
             let textView = AsyncTextView(frame: CGRect(origin: .zero, size: layout.size))
             self.contentView.addSubview(textView)
             self.hostedView = textView
-            
-            // Dispatch the background rendering pass
             textView.configure(with: layout)
         }
     }

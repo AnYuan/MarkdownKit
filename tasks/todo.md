@@ -33,10 +33,10 @@
 - [x] Implement core virtualized `NSCollectionView` (macOS) layout
 - [x] Implement core virtualized `UICollectionView` (iOS) layout
 - [x] Create Native component: `MarkdownTextView`
-- [/] Create Native component: `MarkdownImageView`
-- [x] Create Native component: `MarkdownCodeView`
+- [x] Create Native component: `MarkdownImageView`
+- [/] Create Native component: `MarkdownCodeView`
 - [x] Implement `Texture`-style Display State logic: Asynchronously render text to `CGContext` on background thread
-- [ ] Implement `Texture`-style Display State logic: Asynchronously decode image data to `CGImage` on background thread
+- [x] Implement `Texture`-style Display State logic: Asynchronously decode image data to `CGImage` on background thread
 - [ ] Implement `Texture`-style Display State logic: Mount views onto main thread only when visible
 - [ ] Implement `Texture`-style Display State logic: Purge memory-heavy backing stores when offscreen
 - [ ] Add Unit Tests: Verify node virtualization limits memory consumption
