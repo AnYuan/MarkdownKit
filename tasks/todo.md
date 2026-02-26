@@ -23,8 +23,8 @@
 ## Phase 2: Asynchronous Layout Engine
 - [x] Implement `TypographyToken` and `ColorToken` theme structures
 - [x] Create `LayoutResult` models containing exact `CGRect` dimensions
-- [/] Create base `TextKit 2` calculator class running on background queue
-- [ ] Implement background sizing solver for standard text blocks
+- [x] Create base `TextKit 2` calculator class running on background queue
+- [/] Implement background sizing solver for standard text blocks
 - [ ] Implement caching mechanism for Layout models based on width/Device scale
 - [ ] Implement asynchronous yielding logic for giant documents (>10MB)
 - [ ] Add Unit Tests: Verify exact framing dimension logic for varying strings
