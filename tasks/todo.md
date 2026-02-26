@@ -12,8 +12,8 @@
 - [x] Implement `HeaderNode`, `ParagraphNode`, and `TextNode` models
 - [x] Implement `CodeBlockNode` and `InlineCodeNode` models
 - [x] Implement `MathNode` (block `$$` and inline `$`) models
-- [/] Implement `ImageNode` and `LinkNode` models
-- [ ] Create `MarkupVisitor` class subscribing to `swift-markdown` API
+- [x] Implement `ImageNode` and `LinkNode` models
+- [/] Create `MarkupVisitor` class subscribing to `swift-markdown` API
 - [ ] Implement `MarkupVisitor` parsing for basic blocks (Headers, Paragraphs)
 - [ ] Implement `MarkupVisitor` parsing for complex blocks (Code, Images, Lists)
 - [ ] Implement AST Extensibility mechanism (Middleware Plugin protocol)
