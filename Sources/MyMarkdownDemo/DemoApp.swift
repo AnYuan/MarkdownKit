@@ -10,6 +10,13 @@ import MyMarkdown
 
 @main
 struct DemoApp: App {
+    init() {
+        // SPM executables are bare binaries without .app bundle,
+        // so macOS won't show windows unless we explicitly register as a regular app.
+        NSApplication.shared.setActivationPolicy(.regular)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
     var body: some Scene {
         WindowGroup {
             DemoContentView()

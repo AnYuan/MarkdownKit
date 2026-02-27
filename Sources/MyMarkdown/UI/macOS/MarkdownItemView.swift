@@ -30,9 +30,32 @@ public class MarkdownItemView: NSCollectionViewItem {
     
     /// Mounts the pre-calculated `LayoutResult` onto the main thread.
     public func configure(with layout: LayoutResult) {
-        // Implementation for routing LayoutResult to the correct Subview (MarkdownTextView, ImageView, etc.)
-        // will go here next. For now, we simply apply the exact frame.
+        hostedView?.removeFromSuperview()
+        hostedView = nil
+
         self.view.frame.size = layout.size
+
+        guard let attrString = layout.attributedString, attrString.length > 0 else { return }
+
+        let textField = NSTextField(frame: NSRect(origin: .zero, size: layout.size))
+        textField.attributedStringValue = attrString
+        textField.isEditable = false
+        textField.isSelectable = true
+        textField.isBordered = false
+        textField.drawsBackground = false
+        textField.lineBreakMode = .byWordWrapping
+        textField.preferredMaxLayoutWidth = layout.size.width
+
+        // For code blocks, add a subtle background
+        if layout.node is CodeBlockNode {
+            textField.drawsBackground = true
+            textField.backgroundColor = NSColor.controlBackgroundColor
+            textField.wantsLayer = true
+            textField.layer?.cornerRadius = 6
+        }
+
+        view.addSubview(textField)
+        hostedView = textField
     }
 }
 #endif
