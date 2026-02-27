@@ -21,12 +21,18 @@ public final class LayoutSolver {
     private let textCalculator: TextKitCalculator
     private let cache: LayoutCache
     private let highlighter: SplashHighlighter
+    private let diagramRegistry: DiagramAdapterRegistry
     
-    public init(theme: Theme = .default, cache: LayoutCache = LayoutCache()) {
+    public init(
+        theme: Theme = .default,
+        cache: LayoutCache = LayoutCache(),
+        diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry()
+    ) {
         self.theme = theme
         self.textCalculator = TextKitCalculator()
         self.cache = cache
         self.highlighter = SplashHighlighter(theme: theme)
+        self.diagramRegistry = diagramRegistry
     }
     
     /// Recursively calculates the layout for a node and all its children.
@@ -84,6 +90,9 @@ public final class LayoutSolver {
         switch node {
         case let table as TableNode:
             string.append(buildTableAttributedString(from: table))
+
+        case let diagram as DiagramNode:
+            string.append(await buildDiagramAttributedString(from: diagram))
 
         case let details as DetailsNode:
             string.append(await buildDetailsAttributedString(from: details, constrainedToWidth: maxWidth))
@@ -320,6 +329,22 @@ public final class LayoutSolver {
         let trimmed = language.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return trimmed.uppercased()
+    }
+
+    // MARK: - Diagram Helper
+
+    private func buildDiagramAttributedString(from diagram: DiagramNode) async -> NSAttributedString {
+        if let adapter = diagramRegistry.adapter(for: diagram.language),
+           let rendered = await adapter.render(source: diagram.source, language: diagram.language) {
+            return rendered
+        }
+
+        let fallback = CodeBlockNode(
+            range: diagram.range,
+            language: diagram.language.rawValue,
+            code: diagram.source
+        )
+        return buildCodeBlockAttributedString(from: fallback)
     }
 
     // MARK: - Details Helper

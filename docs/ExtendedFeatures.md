@@ -33,4 +33,10 @@ When OS-level appearances change (e.g. User transitions from Light to Dark mode)
 - `DetailsExtractionPlugin` converts raw HTML details syntax into dedicated `DetailsNode` and `SummaryNode` models, preserving optional `open` state.
 - `MyMarkdownVisitor` now retains `HTMLBlock` content as `TextNode` so details tags are not dropped during AST conversion.
 - `LayoutSolver` renders summary rows with disclosure indicators (`▶` closed / `▼` open), and conditionally renders the body only when expanded.
-- Demo app pipeline now chains `[DetailsExtractionPlugin(), MathExtractionPlugin()]` so details and math syntax coexist in the same document.
+- Demo app pipeline now chains `Details + Diagram + Math` plugins so collapsed sections, diagram fences, and math syntax coexist in one pass.
+
+## 7. Diagram Fence Detection and Adapter Fallback
+- `DiagramExtractionPlugin` upgrades fenced code blocks with languages `mermaid`, `geojson`, `topojson`, and `stl` into dedicated `DiagramNode`.
+- Host apps can register custom `DiagramRenderingAdapter` implementations through `DiagramAdapterRegistry`.
+- `LayoutSolver` first asks the adapter for rendered output; if unavailable, it falls back to code-block rendering with language label and syntax highlighting.
+- Demo app pipeline now includes `DiagramExtractionPlugin`, so diagram fences are recognized out of the box.

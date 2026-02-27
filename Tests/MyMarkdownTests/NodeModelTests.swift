@@ -132,6 +132,13 @@ final class NodeModelTests: XCTestCase {
         XCTAssertEqual(summary.children.count, 1)
     }
 
+    func testDiagramNodeProperties() {
+        let node = DiagramNode(range: nil, language: .mermaid, source: "graph TD\nA-->B\n")
+        XCTAssertEqual(node.language, .mermaid)
+        XCTAssertEqual(node.source, "graph TD\nA-->B\n")
+        XCTAssertTrue(node.children.isEmpty)
+    }
+
     // MARK: - UUID Uniqueness
 
     func testEachNodeHasUniqueID() {

@@ -114,6 +114,10 @@ public class AsyncCodeView: UIView {
         
         if let codeNode = layout.node as? CodeBlockNode {
             self.rawCode = codeNode.code
+        } else if let diagramNode = layout.node as? DiagramNode {
+            self.rawCode = diagramNode.source
+        } else {
+            self.rawCode = ""
         }
         
         textView.configure(with: insetLayout)

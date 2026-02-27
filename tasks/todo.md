@@ -67,8 +67,8 @@
 ### P1: Advanced Formatting Features
 - [x] Implement `<details>/<summary>` parsing as dedicated nodes (instead of raw `InlineHTML` fallback)
 - [x] Render collapsible sections natively in both iOS/macOS UI layers
-- [ ] Add diagram block detection for fenced languages: `mermaid`, `geojson`, `topojson`, `stl`
-- [ ] Implement pluggable diagram rendering adapters with code-block fallback when adapter is unavailable
+- [x] Add diagram block detection for fenced languages: `mermaid`, `geojson`, `topojson`, `stl`
+- [x] Implement pluggable diagram rendering adapters with code-block fallback when adapter is unavailable
 - [ ] Extend autolink support from URLs to issue/PR refs, commit SHAs, and `@mention` tokens (resolver-based)
 - [ ] Upgrade tasklist rendering to support editor-mode interaction toggles while preserving read-only mode
 

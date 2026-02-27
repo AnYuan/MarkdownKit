@@ -35,7 +35,7 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
             self.hostedView = imageView
             imageView.configure(with: layout)
             
-        case is CodeBlockNode:
+        case is CodeBlockNode, is DiagramNode:
             let codeView = AsyncCodeView(frame: CGRect(origin: .zero, size: layout.size))
             self.contentView.addSubview(codeView)
             self.hostedView = codeView

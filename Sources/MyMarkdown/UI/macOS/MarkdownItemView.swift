@@ -45,7 +45,7 @@ public class MarkdownItemView: NSCollectionViewItem {
         textView.textStorage?.setAttributedString(attrString)
 
         // Code blocks get background + rounded corners
-        if layout.node is CodeBlockNode {
+        if layout.node is CodeBlockNode || layout.node is DiagramNode {
             textView.drawsBackground = true
             textView.backgroundColor = NSColor.controlBackgroundColor
             textView.wantsLayer = true

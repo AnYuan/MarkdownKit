@@ -170,7 +170,9 @@ struct MarkdownPreviewRep: NSViewRepresentable {
             await MainActor.run { isRendering = true }
 
             let start = CFAbsoluteTimeGetCurrent()
-            let parser = MarkdownParser(plugins: [DetailsExtractionPlugin(), MathExtractionPlugin()])
+            let parser = MarkdownParser(
+                plugins: [DetailsExtractionPlugin(), DiagramExtractionPlugin(), MathExtractionPlugin()]
+            )
             let ast = parser.parse(currentMarkdown)
             let solver = LayoutSolver()
             let result = await solver.solve(node: ast, constrainedToWidth: currentWidth)
@@ -207,6 +209,7 @@ enum SyntaxPage: String, CaseIterable, Hashable {
     case math
     case blockquote
     case details
+    case diagrams
 
     var title: String {
         switch self {
@@ -223,6 +226,7 @@ enum SyntaxPage: String, CaseIterable, Hashable {
         case .math: return "Math"
         case .blockquote: return "Blockquote"
         case .details: return "Details"
+        case .diagrams: return "Diagrams"
         }
     }
 
@@ -241,6 +245,7 @@ enum SyntaxPage: String, CaseIterable, Hashable {
         case .math: return "function"
         case .blockquote: return "text.quote"
         case .details: return "chevron.down.square"
+        case .diagrams: return "point.3.connected.trianglepath.dotted"
         }
     }
 
@@ -411,6 +416,35 @@ enum SyntaxPage: String, CaseIterable, Hashable {
             | Details parsing | Done |
             | Details rendering | Done |
             </details>
+            """
+
+        case .diagrams:
+            return """
+            ```mermaid
+            graph TD
+                A[Start] --> B{Choice}
+                B -->|Yes| C[Ship]
+                B -->|No| D[Revise]
+            ```
+
+            ```geojson
+            {
+              "type": "FeatureCollection",
+              "features": []
+            }
+            ```
+
+            ```stl
+            solid Demo
+              facet normal 0 0 1
+                outer loop
+                  vertex 0 0 0
+                  vertex 1 0 0
+                  vertex 0 1 0
+                endloop
+              endfacet
+            endsolid Demo
+            ```
             """
         }
     }
