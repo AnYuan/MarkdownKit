@@ -114,9 +114,8 @@ public final class LayoutSolver {
             
         case let header as HeaderNode:
             let token = themeToken(forHeaderLevel: header.level)
-            let attributes = defaultAttributes(for: token)
-            let rawText = extractInlineText(from: header.children)
-            string.append(NSAttributedString(string: rawText, attributes: attributes))
+            let baseAttrs = defaultAttributes(for: token)
+            string.append(buildInlineAttributedString(from: header.children, baseAttributes: baseAttrs))
             
         case let text as TextNode:
             let attributes = defaultAttributes(for: theme.paragraph)
@@ -143,9 +142,8 @@ public final class LayoutSolver {
             }
             
         case let paragraph as ParagraphNode:
-            let attributes = defaultAttributes(for: theme.paragraph)
-            let rawText = extractInlineText(from: paragraph.children)
-            string.append(NSAttributedString(string: rawText, attributes: attributes))
+            let baseAttrs = defaultAttributes(for: theme.paragraph)
+            string.append(buildInlineAttributedString(from: paragraph.children, baseAttributes: baseAttrs))
             
         case let code as CodeBlockNode:
             // Process the raw string through our Splash syntax highlighter
@@ -218,22 +216,49 @@ public final class LayoutSolver {
         }
     }
     
-    // MARK: - Inline Text Helper
-    private func extractInlineText(from children: [MarkdownNode]) -> String {
-        var result = ""
+    // MARK: - Inline Attributed String Builder
+
+    /// Builds a rich NSAttributedString from inline children, preserving styles
+    /// for bold, italic, inline code, links, and images.
+    private func buildInlineAttributedString(
+        from children: [MarkdownNode],
+        baseAttributes: [NSAttributedString.Key: Any]
+    ) -> NSAttributedString {
+        let result = NSMutableAttributedString()
         for child in children {
             switch child {
             case let text as TextNode:
-                result += text.text
+                result.append(NSAttributedString(string: text.text, attributes: baseAttributes))
+
             case let code as InlineCodeNode:
-                result += code.code
+                var codeAttrs = baseAttributes
+                codeAttrs[.font] = theme.codeBlock.font
+                codeAttrs[.backgroundColor] = theme.codeColor.background
+                result.append(NSAttributedString(string: code.code, attributes: codeAttrs))
+
             case let link as LinkNode:
-                result += extractInlineText(from: link.children)
+                var linkAttrs = baseAttributes
+                linkAttrs[.foregroundColor] = Color.systemBlue
+                linkAttrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                if let dest = link.destination, let url = URL(string: dest) {
+                    linkAttrs[.link] = url
+                }
+                let linkText = buildInlineAttributedString(from: link.children, baseAttributes: linkAttrs)
+                result.append(linkText)
+
             case let image as ImageNode:
-                result += image.altText ?? ""
+                var imgAttrs = baseAttributes
+                imgAttrs[.foregroundColor] = Color.secondaryLabelColor
+                let altText = image.altText ?? image.source ?? "image"
+                result.append(NSAttributedString(string: "[\(altText)]", attributes: imgAttrs))
+
             default:
-                // Recursively extract from any other container nodes (e.g. emphasis, strong)
-                result += extractInlineText(from: child.children)
+                // Recursively handle emphasis, strong, etc.
+                // Check if this is a container that swift-markdown wraps for bold/italic
+                let childResult = buildInlineAttributedString(from: child.children, baseAttributes: baseAttributes)
+                if childResult.length > 0 {
+                    result.append(childResult)
+                }
             }
         }
         return result
