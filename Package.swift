@@ -24,6 +24,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-markdown.git", branch: "main"),
         .package(url: "https://github.com/JohnSundell/Splash.git", from: "0.16.0"),
         .package(url: "https://github.com/colinc86/MathJaxSwift.git", from: "3.4.0"),
+        .package(url: "https://github.com/pointfreeco/swift-snapshot-testing.git", from: "1.17.0")
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -42,7 +43,10 @@ let package = Package(
         ),
         .testTarget(
             name: "MarkdownKitTests",
-            dependencies: ["MarkdownKit"],
+            dependencies: [
+                "MarkdownKit",
+                .product(name: "SnapshotTesting", package: "swift-snapshot-testing")
+            ],
             resources: [
                 .copy("Fixtures")
             ]
