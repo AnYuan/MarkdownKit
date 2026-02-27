@@ -40,6 +40,12 @@ The renderer must support the exact Markdown syntax subset utilized by the offic
 - **Dynamic Type Support**: Accessibility-ready out of the box.
 - **Day / Night Mode**: Automatic, elegant transitioning between iOS/macOS light and dark appearances.
 
+### 3.4. Security & Robustness (Production-Grade)
+To ensure the renderer is safe for use in production environments with untrusted user-generated content, it must enforce the following constraints:
+- **URL Sanitization**: Strict filtering of potentially dangerous URI schemes (e.g., `javascript:`, `vbscript:`) in links and images to prevent Cross-Site Scripting (XSS). Only allow-listed protocols (such as `http`, `https`, `mailto`) should output actionable URLs by default.
+- **Deep Nesting Defense**: Implementation of a maximum AST recursion depth (e.g., 50-100 levels) during both the parsing and layout phases. This prevents Stack Overflow crashes and Denial of Service (DoS) attacks caused by exponentially nested markdown structures (like unclosed blockquotes or lists).
+- **Crash Resilience**: The parsing, layout, and rendering pipelines must be engineered to never `fatalError` or crash when fed severely malformed inputs.
+
 ## 4. Performance Requirements
 
 "Even opened with a huge markdown file, we should still have best performance."
@@ -72,7 +78,8 @@ The renderer must support the exact Markdown syntax subset utilized by the offic
 
 - **Test Coverage**: The project demands the highest level of stability. We aim for **near 100% test coverage** across the codebase.
 - **Unit Testing**: Comprehensive XCTest suites for all AST parsing logic, layout calculation engines, and text attribute generation. 
-- **UI/Snapshot Testing**: Automated UI tests and snapshot tests for the rendering layer to ensure zero visual regressions across both iOS and macOS platforms when rendering complex Markdown features (like deeply nested lists or LaTeX equations).
+- **Fuzz Testing**: Deterministic fuzz testing and pathological payload rendering suites. The Markdown string input must be robustly tested against randomly permuted garbage and hostile nesting structures to ensure a zero-crash guarantee.
+- **UI/Snapshot Testing**: Automated snapshot tests for the rendering layer (e.g., using `swift-snapshot-testing`) to ensure zero visual regressions across both iOS and macOS platforms when rendering complex Markdown features (like deeply nested lists or LaTeX equations).
 
 ### 6.1 Automated Syntax Verification Strategy (Primary Gate)
 Manual page-by-page checking is not acceptable as the main validation method. The renderer must provide automated verification that covers all supported syntax families and high-risk regressions.

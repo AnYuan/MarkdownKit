@@ -80,3 +80,10 @@
 ### Cross-Cutting Test Tasks
 - [ ] Add snapshot coverage for table, code, math, and tasklist visual parity on iOS + macOS
 - [ ] Add feature-status matrix test docs linking each PRD §7 feature to test case names
+
+## Phase 7: Production Readiness (Security & Robustness)
+- [ ] Security: Implement strict URL sanitization for `LinkNode` and `ImageNode` (filter out `javascript:`, `vbscript:`, etc.)
+- [ ] Security: Implement deterministic URI schema allow-listing (e.g., `http/https/mailto/tel/sms`) with configurable policies
+- [ ] Robustness: Implement recursive depth limits (e.g., max 50 levels) in `MarkdownKitVisitor` and node traversal plugins to prevent Stack Overflows
+- [ ] Robustness: Integrate a Fuzz testing suite (or permutation script testing) to ensure zero-crash parsing on hostile randomly generated markdown payloads
+- [ ] Quality Assurance: Integrate `swift-snapshot-testing` framework and produce baseline reference images for core syntax element rendering (headers, tables, math, details) into UI tests
