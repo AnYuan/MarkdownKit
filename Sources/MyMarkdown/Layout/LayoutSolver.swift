@@ -101,16 +101,8 @@ public final class LayoutSolver {
             }
             paragraphStyle.tabStops = tabs
             paragraphStyle.defaultTabInterval = colWidth
-            
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: theme.paragraph.font,
-                .paragraphStyle: paragraphStyle,
-                .foregroundColor: theme.textColor.foreground,
-                .backgroundColor: theme.tableColor.background
-            ]
-            
-            let rawText = extractTableText(from: table)
-            string.append(NSAttributedString(string: rawText, attributes: attributes))
+
+            string.append(buildTableAttributedString(from: table, paragraphStyle: paragraphStyle))
             
         case let header as HeaderNode:
             let token = themeToken(forHeaderLevel: header.level)
@@ -331,6 +323,14 @@ public final class LayoutSolver {
                 let altText = image.altText ?? image.source ?? "image"
                 result.append(NSAttributedString(string: "[\(altText)]", attributes: imgAttrs))
 
+            case let math as MathNode:
+                var mathAttrs = baseAttributes
+                mathAttrs[.font] = theme.codeBlock.font
+                mathAttrs[.foregroundColor] = Color.systemPurple
+                let prefix = math.isInline ? "" : "\n"
+                let suffix = math.isInline ? "" : "\n"
+                result.append(NSAttributedString(string: "\(prefix)\(math.equation)\(suffix)", attributes: mathAttrs))
+
             case is EmphasisNode:
                 var italicAttrs = baseAttributes
                 if let font = baseAttributes[.font] as? Font {
@@ -361,16 +361,37 @@ public final class LayoutSolver {
     }
 
     // MARK: - Table Helper
-    private func extractTableText(from table: TableNode) -> String {
-        var rows: [String] = []
+    private func buildTableAttributedString(from table: TableNode, paragraphStyle: NSParagraphStyle) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let boldFont = fontWithTrait(theme.paragraph.font, trait: .bold)
+
+        let headAttrs: [NSAttributedString.Key: Any] = [
+            .font: boldFont,
+            .paragraphStyle: paragraphStyle,
+            .foregroundColor: theme.textColor.foreground,
+            .backgroundColor: theme.tableColor.background
+        ]
+        let bodyAttrs: [NSAttributedString.Key: Any] = [
+            .font: theme.paragraph.font,
+            .paragraphStyle: paragraphStyle,
+            .foregroundColor: theme.textColor.foreground,
+            .backgroundColor: theme.tableColor.background
+        ]
+        let separatorAttrs: [NSAttributedString.Key: Any] = [
+            .font: theme.paragraph.font,
+            .paragraphStyle: paragraphStyle,
+            .foregroundColor: Color.gray
+        ]
+
         for section in table.children {
+            let isHead = section is TableHeadNode
             let sectionChildren = (section as? TableHeadNode)?.children ?? (section as? TableBodyNode)?.children ?? []
             for row in sectionChildren {
                 let rowChildren = (row as? TableRowNode)?.children ?? []
                 var cells: [String] = []
                 for cell in rowChildren {
-                    var cellText = ""
                     let cellChildren = (cell as? TableCellNode)?.children ?? []
+                    var cellText = ""
                     for cellChild in cellChildren {
                         if let textNode = cellChild as? TextNode {
                             cellText += textNode.text
@@ -378,10 +399,15 @@ public final class LayoutSolver {
                     }
                     cells.append(cellText)
                 }
-                rows.append(cells.joined(separator: "\t"))
+                let rowText = cells.joined(separator: "\t")
+                result.append(NSAttributedString(string: rowText + "\n", attributes: isHead ? headAttrs : bodyAttrs))
+            }
+            if isHead {
+                let separator = String(repeating: "─", count: 30)
+                result.append(NSAttributedString(string: separator + "\n", attributes: separatorAttrs))
             }
         }
-        return rows.joined(separator: "\n")
+        return result
     }
 }
 

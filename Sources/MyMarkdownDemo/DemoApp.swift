@@ -170,7 +170,7 @@ struct MarkdownPreviewRep: NSViewRepresentable {
             await MainActor.run { isRendering = true }
 
             let start = CFAbsoluteTimeGetCurrent()
-            let parser = MarkdownParser()
+            let parser = MarkdownParser(plugins: [MathExtractionPlugin()])
             let ast = parser.parse(currentMarkdown)
             let solver = LayoutSolver()
             let result = await solver.solve(node: ast, constrainedToWidth: currentWidth)
