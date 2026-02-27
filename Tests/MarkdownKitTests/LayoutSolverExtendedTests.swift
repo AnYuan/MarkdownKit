@@ -123,7 +123,7 @@ final class LayoutSolverExtendedTests: XCTestCase {
         XCTAssertTrue(foundCenterAlignedCell, "Expected center alignment to be propagated to paragraph style")
     }
 
-    func testTableLayoutCentersAllCellContent() async throws {
+    func testTableLayoutRespectsPerColumnAlignment() async throws {
         let markdown = """
         | Feature | Status | Priority |
         |:--------|:------:|--------:|
@@ -138,20 +138,36 @@ final class LayoutSolverExtendedTests: XCTestCase {
             return
         }
 
-        var checkedTableParagraphs = 0
+        var sawLeftColumn = false
+        var sawCenterColumn = false
+        var sawRightColumn = false
+
         attrStr.enumerateAttribute(
             .paragraphStyle,
             in: NSRange(location: 0, length: attrStr.length)
         ) { value, _, _ in
             guard let style = value as? NSParagraphStyle else { return }
-            let hasTableBlock = style.textBlocks.contains { $0 is NSTextTableBlock }
-            guard hasTableBlock else { return }
-
-            checkedTableParagraphs += 1
-            XCTAssertEqual(style.alignment, .center)
+            for block in style.textBlocks {
+                guard let tableBlock = block as? NSTextTableBlock else { continue }
+                switch tableBlock.startingColumn {
+                case 0:
+                    sawLeftColumn = true
+                    XCTAssertEqual(style.alignment, .left)
+                case 1:
+                    sawCenterColumn = true
+                    XCTAssertEqual(style.alignment, .center)
+                case 2:
+                    sawRightColumn = true
+                    XCTAssertEqual(style.alignment, .right)
+                default:
+                    break
+                }
+            }
         }
 
-        XCTAssertGreaterThan(checkedTableParagraphs, 0, "Expected table cells to carry paragraph styles")
+        XCTAssertTrue(sawLeftColumn, "Expected left-aligned first column")
+        XCTAssertTrue(sawCenterColumn, "Expected centered second column")
+        XCTAssertTrue(sawRightColumn, "Expected right-aligned third column")
     }
 
     func testTableLayoutAppliesHeaderAndAlternatingRowBackgrounds() async throws {

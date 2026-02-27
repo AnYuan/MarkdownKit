@@ -7,6 +7,46 @@ This document breaks down the execution strategy to fulfill the requirements def
 - Technical debt roadmap: `docs/TechnicalDebtRoadmap.md`
 - Rendering sequence diagram: `docs/RenderingPipelineSequence.md`
 
+## Current Execution Plan: Automation-First Verification Program
+This execution wave prioritizes automated verification before adding more feature surface. The goal is to remove manual UI checking as the default validation path.
+
+### Phase A: Test Strategy Baseline (Docs + Scope Lock)
+**Goal**: lock verification scope and merge criteria.
+1. Update PRD quality sections with mandatory automation gates.
+2. Define coverage matrix for all supported syntax families.
+3. Define deterministic CI constraints (no network dependency by default).
+
+### Phase B: Syntax Matrix Harness
+**Goal**: one command validates all supported syntax across width variants.
+1. Add a table-driven syntax matrix test suite.
+2. Validate parser output with active plugin chain (details + diagrams + math).
+3. Run layout passes at narrow, medium, and wide widths.
+4. Assert baseline invariants: non-empty output, finite geometry, stable child counts.
+
+### Phase C: Targeted Regression Pack
+**Goal**: prevent recurrence of known rendering failures.
+1. Add explicit regression tests for details toggle state handling.
+2. Add explicit regression tests for table readability (no column collapse, alignment correctness).
+3. Add explicit regression tests for image attachment rendering and fallback behavior.
+4. Add explicit regression tests for diagram fallback rendering behavior.
+
+### Phase D: Stress and Mixed-Case Reliability
+**Goal**: catch crashers and pathological layout behavior.
+1. Add deterministic mixed-syntax permutation tests.
+2. Validate no crash and no invalid size output across multiple widths.
+3. Track runtime and optimize slow paths where needed.
+
+### Phase E: Optional Visual Baselines
+**Goal**: guard high-value visual styles.
+1. Add snapshot coverage for tables, code blocks, inline code, details, and math where feasible.
+2. Keep snapshots versioned and reviewable in PRs.
+
+### Delivery Order (Implement One by One)
+1. Phase B (Syntax matrix harness)
+2. Phase C (Known regression pack)
+3. Phase D (Stress reliability)
+4. Phase E (Visual baselines)
+
 ## Phase 1: Core Parsing Engine
 **Goal**: Integrate `swift-markdown` and construct our proprietary, thread-safe Abstract Syntax Tree (AST) models.
 1. Initialize the Swift Package inside the `MarkdownKit` workspace and import Apple's `swift-markdown`.

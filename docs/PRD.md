@@ -74,6 +74,35 @@ The renderer must support the exact Markdown syntax subset utilized by the offic
 - **Unit Testing**: Comprehensive XCTest suites for all AST parsing logic, layout calculation engines, and text attribute generation. 
 - **UI/Snapshot Testing**: Automated UI tests and snapshot tests for the rendering layer to ensure zero visual regressions across both iOS and macOS platforms when rendering complex Markdown features (like deeply nested lists or LaTeX equations).
 
+### 6.1 Automated Syntax Verification Strategy (Primary Gate)
+Manual page-by-page checking is not acceptable as the main validation method. The renderer must provide automated verification that covers all supported syntax families and high-risk regressions.
+
+Required automated coverage dimensions:
+1. **Syntax matrix coverage**: headers, emphasis, links, images, inline code, code blocks, lists, task lists, tables, math, blockquote, details, diagrams.
+2. **Layout width matrix**: each syntax fixture validated across narrow, medium, and wide container widths.
+3. **State and fallback coverage**: open and closed details, diagram adapter fallback, image load success and fallback, table alignment and wrapping behavior.
+4. **Plugin pipeline coverage**: feature combinations validated with active plugin chains (details, diagrams, math).
+5. **Stress coverage**: mixed-syntax permutation runs to detect crashers, pathological sizing, and unstable formatting paths.
+
+### 6.2 Test Types and Ownership
+1. **Syntax Fixture Tests** (unit/integration): assert AST shape, node counts, and expected semantic transforms.
+2. **Layout Invariant Tests** (integration): assert finite geometry, stable top-level layout counts, attachment presence rules, and table readability constraints.
+3. **Regression Tests for Known Bugs**: explicit tests for previously fixed issues (details toggle state, table column collapse, image fallback rendering, diagram fallback rendering, inline code visual tokenization).
+4. **Optional Visual Snapshots** (platform-specific): for high-value visual blocks (tables, code, math, details).
+5. **Stress and Fuzz-like Tests**: deterministic permutation suites that run in CI and fail on crashes or invalid geometry.
+
+### 6.3 CI Quality Gates
+The following must pass before merge:
+1. `swift test` full suite.
+2. Syntax matrix suite across width matrix.
+3. Regression suite for known rendering bugs.
+4. Stress suite for mixed syntax permutations.
+
+Operational constraints:
+1. Default tests must not rely on external network availability.
+2. Fixture tests must be deterministic and reproducible on local machines and CI runners.
+3. Every newly supported syntax feature must add at least one positive test and one fallback or error-path test.
+
 ## 7. GitHub Advanced Formatting Parity (Source of Truth)
 
 This section defines parity targets based on GitHub Docs:

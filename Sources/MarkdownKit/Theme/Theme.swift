@@ -54,11 +54,14 @@ public struct Theme {
         
 #if canImport(UIKit)
         let textC = ColorToken(foreground: .label)
-        let codeC = ColorToken(foreground: .label, background: .secondarySystemBackground)
+        let codeC = ColorToken(foreground: .label, background: .secondarySystemFill)
         let tableC = ColorToken(foreground: .separator, background: .secondarySystemGroupedBackground)
 #elseif canImport(AppKit)
         let textC = ColorToken(foreground: .labelColor)
-        let codeC = ColorToken(foreground: .labelColor, background: .windowBackgroundColor)
+        let codeC = ColorToken(
+            foreground: .labelColor,
+            background: NSColor.controlAccentColor.withAlphaComponent(0.14)
+        )
         let tableC = ColorToken(foreground: .gridColor, background: .controlBackgroundColor)
 #endif
         

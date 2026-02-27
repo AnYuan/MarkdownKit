@@ -6,6 +6,40 @@
 #if canImport(AppKit) && !targetEnvironment(macCatalyst)
 import AppKit
 
+private final class DetailsTextView: NSTextView {
+    var summaryCharacterRange: NSRange = NSRange(location: NSNotFound, length: 0)
+    var onSummaryClick: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        if didClickSummary(with: event) {
+            onSummaryClick?()
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    private func didClickSummary(with event: NSEvent) -> Bool {
+        guard summaryCharacterRange.location != NSNotFound,
+              summaryCharacterRange.length > 0,
+              let layoutManager,
+              let textContainer else {
+            return false
+        }
+
+        var point = convert(event.locationInWindow, from: nil)
+        point.x -= textContainerInset.width
+        point.y -= textContainerInset.height
+
+        guard layoutManager.usedRect(for: textContainer).contains(point) else {
+            return false
+        }
+
+        let glyphIndex = layoutManager.glyphIndex(for: point, in: textContainer)
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        return NSLocationInRange(characterIndex, summaryCharacterRange)
+    }
+}
+
 /// A highly reusable, recycled view cell managed by `NSCollectionView`.
 public class MarkdownItemView: NSCollectionViewItem {
 
@@ -24,7 +58,7 @@ public class MarkdownItemView: NSCollectionViewItem {
         hostedView = nil
     }
 
-    public func configure(with layout: LayoutResult) {
+    public func configure(with layout: LayoutResult, onToggleDetails: ((DetailsNode) -> Void)? = nil) {
         hostedView?.removeFromSuperview()
         hostedView = nil
 
@@ -32,8 +66,17 @@ public class MarkdownItemView: NSCollectionViewItem {
 
         guard let attrString = layout.attributedString, attrString.length > 0 else { return }
 
-        // Use NSTextView for proper multi-line rich text rendering
-        let textView = NSTextView(frame: NSRect(origin: .zero, size: layout.size))
+        // Use NSTextView for proper multi-line rich text rendering.
+        let textView: NSTextView
+        if let details = layout.node as? DetailsNode {
+            let detailsView = DetailsTextView(frame: NSRect(origin: .zero, size: layout.size))
+            detailsView.summaryCharacterRange = detailsSummaryRange(in: attrString.string)
+            detailsView.onSummaryClick = { onToggleDetails?(details) }
+            textView = detailsView
+        } else {
+            textView = NSTextView(frame: NSRect(origin: .zero, size: layout.size))
+        }
+
         textView.isEditable = false
         textView.isSelectable = false
         textView.drawsBackground = false
@@ -55,6 +98,14 @@ public class MarkdownItemView: NSCollectionViewItem {
 
         view.addSubview(textView)
         hostedView = textView
+    }
+
+    private func detailsSummaryRange(in text: String) -> NSRange {
+        let nsText = text as NSString
+        let newlineRange = nsText.range(of: "\n")
+        let end = newlineRange.location == NSNotFound ? nsText.length : newlineRange.location
+        guard end > 0 else { return NSRange(location: NSNotFound, length: 0) }
+        return NSRange(location: 0, length: end)
     }
 }
 #endif

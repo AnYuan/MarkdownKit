@@ -161,6 +161,37 @@ struct MarkdownPreviewRep: NSViewRepresentable {
         let currentMarkdown = markdown
         let currentWidth = width
 
+        nsView.onToggleDetails = { [weak nsView, coordinator = context.coordinator] index, renderedDetails in
+            guard let nsView else { return }
+            coordinator.lastKey = ""
+            Task {
+                let parser = MarkdownParser(
+                    plugins: [DetailsExtractionPlugin(), DiagramExtractionPlugin(), MathExtractionPlugin()]
+                )
+                let ast = parser.parse(currentMarkdown)
+                guard ast.children.indices.contains(index),
+                      let details = ast.children[index] as? DetailsNode else {
+                    return
+                }
+
+                var updatedChildren = ast.children
+                updatedChildren[index] = DetailsNode(
+                    range: details.range,
+                    isOpen: !renderedDetails.isOpen,
+                    summary: details.summary,
+                    children: details.children
+                )
+
+                let toggledDocument = DocumentNode(range: ast.range, children: updatedChildren)
+                let solver = LayoutSolver(diagramRegistry: DemoDiagramAdapters.makeRegistry())
+                let result = await solver.solve(node: toggledDocument, constrainedToWidth: currentWidth)
+
+                await MainActor.run {
+                    nsView.layouts = result.children
+                }
+            }
+        }
+
         // Debounce: skip if same content and width
         let key = "\(currentMarkdown.hashValue)_\(Int(currentWidth))"
         if context.coordinator.lastKey == key { return }
@@ -174,7 +205,7 @@ struct MarkdownPreviewRep: NSViewRepresentable {
                 plugins: [DetailsExtractionPlugin(), DiagramExtractionPlugin(), MathExtractionPlugin()]
             )
             let ast = parser.parse(currentMarkdown)
-            let solver = LayoutSolver()
+            let solver = LayoutSolver(diagramRegistry: DemoDiagramAdapters.makeRegistry())
             let result = await solver.solve(node: ast, constrainedToWidth: currentWidth)
             let end = CFAbsoluteTimeGetCurrent()
 
@@ -293,9 +324,9 @@ enum SyntaxPage: String, CaseIterable, Hashable {
 
         case .images:
             return """
-            ![Swift Logo](https://swift.org/assets/images/swift.svg)
+            ![Swift Logo](https://raw.githubusercontent.com/github/explore/main/topics/swift/swift.png)
 
-            ![Placeholder Image](https://via.placeholder.com/400x200)
+            ![Landscape Photo](https://picsum.photos/seed/markdownkit/640/320)
             """
 
         case .inlineCode:

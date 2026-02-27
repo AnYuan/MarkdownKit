@@ -15,6 +15,7 @@ public protocol MarkdownCollectionViewThemeDelegate: AnyObject {
 public class MarkdownCollectionView: NSView {
     
     public weak var themeDelegate: MarkdownCollectionViewThemeDelegate?
+    public var onToggleDetails: ((Int, DetailsNode) -> Void)?
     
     private let scrollView = NSScrollView()
     private let collectionView = NSCollectionView()
@@ -81,7 +82,9 @@ extension MarkdownCollectionView: NSCollectionViewDataSource, NSCollectionViewDe
         let item = collectionView.makeItem(withIdentifier: MarkdownItemView.reuseIdentifier, for: indexPath) as! MarkdownItemView
         
         let layoutResult = layouts[indexPath.item]
-        item.configure(with: layoutResult)
+        item.configure(with: layoutResult) { [weak self] details in
+            self?.onToggleDetails?(indexPath.item, details)
+        }
         
         return item
     }

@@ -89,7 +89,7 @@ public final class LayoutSolver {
         
         switch node {
         case let table as TableNode:
-            string.append(buildTableAttributedString(from: table))
+            string.append(buildTableAttributedString(from: table, constrainedToWidth: maxWidth))
 
         case let diagram as DiagramNode:
             string.append(await buildDiagramAttributedString(from: diagram))
@@ -99,12 +99,20 @@ public final class LayoutSolver {
 
         case let summary as SummaryNode:
             let baseAttrs = detailsSummaryAttributes()
-            string.append(await buildInlineAttributedString(from: summary.children, baseAttributes: baseAttrs))
+            string.append(await buildInlineAttributedString(
+                from: summary.children,
+                baseAttributes: baseAttrs,
+                constrainedToWidth: maxWidth
+            ))
             
         case let header as HeaderNode:
             let token = themeToken(forHeaderLevel: header.level)
             let baseAttrs = defaultAttributes(for: token)
-            string.append(await buildInlineAttributedString(from: header.children, baseAttributes: baseAttrs))
+            string.append(await buildInlineAttributedString(
+                from: header.children,
+                baseAttributes: baseAttrs,
+                constrainedToWidth: maxWidth
+            ))
             
         case let text as TextNode:
             let attributes = defaultAttributes(for: theme.paragraph)
@@ -137,7 +145,11 @@ public final class LayoutSolver {
             
         case let paragraph as ParagraphNode:
             let baseAttrs = defaultAttributes(for: theme.paragraph)
-            string.append(await buildInlineAttributedString(from: paragraph.children, baseAttributes: baseAttrs))
+            string.append(await buildInlineAttributedString(
+                from: paragraph.children,
+                baseAttributes: baseAttrs,
+                constrainedToWidth: maxWidth
+            ))
             
         case let code as CodeBlockNode:
             string.append(buildCodeBlockAttributedString(from: code))
@@ -173,7 +185,11 @@ public final class LayoutSolver {
                 // Render item content
                 for itemChild in item.children {
                     if let para = itemChild as? ParagraphNode {
-                        string.append(await buildInlineAttributedString(from: para.children, baseAttributes: listAttrs))
+                        string.append(await buildInlineAttributedString(
+                            from: para.children,
+                            baseAttributes: listAttrs,
+                            constrainedToWidth: maxWidth
+                        ))
                     } else if let nestedList = itemChild as? ListNode {
                         let nestedAttr = await createAttributedString(for: nestedList, constrainedToWidth: maxWidth)
                         string.append(NSAttributedString(string: "\n"))
@@ -208,7 +224,11 @@ public final class LayoutSolver {
                     var quoteAttrs = defaultAttributes(for: theme.paragraph)
                     quoteAttrs[.paragraphStyle] = quoteStyle
                     quoteAttrs[.foregroundColor] = Color.gray
-                    let inlineStr = await buildInlineAttributedString(from: para.children, baseAttributes: quoteAttrs)
+                    let inlineStr = await buildInlineAttributedString(
+                        from: para.children,
+                        baseAttributes: quoteAttrs,
+                        constrainedToWidth: maxWidth
+                    )
 
                     // Prepend quote bar
                     let bar = NSAttributedString(string: "┃ ", attributes: [
@@ -362,7 +382,8 @@ public final class LayoutSolver {
         if let summary = details.summary, !summary.children.isEmpty {
             let summaryText = await buildInlineAttributedString(
                 from: summary.children,
-                baseAttributes: summaryAttrs
+                baseAttributes: summaryAttrs,
+                constrainedToWidth: maxWidth
             )
             result.append(summaryText)
         } else {
@@ -404,7 +425,8 @@ public final class LayoutSolver {
     /// for bold, italic, inline code, links, and images.
     private func buildInlineAttributedString(
         from children: [MarkdownNode],
-        baseAttributes: [NSAttributedString.Key: Any]
+        baseAttributes: [NSAttributedString.Key: Any],
+        constrainedToWidth maxWidth: CGFloat
     ) async -> NSAttributedString {
         let result = NSMutableAttributedString()
         for child in children {
@@ -414,7 +436,12 @@ public final class LayoutSolver {
 
             case let code as InlineCodeNode:
                 var codeAttrs = baseAttributes
-                codeAttrs[.font] = theme.codeBlock.font
+                let baseFont = (baseAttributes[.font] as? Font) ?? theme.paragraph.font
+                codeAttrs[.font] = Font.monospacedSystemFont(
+                    ofSize: max(11, baseFont.pointSize * 0.92),
+                    weight: .regular
+                )
+                codeAttrs[.foregroundColor] = theme.codeColor.foreground
                 codeAttrs[.backgroundColor] = theme.codeColor.background
                 result.append(NSAttributedString(string: code.code, attributes: codeAttrs))
 
@@ -425,14 +452,22 @@ public final class LayoutSolver {
                 if let dest = link.destination, let url = URL(string: dest) {
                     linkAttrs[.link] = url
                 }
-                let linkText = await buildInlineAttributedString(from: link.children, baseAttributes: linkAttrs)
+                let linkText = await buildInlineAttributedString(
+                    from: link.children,
+                    baseAttributes: linkAttrs,
+                    constrainedToWidth: maxWidth
+                )
                 result.append(linkText)
 
             case let image as ImageNode:
-                var imgAttrs = baseAttributes
-                imgAttrs[.foregroundColor] = Color.secondaryLabelColor
-                let altText = image.altText ?? image.source ?? "image"
-                result.append(NSAttributedString(string: "[\(altText)]", attributes: imgAttrs))
+                if let attachment = await buildInlineImageAttachment(from: image, constrainedToWidth: maxWidth) {
+                    result.append(attachment)
+                } else {
+                    var imgAttrs = baseAttributes
+                    imgAttrs[.foregroundColor] = Color.secondaryLabelColor
+                    let altText = image.altText ?? image.source ?? "image"
+                    result.append(NSAttributedString(string: "[\(altText)]", attributes: imgAttrs))
+                }
 
             case let math as MathNode:
                 if let image = await renderMath(latex: math.equation, display: !math.isInline) {
@@ -464,28 +499,113 @@ public final class LayoutSolver {
                 if let font = baseAttributes[.font] as? Font {
                     italicAttrs[.font] = fontWithTrait(font, trait: .italic)
                 }
-                result.append(await buildInlineAttributedString(from: child.children, baseAttributes: italicAttrs))
+                result.append(await buildInlineAttributedString(
+                    from: child.children,
+                    baseAttributes: italicAttrs,
+                    constrainedToWidth: maxWidth
+                ))
 
             case is StrongNode:
                 var boldAttrs = baseAttributes
                 if let font = baseAttributes[.font] as? Font {
                     boldAttrs[.font] = fontWithTrait(font, trait: .bold)
                 }
-                result.append(await buildInlineAttributedString(from: child.children, baseAttributes: boldAttrs))
+                result.append(await buildInlineAttributedString(
+                    from: child.children,
+                    baseAttributes: boldAttrs,
+                    constrainedToWidth: maxWidth
+                ))
 
             case is StrikethroughNode:
                 var strikeAttrs = baseAttributes
                 strikeAttrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
-                result.append(await buildInlineAttributedString(from: child.children, baseAttributes: strikeAttrs))
+                result.append(await buildInlineAttributedString(
+                    from: child.children,
+                    baseAttributes: strikeAttrs,
+                    constrainedToWidth: maxWidth
+                ))
 
             default:
-                let childResult = await buildInlineAttributedString(from: child.children, baseAttributes: baseAttributes)
+                let childResult = await buildInlineAttributedString(
+                    from: child.children,
+                    baseAttributes: baseAttributes,
+                    constrainedToWidth: maxWidth
+                )
                 if childResult.length > 0 {
                     result.append(childResult)
                 }
             }
         }
         return result
+    }
+
+    private func buildInlineImageAttachment(
+        from imageNode: ImageNode,
+        constrainedToWidth maxWidth: CGFloat
+    ) async -> NSAttributedString? {
+        guard let source = imageNode.source?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !source.isEmpty,
+              let image = await loadImage(from: source) else {
+            return nil
+        }
+
+        let imageSize = image.size
+        guard imageSize.width > 0, imageSize.height > 0 else { return nil }
+
+        let maxAttachmentWidth = max(80, maxWidth - 24)
+        let scale = min(1.0, maxAttachmentWidth / imageSize.width)
+        let targetSize = CGSize(
+            width: max(1, imageSize.width * scale),
+            height: max(1, imageSize.height * scale)
+        )
+
+        let attachment = NSTextAttachment()
+        #if canImport(UIKit)
+        attachment.image = image
+        #elseif canImport(AppKit)
+        attachment.image = image
+        #endif
+        attachment.bounds = CGRect(origin: .zero, size: targetSize)
+        return NSAttributedString(attachment: attachment)
+    }
+
+    private func loadImage(from source: String) async -> NativeImage? {
+        guard let url = resolvedImageURL(from: source) else { return nil }
+
+        do {
+            let data: Data
+            if url.isFileURL {
+                data = try Data(contentsOf: url)
+            } else {
+                let (networkData, response) = try await URLSession.shared.data(from: url)
+                if let http = response as? HTTPURLResponse,
+                   !(200...299).contains(http.statusCode) {
+                    return nil
+                }
+                data = networkData
+            }
+
+            guard !data.isEmpty else { return nil }
+            return NativeImage(data: data)
+        } catch {
+            return nil
+        }
+    }
+
+    private func resolvedImageURL(from source: String) -> URL? {
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let url = URL(string: trimmed), let scheme = url.scheme, !scheme.isEmpty {
+            return url
+        }
+
+        if trimmed.hasPrefix("/") {
+            return URL(fileURLWithPath: trimmed)
+        }
+
+        let cwd = FileManager.default.currentDirectoryPath
+        return URL(fileURLWithPath: cwd).appendingPathComponent(trimmed)
     }
 
     private func attachmentBounds(for imageSize: CGSize, isInline: Bool, font: Font) -> CGRect {
@@ -502,7 +622,10 @@ public final class LayoutSolver {
     }
 
     // MARK: - Table Helper
-    private func buildTableAttributedString(from table: TableNode) -> NSAttributedString {
+    private func buildTableAttributedString(
+        from table: TableNode,
+        constrainedToWidth maxWidth: CGFloat
+    ) -> NSAttributedString {
         let result = NSMutableAttributedString()
         let allRows = normalizedTableRows(from: table)
         let columnCount = allRows.map(\.cells.count).max() ?? 0
@@ -516,6 +639,13 @@ public final class LayoutSolver {
         textTable.layoutAlgorithm = .automaticLayoutAlgorithm
         textTable.collapsesBorders = true
         textTable.hidesEmptyCells = false
+
+        // Reserve some breathing room so columns do not collapse to character-by-character wrapping.
+        let availableTableWidth = max(160, maxWidth - 16)
+        let perColumnWidth = max(72, floor(availableTableWidth / CGFloat(columnCount)))
+        let horizontalPadding = 16.0 // 8 left + 8 right, set below in `configuredTableBlock`
+        let borderAllowance = 2.0
+        let contentWidth = max(48, perColumnWidth - horizontalPadding - borderAllowance)
 
         var bodyRowIndex = 0
         for (rowIndex, row) in allRows.enumerated() {
@@ -533,14 +663,15 @@ public final class LayoutSolver {
                     table: textTable,
                     row: rowIndex,
                     column: columnIndex,
-                    backgroundColor: rowBackground
+                    backgroundColor: rowBackground,
+                    contentWidth: contentWidth
                 )
 
                 let paragraphStyle = NSMutableParagraphStyle()
                 paragraphStyle.textBlocks = [block]
                 paragraphStyle.paragraphSpacing = 0
                 paragraphStyle.paragraphSpacingBefore = 0
-                paragraphStyle.alignment = .center
+                paragraphStyle.alignment = tableTextAlignment(for: table, column: columnIndex)
 
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: row.isHead ? headerFont : cellFont,
@@ -561,7 +692,8 @@ public final class LayoutSolver {
         table: NSTextTable,
         row: Int,
         column: Int,
-        backgroundColor: Color
+        backgroundColor: Color,
+        contentWidth: CGFloat
     ) -> NSTextTableBlock {
         let block = NSTextTableBlock(
             table: table,
@@ -574,6 +706,7 @@ public final class LayoutSolver {
         block.setWidth(1.0, type: .absoluteValueType, for: .border)
         block.setWidth(8.0, type: .absoluteValueType, for: .padding)
         block.setWidth(0.0, type: .absoluteValueType, for: .margin)
+        block.setContentWidth(contentWidth, type: .absoluteValueType)
         block.setBorderColor(theme.tableColor.foreground)
         block.backgroundColor = backgroundColor
 
@@ -634,6 +767,16 @@ public final class LayoutSolver {
         flattenInlineText(from: cell)
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func tableTextAlignment(for table: TableNode, column: Int) -> NSTextAlignment {
+        guard column < table.columnAlignments.count else { return .left }
+        switch table.columnAlignments[column] {
+        case .left: return .left
+        case .center: return .center
+        case .right: return .right
+        case .none: return .left
+        }
     }
 
     private func flattenInlineText(from node: MarkdownNode) -> String {
