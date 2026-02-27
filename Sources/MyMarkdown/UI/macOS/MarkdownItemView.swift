@@ -7,28 +7,23 @@
 import AppKit
 
 /// A highly reusable, recycled view cell managed by `NSCollectionView`.
-/// Its sole responsibility is mounting the pre-calculated `LayoutResult` 
-/// and displaying the dynamically generated background `CGImage` or `CGContext` snapshots.
 public class MarkdownItemView: NSCollectionViewItem {
-    
+
     public static let reuseIdentifier = NSUserInterfaceItemIdentifier("MarkdownItemView")
-    
-    /// The specific view container responsible for rendering the assigned AST element.
+
     private var hostedView: NSView?
-    
+
     public override func loadView() {
         self.view = NSView()
         self.view.wantsLayer = true
     }
-    
+
     public override func prepareForReuse() {
         super.prepareForReuse()
-        // Texture principle: aggressively purge backing stores and views when offscreen
         hostedView?.removeFromSuperview()
         hostedView = nil
     }
-    
-    /// Mounts the pre-calculated `LayoutResult` onto the main thread.
+
     public func configure(with layout: LayoutResult) {
         hostedView?.removeFromSuperview()
         hostedView = nil
@@ -37,25 +32,29 @@ public class MarkdownItemView: NSCollectionViewItem {
 
         guard let attrString = layout.attributedString, attrString.length > 0 else { return }
 
-        let textField = NSTextField(frame: NSRect(origin: .zero, size: layout.size))
-        textField.attributedStringValue = attrString
-        textField.isEditable = false
-        textField.isSelectable = false
-        textField.isBordered = false
-        textField.drawsBackground = false
-        textField.lineBreakMode = .byWordWrapping
-        textField.preferredMaxLayoutWidth = layout.size.width
+        // Use NSTextView for proper multi-line rich text rendering
+        let textView = NSTextView(frame: NSRect(origin: .zero, size: layout.size))
+        textView.isEditable = false
+        textView.isSelectable = false
+        textView.drawsBackground = false
+        textView.textContainerInset = .zero
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
 
-        // For code blocks, add a subtle background
+        // Replace text storage content with our pre-styled attributed string
+        textView.textStorage?.setAttributedString(attrString)
+
+        // Code blocks get background + rounded corners
         if layout.node is CodeBlockNode {
-            textField.drawsBackground = true
-            textField.backgroundColor = NSColor.controlBackgroundColor
-            textField.wantsLayer = true
-            textField.layer?.cornerRadius = 6
+            textView.drawsBackground = true
+            textView.backgroundColor = NSColor.controlBackgroundColor
+            textView.wantsLayer = true
+            textView.layer?.cornerRadius = 6
+            textView.textContainerInset = NSSize(width: 8, height: 8)
         }
 
-        view.addSubview(textField)
-        hostedView = textField
+        view.addSubview(textView)
+        hostedView = textView
     }
 }
 #endif
