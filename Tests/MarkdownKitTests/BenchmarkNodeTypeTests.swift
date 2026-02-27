@@ -39,6 +39,41 @@ final class BenchmarkNodeTypeTests: XCTestCase {
         ])
     }
 
+    // MARK: - Per-Syntax Tiered Benchmark (simple → complex → extreme)
+
+    /// Measures render time and memory for each syntax at 3 complexity tiers.
+    /// Uses a shared solver per syntax group to avoid TextKit resource exhaustion
+    /// when creating hundreds of TextKitCalculator instances in a single test.
+    func testPerSyntaxTieredBenchmark() async {
+        let parser = MarkdownParser(plugins: [])
+        let tieredHarness = BenchmarkHarness(warmup: 2, iterations: 10)
+        var sections: [(title: String, results: [BenchmarkResult])] = []
+
+        for syntaxGroup in BenchmarkTieredFixtures.all {
+            var results: [BenchmarkResult] = []
+            let cache = LayoutCache()
+            let solver = LayoutSolver(cache: cache)
+            for (tier, content) in syntaxGroup.tiers {
+                let doc = parser.parse(content)
+                results.append(
+                    await tieredHarness.measureAsync(
+                        label: "solve",
+                        fixture: "\(syntaxGroup.syntax)/\(tier)"
+                    ) {
+                        cache.clear()
+                        _ = await solver.solve(
+                            node: doc,
+                            constrainedToWidth: self.defaultWidth
+                        )
+                    }
+                )
+            }
+            sections.append((syntaxGroup.syntax, results))
+        }
+
+        BenchmarkReportFormatter.printSections(sections)
+    }
+
     // MARK: - Width Scaling
 
     /// Measures solve performance across multiple container widths.
