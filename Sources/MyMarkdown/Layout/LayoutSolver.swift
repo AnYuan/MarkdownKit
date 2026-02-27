@@ -115,10 +115,8 @@ public final class LayoutSolver {
         case let header as HeaderNode:
             let token = themeToken(forHeaderLevel: header.level)
             let attributes = defaultAttributes(for: token)
-            // Just extracting raw text for the prototype solver
-            if let textNode = header.children.first as? TextNode {
-                string.append(NSAttributedString(string: textNode.text, attributes: attributes))
-            }
+            let rawText = extractInlineText(from: header.children)
+            string.append(NSAttributedString(string: rawText, attributes: attributes))
             
         case let text as TextNode:
             let attributes = defaultAttributes(for: theme.paragraph)
@@ -146,9 +144,8 @@ public final class LayoutSolver {
             
         case let paragraph as ParagraphNode:
             let attributes = defaultAttributes(for: theme.paragraph)
-            if let textNode = paragraph.children.first as? TextNode {
-                string.append(NSAttributedString(string: textNode.text, attributes: attributes))
-            }
+            let rawText = extractInlineText(from: paragraph.children)
+            string.append(NSAttributedString(string: rawText, attributes: attributes))
             
         case let code as CodeBlockNode:
             // Process the raw string through our Splash syntax highlighter
@@ -221,6 +218,27 @@ public final class LayoutSolver {
         }
     }
     
+    // MARK: - Inline Text Helper
+    private func extractInlineText(from children: [MarkdownNode]) -> String {
+        var result = ""
+        for child in children {
+            switch child {
+            case let text as TextNode:
+                result += text.text
+            case let code as InlineCodeNode:
+                result += code.code
+            case let link as LinkNode:
+                result += extractInlineText(from: link.children)
+            case let image as ImageNode:
+                result += image.altText ?? ""
+            default:
+                // Recursively extract from any other container nodes (e.g. emphasis, strong)
+                result += extractInlineText(from: child.children)
+            }
+        }
+        return result
+    }
+
     // MARK: - Table Helper
     private func extractTableText(from table: TableNode) -> String {
         var rows: [String] = []
