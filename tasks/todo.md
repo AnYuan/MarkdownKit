@@ -7,6 +7,7 @@
 - [x] Implement `PerformanceProfiler` utility for benchmarking AST and Layout speeds
 
 ## Phase 1: Parsing Engine (AST)
+- [x] Add Official CommonMark Spec Test Suite (600+ tests) automation to test target (Highest Priority)
 - [x] Define internal `MarkdownNode` protocol and base element structures
 - [x] Implement `DocumentNode`, `BlockNode`, and `InlineNode` models
 - [x] Implement `HeaderNode`, `ParagraphNode`, and `TextNode` models
