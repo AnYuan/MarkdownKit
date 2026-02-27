@@ -86,4 +86,162 @@ final class ASTPluginTests: XCTestCase {
         XCTAssertEqual(math?.equation, "E=mc^2")
         XCTAssertEqual(math?.style, .inline)
     }
+
+    // MARK: - Plugin Edge Cases
+
+    func testPluginReturningEmptyArrayProducesEmptyDocument() {
+        struct EmptyPlugin: ASTPlugin {
+            func visit(_ nodes: [MarkdownNode]) -> [MarkdownNode] { [] }
+        }
+
+        let doc = TestHelper.parse("# Hello\nWorld", plugins: [EmptyPlugin()])
+        XCTAssertEqual(doc.children.count, 0,
+            "Plugin returning empty array should produce empty document")
+    }
+
+    func testPluginDuplicatingNodesDoublesChildren() {
+        struct DuplicatePlugin: ASTPlugin {
+            func visit(_ nodes: [MarkdownNode]) -> [MarkdownNode] {
+                return nodes + nodes
+            }
+        }
+
+        let doc = TestHelper.parse("Hello", plugins: [DuplicatePlugin()])
+        XCTAssertEqual(doc.children.count, 2,
+            "Duplicating plugin should double the children count")
+    }
+
+    func testAllThreeBuiltInPluginsChained() {
+        let markdown = """
+        Inline math: $x^2$
+
+        ```mermaid
+        graph TD
+        A-->B
+        ```
+
+        <details>
+        <summary>Info</summary>
+
+        Body text.
+        </details>
+        """
+
+        let plugins: [ASTPlugin] = [
+            MathExtractionPlugin(),
+            DiagramExtractionPlugin(),
+            DetailsExtractionPlugin()
+        ]
+        let doc = TestHelper.parse(markdown, plugins: plugins)
+
+        func findNode<T: MarkdownNode>(_ type: T.Type, in node: MarkdownNode) -> Bool {
+            if node is T { return true }
+            return node.children.contains { findNode(type, in: $0) }
+        }
+
+        XCTAssertTrue(findNode(MathNode.self, in: doc), "Should find MathNode")
+        XCTAssertTrue(findNode(DiagramNode.self, in: doc), "Should find DiagramNode")
+        XCTAssertTrue(findNode(DetailsNode.self, in: doc), "Should find DetailsNode")
+    }
+
+    func testPluginOrderMathBeforeDiagram() {
+        let markdown = """
+        $E=mc^2$
+
+        ```mermaid
+        graph TD
+        ```
+        """
+
+        let doc = TestHelper.parse(markdown, plugins: [
+            MathExtractionPlugin(),
+            DiagramExtractionPlugin()
+        ])
+
+        func findNode<T: MarkdownNode>(_ type: T.Type, in node: MarkdownNode) -> Bool {
+            if node is T { return true }
+            return node.children.contains { findNode(type, in: $0) }
+        }
+
+        XCTAssertTrue(findNode(MathNode.self, in: doc), "Math-first order should produce MathNode")
+        XCTAssertTrue(findNode(DiagramNode.self, in: doc), "Math-first order should produce DiagramNode")
+    }
+
+    func testPluginOrderDiagramBeforeMath() {
+        let markdown = """
+        $E=mc^2$
+
+        ```mermaid
+        graph TD
+        ```
+        """
+
+        let doc = TestHelper.parse(markdown, plugins: [
+            DiagramExtractionPlugin(),
+            MathExtractionPlugin()
+        ])
+
+        func findNode<T: MarkdownNode>(_ type: T.Type, in node: MarkdownNode) -> Bool {
+            if node is T { return true }
+            return node.children.contains { findNode(type, in: $0) }
+        }
+
+        XCTAssertTrue(findNode(MathNode.self, in: doc), "Diagram-first order should produce MathNode")
+        XCTAssertTrue(findNode(DiagramNode.self, in: doc), "Diagram-first order should produce DiagramNode")
+    }
+
+    func testPluginDoesNotModifyUnrelatedNodes() {
+        let doc = TestHelper.parse("Just a paragraph.", plugins: [DiagramExtractionPlugin()])
+        XCTAssertEqual(doc.children.count, 1)
+        XCTAssertTrue(doc.children[0] is ParagraphNode,
+            "DiagramExtractionPlugin should not modify unrelated paragraph nodes")
+    }
+
+    func testPluginPreservesNodeIDs() {
+        // Parse without plugins first to establish baseline count
+        let withoutPlugins = TestHelper.parse("# Hello\nWorld")
+        let countBefore = withoutPlugins.children.count
+
+        // Parse with a passthrough plugin
+        struct PassthroughPlugin: ASTPlugin {
+            func visit(_ nodes: [MarkdownNode]) -> [MarkdownNode] { nodes }
+        }
+
+        let withPlugin = TestHelper.parse("# Hello\nWorld", plugins: [PassthroughPlugin()])
+        XCTAssertEqual(withPlugin.children.count, countBefore,
+            "Passthrough plugin should not change children count")
+
+        // Each node should still have a unique ID
+        let ids = withPlugin.children.map { $0.id }
+        XCTAssertEqual(Set(ids).count, ids.count, "All node IDs should be unique")
+    }
+
+    func testDetailsAndDiagramPluginComposition() {
+        let markdown = """
+        <details open>
+        <summary>Diagrams</summary>
+
+        ```mermaid
+        graph TD
+        A-->B
+        ```
+        </details>
+        """
+
+        let doc = TestHelper.parse(markdown, plugins: [
+            DetailsExtractionPlugin(),
+            DiagramExtractionPlugin()
+        ])
+
+        guard let details = doc.children.first as? DetailsNode else {
+            XCTFail("Expected DetailsNode as first child")
+            return
+        }
+
+        XCTAssertTrue(details.isOpen, "Details should be open")
+        XCTAssertNotNil(details.summary, "Details should have summary")
+
+        let hasDiagram = details.children.contains { $0 is DiagramNode }
+        XCTAssertTrue(hasDiagram, "Details body should contain DiagramNode")
+    }
 }

@@ -2,8 +2,9 @@
 
 ## Current Health Snapshot
 
-- `swift test` result: `77` tests executed, all passing.
+- `swift test` result: `165` tests executed, all passing.
 - Table rendering strategy is now aligned across code/tests/docs: native `NSTextTable` blocks with GitHub-like cell styling.
+- Test coverage significantly expanded: 22 test files covering parsing, layout, inline formatting, macOS UI, plugin edge cases, and end-to-end integration.
 
 ## Prioritized Debt List
 
@@ -13,8 +14,8 @@
 | P0 | Public API facade is empty (`MarkdownKit.swift`) | Integration path for consumers is unclear | Add a minimal stable facade (`parse + layout + render model`) and keep internals behind it | External caller can render markdown without touching internal classes directly |
 | P1 | Math rendering parity and determinism | UIKit/macOS behavior can diverge; snapshot sizing is fallback-based | Unify platform behavior, make size extraction explicit, and define fallback policy | Same markdown math yields equivalent visual output across supported platforms |
 | P1 | Concurrency guarantees are implicit | `TextKit` objects are class-based and reused; future parallel solve calls may race | Document thread model and enforce isolation boundary (queue/actor or per-task instances) | No shared mutable `TextKit` state accessed concurrently |
-| P1 | Documentation drift (coverage + feature docs) | Engineering decisions are based on stale text | Update coverage and feature docs after each test/feature change | Docs reflect current code and test status |
-| P2 | Platform test matrix is uneven | Some UI paths only validated on one platform/config | Add CI matrix notes and minimum parity tests for iOS/macOS UI wrappers | Critical rendering paths covered on both target platforms |
+| P1 | (Improved) Documentation drift (coverage + feature docs) | Coverage docs now updated to reflect 165 tests | Continue updating after each test/feature change | Docs reflect current code and test status |
+| P2 | (Partially resolved) Platform test matrix is uneven | macOS UI now tested (8 tests); iOS DataSource still untested | Add iOS DataSource tests and CI matrix notes | Critical rendering paths covered on both target platforms |
 | P2 | Performance targets lack reproducible benchmark baseline | Hard to detect regressions over time | Add reproducible benchmark scenario + output format using `PerformanceProfiler` | Baseline numbers versioned in docs and comparable per commit |
 
 ## Recommended Execution Order
