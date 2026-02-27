@@ -203,6 +203,133 @@ enum BenchmarkTieredFixtures {
         }.joined(separator: "\n\n")
     }()
 
+    // MARK: - Task List
+
+    static let taskListSimple =
+        "- [ ] Item one\n- [x] Item two\n- [ ] Item three\n- [x] Item four\n- [ ] Item five"
+
+    static let taskListComplex: String = {
+        (1...30).map { idx in
+            let marker = idx % 3 == 0 ? "[x]" : "[ ]"
+            return "- \(marker) Task \(idx) with **bold** and `inline code`"
+        }.joined(separator: "\n")
+    }()
+
+    static let taskListExtreme: String = {
+        (1...120).map { idx in
+            let marker = idx % 4 == 0 ? "[x]" : "[ ]"
+            return "- \(marker) Task \(idx) with **bold**, *italic*, `code`, and [link](https://x.co/task/\(idx))"
+        }.joined(separator: "\n")
+    }()
+
+    // MARK: - Details
+
+    static let detailsSimple = """
+    <details>
+    <summary>Simple summary</summary>
+
+    One hidden line.
+    </details>
+    """
+
+    static let detailsComplex: String = {
+        (1...8).map { idx in
+            let openFlag = idx % 2 == 0 ? " open" : ""
+            return """
+            <details\(openFlag)>
+            <summary>Section \(idx) summary with **bold**</summary>
+
+            Paragraph \(idx) body with *italic* content and [link](https://x.co/details/\(idx)).
+            </details>
+            """
+        }.joined(separator: "\n\n")
+    }()
+
+    static let detailsExtreme: String = {
+        (1...30).map { idx in
+            let openFlag = idx % 3 == 0 ? " open" : ""
+            return """
+            <details\(openFlag)>
+            <summary>Section \(idx) summary</summary>
+
+            Paragraph \(idx) with **bold**, *italic*, and `inline code`.
+            - [ ] Checklist \(idx).1
+            - [x] Checklist \(idx).2
+
+            </details>
+            """
+        }.joined(separator: "\n\n")
+    }()
+
+    // MARK: - Diagram
+
+    static let diagramSimple = """
+    ```mermaid
+    graph TD
+      A --> B
+    ```
+    """
+
+    static let diagramComplex: String = {
+        let languages = ["mermaid", "geojson", "topojson", "stl"]
+        return (1...12).map { idx in
+            let language = languages[(idx - 1) % languages.count]
+            switch language {
+            case "mermaid":
+                return "```mermaid\ngraph TD\nA\(idx) --> B\(idx)\n```"
+            case "geojson":
+                return "```geojson\n{ \"type\": \"Point\", \"coordinates\": [\(idx), \(idx + 1)] }\n```"
+            case "topojson":
+                return "```topojson\n{ \"type\": \"Topology\", \"objects\": { \"shape\": { \"type\": \"GeometryCollection\", \"geometries\": [] } } }\n```"
+            default:
+                return "```stl\nsolid shape\(idx)\nendsolid\n```"
+            }
+        }.joined(separator: "\n\n")
+    }()
+
+    static let diagramExtreme: String = {
+        let languages = ["mermaid", "geojson", "topojson", "stl"]
+        return (1...60).map { idx in
+            let language = languages[(idx - 1) % languages.count]
+            switch language {
+            case "mermaid":
+                return "```mermaid\ngraph TD\nA\(idx) --> B\(idx)\nB\(idx) --> C\(idx)\n```"
+            case "geojson":
+                return "```geojson\n{ \"type\": \"Point\", \"coordinates\": [\(idx), \(idx + 1)] }\n```"
+            case "topojson":
+                return "```topojson\n{ \"type\": \"Topology\", \"objects\": { \"shape\": { \"type\": \"GeometryCollection\", \"geometries\": [] } } }\n```"
+            default:
+                return "```stl\nsolid shape\(idx)\nendsolid\n```"
+            }
+        }.joined(separator: "\n\n")
+    }()
+
+    // MARK: - Math
+
+    static let mathSimple = "Inline: $a^2 + b^2 = c^2$."
+
+    static let mathComplex: String = {
+        var lines: [String] = []
+        for idx in 1...10 {
+            lines.append("Inline \(idx): $\\frac{\(idx)}{\(idx + 1)} + x_\(idx)$")
+            lines.append("")
+            lines.append("$$\\int_0^{\(idx)} x^2 \\, dx = \\frac{\(idx)^3}{3}$$")
+            lines.append("")
+        }
+        return lines.joined(separator: "\n")
+    }()
+
+    static let mathExtreme: String = {
+        var lines: [String] = []
+        for idx in 1...50 {
+            lines.append("Inline \(idx): $\\sum_{n=1}^{\(idx)} n = \\frac{\(idx)(\(idx) + 1)}{2}$")
+            lines.append("")
+            lines.append("$$\\int_0^{\(idx)} x^3 \\, dx = \\frac{\(idx)^4}{4}$$")
+            lines.append("")
+        }
+        return lines.joined(separator: "\n")
+    }()
+
     // MARK: - Aggregated collection
 
     static let all: [TieredFixture] = [
@@ -250,6 +377,26 @@ enum BenchmarkTieredFixtures {
             ("simple", inlineMixSimple),
             ("complex", inlineMixComplex),
             ("extreme", inlineMixExtreme)
+        ]),
+        ("task-list", [
+            ("simple", taskListSimple),
+            ("complex", taskListComplex),
+            ("extreme", taskListExtreme)
+        ]),
+        ("details", [
+            ("simple", detailsSimple),
+            ("complex", detailsComplex),
+            ("extreme", detailsExtreme)
+        ]),
+        ("diagram", [
+            ("simple", diagramSimple),
+            ("complex", diagramComplex),
+            ("extreme", diagramExtreme)
+        ]),
+        ("math", [
+            ("simple", mathSimple),
+            ("complex", mathComplex),
+            ("extreme", mathExtreme)
         ])
     ]
 }

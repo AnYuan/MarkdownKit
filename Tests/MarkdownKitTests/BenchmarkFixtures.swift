@@ -222,6 +222,79 @@ enum BenchmarkFixtures {
         return lines.joined(separator: "\n")
     }()
 
+    /// 12 collapsible details blocks with mixed summaries/body content.
+    static let detailsHeavy: String = {
+        var lines: [String] = []
+        lines.append("# Details-Heavy Document")
+        lines.append("")
+
+        for idx in 1...12 {
+            let openFlag = idx % 2 == 0 ? " open" : ""
+            lines.append("<details\(openFlag)>")
+            lines.append("<summary>Section \(idx) Summary with **bold** text</summary>")
+            lines.append("")
+            lines.append("Paragraph \(idx) body content with *italic* text and a [link](https://example.com/details/\(idx)).")
+            lines.append("")
+            lines.append("- [ ] Todo item \(idx).1")
+            lines.append("- [x] Todo item \(idx).2")
+            lines.append("")
+            lines.append("</details>")
+            lines.append("")
+        }
+
+        return lines.joined(separator: "\n")
+    }()
+
+    /// 12 diagram fences across all supported diagram languages.
+    static let diagramHeavy: String = {
+        let languages = ["mermaid", "geojson", "topojson", "stl"]
+        var lines: [String] = []
+        lines.append("# Diagram-Heavy Document")
+        lines.append("")
+
+        for idx in 1...12 {
+            let language = languages[(idx - 1) % languages.count]
+            lines.append("## Diagram Block \(idx)")
+            lines.append("")
+            lines.append("```\(language)")
+            switch language {
+            case "mermaid":
+                lines.append("graph TD")
+                lines.append("  A\(idx) --> B\(idx)")
+            case "geojson":
+                lines.append("{ \"type\": \"Point\", \"coordinates\": [\(idx), \(idx + 1)] }")
+            case "topojson":
+                lines.append("{ \"type\": \"Topology\", \"objects\": { \"shape\": { \"type\": \"GeometryCollection\", \"geometries\": [] } } }")
+            default:
+                lines.append("solid shape\(idx)")
+                lines.append("facet normal 0 0 0")
+                lines.append("  outer loop")
+                lines.append("    vertex 0 0 0")
+                lines.append("    vertex 1 0 0")
+                lines.append("    vertex 0 1 0")
+                lines.append("  endloop")
+                lines.append("endfacet")
+                lines.append("endsolid")
+            }
+            lines.append("```")
+            lines.append("")
+        }
+
+        return lines.joined(separator: "\n")
+    }()
+
+    /// 120-item checklist style list with checked/unchecked states.
+    static let taskListHeavy: String = {
+        var lines: [String] = []
+        lines.append("# TaskList-Heavy Document")
+        lines.append("")
+        for idx in 1...120 {
+            let marker = idx.isMultiple(of: 3) ? "[x]" : "[ ]"
+            lines.append("- \(marker) Task item \(idx) with `inline code` and **bold** title")
+        }
+        return lines.joined(separator: "\n")
+    }()
+
     /// All fixtures for iteration.
     static let allFixtures: [(name: String, content: String)] = [
         ("small", small),
@@ -230,6 +303,9 @@ enum BenchmarkFixtures {
         ("code-heavy", codeHeavy),
         ("table-heavy", tableHeavy),
         ("math-heavy", mathHeavy),
+        ("details-heavy", detailsHeavy),
+        ("diagram-heavy", diagramHeavy),
+        ("tasklist-heavy", taskListHeavy),
     ]
 
     // MARK: - Per-node-type isolated fixtures
@@ -300,6 +376,53 @@ enum BenchmarkFixtures {
         (1...20).map { _ in "---" }.joined(separator: "\n\n")
     }()
 
+    /// 12 standalone details blocks with summaries and short bodies.
+    static let detailsOnly: String = {
+        (1...12).map { idx in
+            let openFlag = idx % 2 == 0 ? " open" : ""
+            return """
+            <details\(openFlag)>
+            <summary>Summary \(idx)</summary>
+
+            Body paragraph \(idx) with **bold** text.
+            </details>
+            """
+        }.joined(separator: "\n\n")
+    }()
+
+    /// 12 diagram-only fenced blocks rotating supported languages.
+    static let diagramsOnly: String = {
+        let languages = ["mermaid", "geojson", "topojson", "stl"]
+        return (1...12).map { idx in
+            let language = languages[(idx - 1) % languages.count]
+            switch language {
+            case "mermaid":
+                return "```mermaid\ngraph TD\nA\(idx) --> B\(idx)\n```"
+            case "geojson":
+                return "```geojson\n{ \"type\": \"Point\", \"coordinates\": [\(idx), \(idx + 1)] }\n```"
+            case "topojson":
+                return "```topojson\n{ \"type\": \"Topology\", \"objects\": { \"shape\": { \"type\": \"GeometryCollection\", \"geometries\": [] } } }\n```"
+            default:
+                return "```stl\nsolid s\(idx)\nendsolid\n```"
+            }
+        }.joined(separator: "\n\n")
+    }()
+
+    /// 120 standalone task-list items with mixed completion states.
+    static let taskListsOnly: String = {
+        (1...120).map { idx in
+            let marker = idx.isMultiple(of: 4) ? "[x]" : "[ ]"
+            return "- \(marker) Checklist item \(idx)"
+        }.joined(separator: "\n")
+    }()
+
+    /// 24 block math formulas using `$$...$$` delimiters.
+    static let mathBlocksOnly: String = {
+        (1...24).map { idx in
+            "$$\\int_0^{\(idx)} x^2 \\, dx = \\frac{\(idx)^3}{3}$$"
+        }.joined(separator: "\n\n")
+    }()
+
     /// Keyed collection for per-node-type iteration.
     static let nodeTypeFixtures: [(name: String, content: String)] = [
         ("headers", headersOnly),
@@ -310,6 +433,10 @@ enum BenchmarkFixtures {
         ("blockquotes", blockQuotesOnly),
         ("tables", tablesOnly),
         ("thematic-breaks", thematicBreaksOnly),
+        ("details", detailsOnly),
+        ("diagrams", diagramsOnly),
+        ("task-lists", taskListsOnly),
+        ("math-blocks", mathBlocksOnly),
     ]
 
     // MARK: - Scaling fixtures

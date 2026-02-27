@@ -1,123 +1,144 @@
 # MarkdownKit Benchmark Baseline
 
-**Date**: 2026-02-27
-**Platform**: macOS · arm64 (Apple Silicon)
-**Harness**: BenchmarkHarness (warmup=3, iterations=20, mach_absolute_time)
-**Commit**: `2f0fd51`
+**Date**: 2026-02-27  
+**Platform**: macOS · arm64 (Apple Silicon)  
+**Harness**: `BenchmarkHarness` (warmup=3, iterations=20, `mach_absolute_time`)  
+**Commit**: `123c77b+local`
 
 ## Phase 1: Parse
 
 | Operation | Avg | P50 | P95 | Mem |
 |-----------|-----|-----|-----|-----|
-| parse(small) | 0.24ms | 0.24ms | 0.24ms | 16KB |
-| parse(medium) | 1.63ms | 1.62ms | 1.72ms | 32KB |
-| parse(large) | 12.67ms | 12.45ms | 13.96ms | 32KB |
-| parse(code-heavy) | 0.26ms | 0.26ms | 0.27ms | ~0 |
-| parse(table-heavy) | 12.57ms | 12.40ms | 13.58ms | 32KB |
-| parse(math-heavy) | 0.53ms | 0.52ms | 0.62ms | 16KB |
+| parse(small) | 0.244ms | 0.238ms | 0.288ms | 16KB |
+| parse(medium) | 1.61ms | 1.65ms | 1.75ms | 32KB |
+| parse(large) | 13.17ms | 13.34ms | 13.61ms | 32KB |
+| parse(code-heavy) | 0.266ms | 0.269ms | 0.293ms | ~0 |
+| parse(table-heavy) | 13.24ms | 13.24ms | 13.53ms | 32KB |
+| parse(math-heavy) | 0.565ms | 0.560ms | 0.590ms | 16KB |
+| parse(details-heavy) | 2.19ms | 2.19ms | 2.27ms | 32KB |
+| parse(diagram-heavy) | 0.308ms | 0.299ms | 0.352ms | 48KB |
+| parse(tasklist-heavy) | 7.01ms | 6.96ms | 7.38ms | 32KB |
 
-## Phase 2: Layout (solve)
+## Phase 2: Layout
 
 | Operation | Avg | P50 | P95 | Mem |
 |-----------|-----|-----|-----|-----|
-| solve(small) | 0.62ms | 0.60ms | 0.67ms | 32KB |
-| solve(medium) | 110.9ms | 109.6ms | 118.0ms | 272KB |
-| solve(large) | 28.77ms | 28.63ms | 29.17ms | 32KB |
-| solve(code-heavy) | 14.67ms | 14.64ms | 15.06ms | ~0 |
-| solve(table-heavy) | 16.32ms | 16.31ms | 16.54ms | 16KB |
-| solve(math-heavy) | 57.02ms | 56.66ms | 59.45ms | 608KB |
+| solve(small) | 0.786ms | 0.770ms | 0.928ms | 16KB |
+| solve(medium) | 231.5ms | 231.0ms | 237.4ms | 144KB |
+| solve(large) | 34.60ms | 34.30ms | 36.77ms | 32KB |
+| solve(code-heavy) | 16.85ms | 16.77ms | 17.56ms | ~0 |
+| solve(table-heavy) | 18.87ms | 18.88ms | 19.34ms | 16KB |
+| solve(math-heavy) | 72.07ms | 71.24ms | 75.76ms | 688KB |
+| solve(details-heavy) | 1.86ms | 1.82ms | 2.08ms | ~0 |
+| solve(diagram-heavy) | 6.13ms | 6.08ms | 6.57ms | 144KB |
+| solve(tasklist-heavy) | 7.38ms | 7.37ms | 7.59ms | 16KB |
 
 ## Cache Performance
 
 | Operation | Avg | P50 | P95 | Mem |
 |-----------|-----|-----|-----|-----|
-| solve(cold)(medium) | 113.1ms | 110.0ms | 119.1ms | 160KB |
+| solve(cold)(medium) | 228.1ms | 228.1ms | 232.2ms | 144KB |
 | solve(warm)(medium) | 0.006ms | 0.006ms | 0.007ms | ~0 |
-| getLayout(hit) | <0.001ms | <0.001ms | 0.001ms | ~0 |
-| getLayout(miss) | <0.001ms | <0.001ms | <0.001ms | ~0 |
-| setLayout() | <0.001ms | <0.001ms | 0.001ms | ~0 |
-| clear() | <0.001ms | <0.001ms | <0.001ms | ~0 |
-| solve(tiny-cache, eviction) | 1558ms | 1510ms | 1799ms | 192KB |
-| solve(large-cache, no eviction) | 0.018ms | 0.017ms | 0.022ms | ~0 |
+
+### Cache Eviction Modes
+
+| Operation | Avg | P50 | P95 | Mem |
+|-----------|-----|-----|-----|-----|
+| solve(cold-large)(medium) | 3450.7ms | 3446.8ms | 3480.8ms | 112KB |
+| solve(warm-large)(medium) | 0.039ms | 0.037ms | 0.053ms | ~0 |
+| solve(tiny-thrash)(medium) | 5446.6ms | 6913.0ms | 6961.3ms | 192KB |
+
+### Cache Micro Operations
+
+| Operation | Avg | P50 | P95 | Mem |
+|-----------|-----|-----|-----|-----|
+| getLayout(hit)(medium) | 0.004ms | 0.003ms | 0.012ms | ~0 |
+| getLayout(miss)(medium) | 0.003ms | 0.002ms | 0.003ms | ~0 |
+| setLayout()(medium) | 0.002ms | 0.002ms | 0.003ms | ~0 |
+| clear()(medium) | 0.000ms | 0.000ms | 0.000ms | ~0 |
 
 ## Per-Node-Type Layout
 
 | Node Type | Avg | P50 | P95 | Mem |
 |-----------|-----|-----|-----|-----|
-| headers (20 H1-H3) | 1.46ms | 1.47ms | 1.83ms | ~0 |
-| paragraphs (20 mixed) | 2.55ms | 2.53ms | 2.74ms | ~0 |
-| code-blocks (5×15 lines) | 15.27ms | 15.20ms | 15.58ms | 32KB |
-| unordered-lists (5×8) | 1.54ms | 1.53ms | 1.60ms | 32KB |
-| ordered-lists (5×8) | 1.57ms | 1.57ms | 1.62ms | ~0 |
-| blockquotes (15) | 1.60ms | 1.58ms | 1.67ms | ~0 |
-| tables (3×4×10) | 2.86ms | 2.83ms | 3.06ms | 32KB |
-| thematic-breaks (20) | 0.94ms | 0.91ms | 1.10ms | ~0 |
+| headers | 1.58ms | 1.56ms | 1.79ms | 32KB |
+| paragraphs | 2.90ms | 2.86ms | 3.21ms | 32KB |
+| code-blocks | 17.09ms | 17.13ms | 17.63ms | 32KB |
+| unordered-lists | 1.83ms | 1.80ms | 2.00ms | 16KB |
+| ordered-lists | 1.80ms | 1.79ms | 1.95ms | ~0 |
+| blockquotes | 1.84ms | 1.80ms | 1.97ms | ~0 |
+| tables | 3.36ms | 3.35ms | 3.73ms | 16KB |
+| thematic-breaks | 1.10ms | 1.08ms | 1.22ms | 16KB |
+| details | 1.01ms | 1.00ms | 1.11ms | ~0 |
+| diagrams | 3.91ms | 3.84ms | 4.65ms | 112KB |
+| task-lists | 3.77ms | 3.73ms | 4.31ms | ~0 |
+| math-blocks | 99.61ms | 99.71ms | 101.8ms | 224KB |
 
 ## Per-Syntax Tiered (simple / complex / extreme)
 
 | Syntax | Simple | Complex | Extreme | Extreme Mem |
 |--------|--------|---------|---------|-------------|
-| header | 0.045ms | 0.52ms | 3.86ms | ~0 |
-| paragraph | 0.043ms | 0.45ms | 6.74ms | ~0 |
-| code-block | 0.66ms | 11.9ms | 224ms | 48KB |
-| unordered-list | 0.13ms | 1.14ms | 7.29ms | 112KB |
-| ordered-list | 0.14ms | 1.34ms | 7.23ms | ~0 |
-| blockquote | 0.061ms | 0.46ms | 4.39ms | ~0 |
-| table | 0.21ms | 1.82ms | 12.1ms | 32KB |
-| thematic-break | 0.056ms | 0.43ms | 2.13ms | ~0 |
-| inline-mix | 0.055ms | 0.44ms | 2.53ms | ~0 |
+| header | 0.050ms | 0.552ms | 4.38ms | ~0 |
+| paragraph | 0.045ms | 0.494ms | 7.49ms | ~0 |
+| code-block | 0.732ms | 12.97ms | 248.1ms | 64KB |
+| unordered-list | 0.146ms | 1.38ms | 8.56ms | 96KB |
+| ordered-list | 0.150ms | 1.59ms | 8.58ms | 32KB |
+| blockquote | 0.069ms | 0.499ms | 4.97ms | 16KB |
+| table | 0.288ms | 2.04ms | 14.26ms | 32KB |
+| thematic-break | 0.053ms | 0.484ms | 2.43ms | 16KB |
+| inline-mix | 0.059ms | 0.506ms | 3.03ms | ~0 |
+| task-list | 0.221ms | 2.05ms | 11.23ms | ~0 |
+| details | 0.053ms | 0.772ms | 3.37ms | 16KB |
+| diagram | 0.186ms | 3.79ms | 19.47ms | ~0 |
+| math | 3.01ms | 67.97ms | 447.8ms | 112KB |
 
 ## Input Size Scaling
 
 | Lines | Parse | Layout | Combined |
 |-------|-------|--------|----------|
-| 10 | 1.56ms | 1.46ms | ~3ms |
-| 50 | 4.04ms | 4.70ms | ~9ms |
-| 200 | 16.2ms | 18.2ms | ~34ms |
-| 1000 | 81.9ms | 89.4ms | ~171ms |
+| 10 | 0.915ms | 1.39ms | ~2.3ms |
+| 50 | 4.47ms | 5.35ms | ~9.8ms |
+| 200 | 17.80ms | 20.47ms | ~38.3ms |
+| 1000 | 87.92ms | 96.30ms | ~184.2ms |
 
-Scaling characteristic: **O(n)** — both parse and layout scale linearly with input size.
+Scaling characteristic: **O(n)** for both parse and layout.
 
 ## Width Scaling (medium fixture)
 
 | Width | Avg | P95 |
 |-------|-----|-----|
-| 320px | 117.3ms | 120.3ms |
-| 600px | 116.0ms | 121.5ms |
-| 800px | 111.6ms | 117.7ms |
-| 1024px | 115.5ms | 121.6ms |
+| 320px | 233.2ms | 236.1ms |
+| 600px | 232.8ms | 236.3ms |
+| 800px | 233.2ms | 237.0ms |
+| 1024px | 228.2ms | 232.8ms |
 
-Width has negligible impact on layout performance.
+Width impact remains low for this fixture.
 
-## Plugin Composition (large fixture)
+## Plugin Composition (Parse Avg)
 
-| Config | Avg | Delta |
-|--------|-----|-------|
-| 0 plugins | 6.31ms | — |
-| 1 plugin (math) | 8.24ms | +1.93ms |
-| 2 plugins (math+diagram) | 9.38ms | +1.14ms |
-| 3 plugins (all) | 12.41ms | +3.03ms |
-
-Each plugin adds ~1-3ms marginal cost on the large fixture.
+| Fixture | 0 plugins | 1 plugin | 2 plugins | 3 plugins |
+|---------|-----------|----------|-----------|-----------|
+| large | 6.88ms | 9.07ms | 10.08ms | 13.25ms |
+| math-heavy | 0.268ms | 0.384ms | 0.418ms | 0.569ms |
+| diagram-heavy | 0.165ms | 0.194ms | 0.218ms | 0.277ms |
+| details-heavy | 0.825ms | 1.06ms | 1.15ms | 2.14ms |
 
 ## Concurrency
 
 | Mode | Avg | Speedup |
 |------|-----|---------|
-| sequential 4x (medium) | 462.7ms | 1.0x |
-| concurrent 4x (medium) | 119.4ms | 3.9x |
+| sequential-4x (medium) | 943.0ms | 1.0x |
+| concurrent-4x (medium) | 237.5ms | 4.0x |
+| sequential-8x (large) | 333.8ms | 1.0x |
+| concurrent-8x (large) | 105.7ms | 3.2x |
 
-Near-linear concurrency speedup on 4 parallel layout solves.
+## Notes
 
-## Key Observations
-
-1. **Code-block rendering is the primary bottleneck** — Splash syntax highlighting dominates at 224ms for extreme tier (10 blocks × 100 lines), while paragraph extreme is only 6.7ms.
-2. **Cache is effectively free** — hit/miss/set/clear all <0.001ms. Warm cache eliminates 99.99% of solve cost.
-3. **Cache eviction is catastrophic** — tiny cache (countLimit=10) causes 1.5s vs 0.018ms with large cache. The default 100k limit is well-chosen.
-4. **Math rendering is memory-intensive** — 608KB peak for math-heavy fixture due to MathJax/WKWebView rasterization.
-5. **Tables scale sub-linearly** — 10×50 extreme table at 12ms, not disproportionately expensive.
-6. **Pipeline is O(n)** — confirmed linear scaling from 10 to 1000 lines for both parse and layout.
-7. **Width is irrelevant** — 320px to 1024px shows <5% variance in layout time.
+1. MathJax emitted repeated warnings for `\binom` in `math-heavy` (`Undefined control sequence`).  
+2. Benchmark regression gating is enforced in `BenchmarkRegressionGuard` with:
+   - `maxSlowdownFactor = 3.0`
+   - `absoluteSlackMs = 5.0`
+3. This baseline was produced from a local working tree (`+local`).
 
 ## Reproduction
 

@@ -52,6 +52,8 @@ final class MarkdownKitBenchmarkTests: XCTestCase {
         // Individual plugin benchmarks on targeted fixtures
         let pluginFixtures: [(String, String)] = [
             ("math-heavy", BenchmarkFixtures.mathHeavy),
+            ("diagram-heavy", BenchmarkFixtures.diagramHeavy),
+            ("details-heavy", BenchmarkFixtures.detailsHeavy),
             ("large", BenchmarkFixtures.large),
         ]
 
@@ -242,6 +244,12 @@ final class MarkdownKitBenchmarkTests: XCTestCase {
         )
 
         BenchmarkReportFormatter.printReport(
+            parseResults: parseResults,
+            layoutResults: layoutResults,
+            cacheResults: cacheResults
+        )
+
+        BenchmarkRegressionGuard.assertCoreReport(
             parseResults: parseResults,
             layoutResults: layoutResults,
             cacheResults: cacheResults

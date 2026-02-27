@@ -23,7 +23,7 @@ final class BenchmarkNodeTypeTests: XCTestCase {
     /// Measures layout cost for each block-level node type in isolation.
     func testPerNodeTypeComparison() async {
         var results: [BenchmarkResult] = []
-        let parser = MarkdownParser(plugins: [])
+        let parser = MarkdownParser(plugins: defaultPlugins)
 
         for (name, content) in BenchmarkFixtures.nodeTypeFixtures {
             let doc = parser.parse(content)
@@ -45,7 +45,7 @@ final class BenchmarkNodeTypeTests: XCTestCase {
     /// Uses a shared solver per syntax group to avoid TextKit resource exhaustion
     /// when creating hundreds of TextKitCalculator instances in a single test.
     func testPerSyntaxTieredBenchmark() async {
-        let parser = MarkdownParser(plugins: [])
+        let parser = MarkdownParser(plugins: defaultPlugins)
         let tieredHarness = BenchmarkHarness(warmup: 2, iterations: 10)
         var sections: [(title: String, results: [BenchmarkResult])] = []
 
@@ -160,24 +160,22 @@ final class BenchmarkNodeTypeTests: XCTestCase {
             ])
         ]
 
-        // Test on large fixture (broad content)
-        for (name, plugins) in configurations {
-            let parser = MarkdownParser(plugins: plugins)
-            results.append(
-                harness.measure(label: "parse", fixture: "large/\(name)") {
-                    _ = parser.parse(BenchmarkFixtures.large)
-                }
-            )
-        }
+        let fixtureScenarios: [(name: String, content: String)] = [
+            ("large", BenchmarkFixtures.large),
+            ("math-heavy", BenchmarkFixtures.mathHeavy),
+            ("diagram-heavy", BenchmarkFixtures.diagramHeavy),
+            ("details-heavy", BenchmarkFixtures.detailsHeavy)
+        ]
 
-        // Test on math-heavy fixture (math plugin has real work)
-        for (name, plugins) in configurations {
-            let parser = MarkdownParser(plugins: plugins)
-            results.append(
-                harness.measure(label: "parse", fixture: "math/\(name)") {
-                    _ = parser.parse(BenchmarkFixtures.mathHeavy)
-                }
-            )
+        for scenario in fixtureScenarios {
+            for (name, plugins) in configurations {
+                let parser = MarkdownParser(plugins: plugins)
+                results.append(
+                    harness.measure(label: "parse", fixture: "\(scenario.name)/\(name)") {
+                        _ = parser.parse(scenario.content)
+                    }
+                )
+            }
         }
 
         BenchmarkReportFormatter.printSections([
@@ -188,54 +186,45 @@ final class BenchmarkNodeTypeTests: XCTestCase {
     // MARK: - Concurrent Solve Stress
 
     /// Measures concurrent vs sequential solve to reveal parallelism benefit and contention.
-    /// Each concurrent task parses its own copy to satisfy Sendable requirements.
+    /// Sequential and concurrent modes intentionally run the same parse+solve workload.
     func testConcurrentSolveStress() async {
         var results: [BenchmarkResult] = []
-        let content = BenchmarkFixtures.medium
+        let mediumWidths: [CGFloat] = [320, 600, 800, 1024]
+        let largeWidths: [CGFloat] = [300, 400, 500, 600, 700, 800, 900, 1000]
 
-        // Sequential baseline: 4 solves at different widths
         results.append(
             await harness.measureAsync(label: "sequential-4x", fixture: "medium") {
-                let parser = MarkdownParser()
-                let doc = parser.parse(content)
-                for width in [320.0, 600.0, 800.0, 1024.0] as [CGFloat] {
-                    let solver = LayoutSolver(cache: LayoutCache())
-                    _ = await solver.solve(node: doc, constrainedToWidth: width)
-                }
+                await runSequentialParseAndSolve(
+                    content: BenchmarkFixtures.medium,
+                    widths: mediumWidths
+                )
             }
         )
 
-        // Concurrent 4-way (each task parses independently)
         results.append(
             await harness.measureAsync(label: "concurrent-4x", fixture: "medium") {
-                await withTaskGroup(of: Void.self) { group in
-                    for width in [320.0, 600.0, 800.0, 1024.0] as [CGFloat] {
-                        group.addTask {
-                            let parser = MarkdownParser()
-                            let doc = parser.parse(content)
-                            let solver = LayoutSolver(cache: LayoutCache())
-                            _ = await solver.solve(node: doc, constrainedToWidth: width)
-                        }
-                    }
-                }
+                await runConcurrentParseAndSolve(
+                    content: BenchmarkFixtures.medium,
+                    widths: mediumWidths
+                )
             }
         )
 
-        // Concurrent 8-way on large fixture
-        let largeContent = BenchmarkFixtures.large
+        results.append(
+            await harness.measureAsync(label: "sequential-8x", fixture: "large") {
+                await runSequentialParseAndSolve(
+                    content: BenchmarkFixtures.large,
+                    widths: largeWidths
+                )
+            }
+        )
+
         results.append(
             await harness.measureAsync(label: "concurrent-8x", fixture: "large") {
-                await withTaskGroup(of: Void.self) { group in
-                    for idx in 0..<8 {
-                        let width = CGFloat(300 + idx * 100)
-                        group.addTask {
-                            let parser = MarkdownParser()
-                            let doc = parser.parse(largeContent)
-                            let solver = LayoutSolver(cache: LayoutCache())
-                            _ = await solver.solve(node: doc, constrainedToWidth: width)
-                        }
-                    }
-                }
+                await runConcurrentParseAndSolve(
+                    content: BenchmarkFixtures.large,
+                    widths: largeWidths
+                )
             }
         )
 
@@ -249,10 +238,9 @@ final class BenchmarkNodeTypeTests: XCTestCase {
     /// Runs all deep benchmarks and outputs a single combined report.
     func testDeepBenchmarkFullReport() async {
         let parser = MarkdownParser(plugins: defaultPlugins)
-        let parserNoPlugins = MarkdownParser(plugins: [])
         let medDoc = parser.parse(BenchmarkFixtures.medium)
 
-        let nodeTypeResults = await benchmarkNodeTypes(parser: parserNoPlugins)
+        let nodeTypeResults = await benchmarkNodeTypes(parser: parser)
         let widthResults = await benchmarkWidths(doc: medDoc)
         let (sizeParseResults, sizeLayoutResults) = await benchmarkSizeScaling(parser: parser)
         let pluginResults = benchmarkPlugins()
@@ -266,6 +254,8 @@ final class BenchmarkNodeTypeTests: XCTestCase {
             ("Plugin Composition", pluginResults),
             ("Concurrency Stress", concurrencyResults)
         ])
+
+        BenchmarkRegressionGuard.assertDeepReport(concurrencyResults: concurrencyResults)
     }
 
     // MARK: - Full Report Helpers
@@ -327,44 +317,90 @@ final class BenchmarkNodeTypeTests: XCTestCase {
             ("2-plugins", [MathExtractionPlugin(), DiagramExtractionPlugin()]),
             ("3-plugins", defaultPlugins)
         ]
-        for (name, plugins) in pluginConfigs {
-            let pluginParser = MarkdownParser(plugins: plugins)
-            results.append(
-                harness.measure(label: "parse", fixture: name) {
-                    _ = pluginParser.parse(BenchmarkFixtures.large)
-                }
-            )
+
+        let fixtureScenarios: [(name: String, content: String)] = [
+            ("large", BenchmarkFixtures.large),
+            ("math-heavy", BenchmarkFixtures.mathHeavy),
+            ("diagram-heavy", BenchmarkFixtures.diagramHeavy),
+            ("details-heavy", BenchmarkFixtures.detailsHeavy)
+        ]
+
+        for scenario in fixtureScenarios {
+            for (name, plugins) in pluginConfigs {
+                let pluginParser = MarkdownParser(plugins: plugins)
+                results.append(
+                    harness.measure(label: "parse", fixture: "\(scenario.name)/\(name)") {
+                        _ = pluginParser.parse(scenario.content)
+                    }
+                )
+            }
         }
         return results
     }
 
     private func benchmarkConcurrency() async -> [BenchmarkResult] {
-        let content = BenchmarkFixtures.medium
         var results: [BenchmarkResult] = []
+        let mediumWidths: [CGFloat] = [320, 600, 800, 1024]
+        let largeWidths: [CGFloat] = [300, 400, 500, 600, 700, 800, 900, 1000]
+
         results.append(
             await harness.measureAsync(label: "sequential-4x", fixture: "medium") {
-                let parser = MarkdownParser()
-                let doc = parser.parse(content)
-                for width in [320.0, 600.0, 800.0, 1024.0] as [CGFloat] {
+                await runSequentialParseAndSolve(
+                    content: BenchmarkFixtures.medium,
+                    widths: mediumWidths
+                )
+            }
+        )
+
+        results.append(
+            await harness.measureAsync(label: "concurrent-4x", fixture: "medium") {
+                await runConcurrentParseAndSolve(
+                    content: BenchmarkFixtures.medium,
+                    widths: mediumWidths
+                )
+            }
+        )
+
+        results.append(
+            await harness.measureAsync(label: "sequential-8x", fixture: "large") {
+                await runSequentialParseAndSolve(
+                    content: BenchmarkFixtures.large,
+                    widths: largeWidths
+                )
+            }
+        )
+
+        results.append(
+            await harness.measureAsync(label: "concurrent-8x", fixture: "large") {
+                await runConcurrentParseAndSolve(
+                    content: BenchmarkFixtures.large,
+                    widths: largeWidths
+                )
+            }
+        )
+
+        return results
+    }
+
+    private func runSequentialParseAndSolve(content: String, widths: [CGFloat]) async {
+        for width in widths {
+            let parser = MarkdownParser()
+            let doc = parser.parse(content)
+            let solver = LayoutSolver(cache: LayoutCache())
+            _ = await solver.solve(node: doc, constrainedToWidth: width)
+        }
+    }
+
+    private func runConcurrentParseAndSolve(content: String, widths: [CGFloat]) async {
+        await withTaskGroup(of: Void.self) { group in
+            for width in widths {
+                group.addTask {
+                    let parser = MarkdownParser()
+                    let doc = parser.parse(content)
                     let solver = LayoutSolver(cache: LayoutCache())
                     _ = await solver.solve(node: doc, constrainedToWidth: width)
                 }
             }
-        )
-        results.append(
-            await harness.measureAsync(label: "concurrent-4x", fixture: "medium") {
-                await withTaskGroup(of: Void.self) { group in
-                    for width in [320.0, 600.0, 800.0, 1024.0] as [CGFloat] {
-                        group.addTask {
-                            let parser = MarkdownParser()
-                            let doc = parser.parse(content)
-                            let solver = LayoutSolver(cache: LayoutCache())
-                            _ = await solver.solve(node: doc, constrainedToWidth: width)
-                        }
-                    }
-                }
-            }
-        )
-        return results
+        }
     }
 }

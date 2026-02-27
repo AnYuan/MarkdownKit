@@ -47,11 +47,51 @@ This execution wave prioritizes automated verification before adding more featur
 1. Add snapshot coverage for tables, code blocks, inline code, details, and math where feasible.
 2. Keep snapshots versioned and reviewable in PRs.
 
+### Phase F: Benchmark Hardening & Regression Gates
+**Goal**: make benchmark suites complete, comparable, and CI-enforceable.
+1. Add missing benchmark fixtures for plugin-hit scenarios:
+   - `details-heavy`
+   - `diagram-heavy`
+   - `tasklist-heavy`
+   - math-focused tier fixtures
+2. Extend per-node-type and tiered benchmarks to include plugin-backed syntax families:
+   - details
+   - diagrams
+   - task lists
+   - math
+3. Add benchmark regression assertions with versioned baseline thresholds:
+   - compare measured metrics against baseline budget
+   - fail test on significant regression
+   - keep baseline update path explicit
+4. Split cache benchmarks into clear modes:
+   - cold-per-iteration
+   - warm-hit-only
+   - eviction-thrash
+5. Normalize concurrency benchmark methodology:
+   - align sequential vs concurrent measurement scope
+   - include 1/2/4/8 worker scaling in full-report path
+6. Keep deep/full benchmark report feature-complete (no scenario drop between ad-hoc and full-report tests).
+
+**Status (2026-02-27)**: In progress
+- [x] F1. Add missing fixtures and wire them into benchmark suites
+- [x] F2. Add baseline guard assertions for benchmark regression gating
+- [x] F3. Refactor cache benchmarks to isolate cold/warm/eviction paths
+- [x] F4. Refactor concurrency benchmarks for apples-to-apples comparisons
+- [x] F5. Refresh benchmark baseline docs after rerun
+
+**Task Breakdown (Execution Order)**
+1. Add fixture/model changes (`BenchmarkFixtures`, `BenchmarkTieredFixtures`).
+2. Expand benchmark coverage (`MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`).
+3. Introduce regression guard utility + threshold table in tests.
+4. Update cache/concurrency benchmark implementations and labels.
+5. Run focused benchmark tests, tune thresholds, then update baseline docs.
+
 ### Delivery Order (Implement One by One)
 1. Phase B (Syntax matrix harness)
 2. Phase C (Known regression pack)
 3. Phase D (Stress reliability)
 4. Phase E (Visual baselines)
+5. Phase F (Benchmark hardening & regression gates)
 
 ## Phase 1: Core Parsing Engine
 **Goal**: Integrate `swift-markdown` and construct our proprietary, thread-safe Abstract Syntax Tree (AST) models.
