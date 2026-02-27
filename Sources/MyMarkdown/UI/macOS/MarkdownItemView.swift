@@ -40,7 +40,7 @@ public class MarkdownItemView: NSCollectionViewItem {
         let textField = NSTextField(frame: NSRect(origin: .zero, size: layout.size))
         textField.attributedStringValue = attrString
         textField.isEditable = false
-        textField.isSelectable = true
+        textField.isSelectable = false
         textField.isBordered = false
         textField.drawsBackground = false
         textField.lineBreakMode = .byWordWrapping
