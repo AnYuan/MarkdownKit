@@ -16,7 +16,10 @@ public struct MathNode: MarkdownNode {
     
     /// The raw LaTeX equation content to be evaluated.
     public let equation: String
-    
+
+    /// Convenience accessor used by LayoutSolver for baseline alignment.
+    public var isInline: Bool { style == .inline }
+
     public var children: [MarkdownNode] {
         return [] // Math nodes evaluate raw mathematical strings, no children
     }
