@@ -540,9 +540,7 @@ public final class LayoutSolver {
                 paragraphStyle.textBlocks = [block]
                 paragraphStyle.paragraphSpacing = 0
                 paragraphStyle.paragraphSpacingBefore = 0
-                paragraphStyle.alignment = textAlignment(
-                    for: table.columnAlignments[safe: columnIndex] ?? nil
-                )
+                paragraphStyle.alignment = .center
 
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: row.isHead ? headerFont : cellFont,
@@ -592,17 +590,6 @@ public final class LayoutSolver {
             return .clear
         }
         return theme.tableColor.background.withAlphaComponent(0.45)
-    }
-
-    private func textAlignment(for alignment: TableAlignment?) -> NSTextAlignment {
-        switch alignment {
-        case .right:
-            return .right
-        case .center:
-            return .center
-        case .left, .none:
-            return .left
-        }
     }
 
     private func normalizedTableRows(from table: TableNode) -> [(cells: [String], isHead: Bool)] {
@@ -660,12 +647,5 @@ public final class LayoutSolver {
         default:
             return node.children.map { flattenInlineText(from: $0) }.joined()
         }
-    }
-}
-
-private extension Array {
-    subscript(safe index: Int) -> Element? {
-        guard indices.contains(index) else { return nil }
-        return self[index]
     }
 }

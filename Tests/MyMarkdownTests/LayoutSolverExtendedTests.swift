@@ -123,6 +123,37 @@ final class LayoutSolverExtendedTests: XCTestCase {
         XCTAssertTrue(foundCenterAlignedCell, "Expected center alignment to be propagated to paragraph style")
     }
 
+    func testTableLayoutCentersAllCellContent() async throws {
+        let markdown = """
+        | Feature | Status | Priority |
+        |:--------|:------:|--------:|
+        | Parsing | Done   | High    |
+        | Math    | WIP    | Medium  |
+        """
+        let layout = await TestHelper.solveLayout(markdown, width: 700)
+        let tableLayout = layout.children[0]
+
+        guard let attrStr = tableLayout.attributedString else {
+            XCTFail("Table layout missing attributed string")
+            return
+        }
+
+        var checkedTableParagraphs = 0
+        attrStr.enumerateAttribute(
+            .paragraphStyle,
+            in: NSRange(location: 0, length: attrStr.length)
+        ) { value, _, _ in
+            guard let style = value as? NSParagraphStyle else { return }
+            let hasTableBlock = style.textBlocks.contains { $0 is NSTextTableBlock }
+            guard hasTableBlock else { return }
+
+            checkedTableParagraphs += 1
+            XCTAssertEqual(style.alignment, .center)
+        }
+
+        XCTAssertGreaterThan(checkedTableParagraphs, 0, "Expected table cells to carry paragraph styles")
+    }
+
     func testTableLayoutAppliesHeaderAndAlternatingRowBackgrounds() async throws {
         let markdown = """
         | Col A | Col B |
