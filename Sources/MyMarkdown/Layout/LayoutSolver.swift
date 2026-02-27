@@ -83,26 +83,7 @@ public final class LayoutSolver {
         
         switch node {
         case let table as TableNode:
-            let colCount = max(1, table.columnAlignments.count)
-            let colWidth = maxWidth / CGFloat(colCount)
-            
-            let paragraphStyle = NSMutableParagraphStyle()
-            var tabs: [NSTextTab] = []
-            for i in 1...colCount {
-                let alignment: NSTextAlignment
-                let align = i <= table.columnAlignments.count ? table.columnAlignments[i-1] : nil
-                switch align {
-                case .right: alignment = .right
-                case .center: alignment = .center
-                default: alignment = .left
-                }
-                let tab = NSTextTab(textAlignment: alignment, location: colWidth * CGFloat(i), options: [:])
-                tabs.append(tab)
-            }
-            paragraphStyle.tabStops = tabs
-            paragraphStyle.defaultTabInterval = colWidth
-
-            string.append(buildTableAttributedString(from: table, paragraphStyle: paragraphStyle))
+            string.append(buildTableAttributedString(from: table))
             
         case let header as HeaderNode:
             let token = themeToken(forHeaderLevel: header.level)
@@ -374,48 +355,62 @@ public final class LayoutSolver {
     }
 
     // MARK: - Table Helper
-    private func buildTableAttributedString(from table: TableNode, paragraphStyle: NSParagraphStyle) -> NSAttributedString {
+    private func buildTableAttributedString(from table: TableNode) -> NSAttributedString {
         let result = NSMutableAttributedString()
-        let boldFont = fontWithTrait(theme.paragraph.font, trait: .bold)
+        let monoFont = Font.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let boldMono = Font.monospacedSystemFont(ofSize: 13, weight: .bold)
 
-        let headAttrs: [NSAttributedString.Key: Any] = [
-            .font: boldFont,
-            .paragraphStyle: paragraphStyle,
-            .foregroundColor: theme.textColor.foreground
-        ]
-        let bodyAttrs: [NSAttributedString.Key: Any] = [
-            .font: theme.paragraph.font,
-            .paragraphStyle: paragraphStyle,
-            .foregroundColor: theme.textColor.foreground
-        ]
-
+        // First pass: collect all cell text and find max column widths
+        var allRows: [(cells: [String], isHead: Bool)] = []
         for section in table.children {
             let isHead = section is TableHeadNode
-            let sectionChildren = (section as? TableHeadNode)?.children ?? (section as? TableBodyNode)?.children ?? []
-            for row in sectionChildren {
-                let rowChildren = (row as? TableRowNode)?.children ?? []
-                var cells: [String] = []
-                for cell in rowChildren {
-                    let cellChildren = (cell as? TableCellNode)?.children ?? []
-                    var cellText = ""
-                    for cellChild in cellChildren {
-                        if let textNode = cellChild as? TextNode {
-                            cellText += textNode.text
-                        }
-                    }
-                    cells.append(cellText)
+            let rows = (section as? TableHeadNode)?.children
+                ?? (section as? TableBodyNode)?.children ?? []
+            for row in rows {
+                let cells = (row as? TableRowNode)?.children ?? []
+                let texts = cells.map { cell -> String in
+                    let children = (cell as? TableCellNode)?.children ?? []
+                    return children.compactMap { ($0 as? TextNode)?.text }.joined()
                 }
-                let rowText = cells.joined(separator: "\t")
-                result.append(NSAttributedString(string: rowText + "\n", attributes: isHead ? headAttrs : bodyAttrs))
+                allRows.append((cells: texts, isHead: isHead))
             }
-            if isHead {
-                let separator = String(repeating: "─", count: 40)
+        }
+
+        let colCount = allRows.map(\.cells.count).max() ?? 0
+        guard colCount > 0 else { return result }
+
+        // Calculate column widths (min 8, padded by 2)
+        var colWidths = [Int](repeating: 8, count: colCount)
+        for row in allRows {
+            for (col, text) in row.cells.enumerated() where col < colCount {
+                colWidths[col] = max(colWidths[col], text.count + 2)
+            }
+        }
+
+        let baseAttrs: [NSAttributedString.Key: Any] = [
+            .font: monoFont,
+            .foregroundColor: theme.textColor.foreground
+        ]
+        let headAttrs: [NSAttributedString.Key: Any] = [
+            .font: boldMono,
+            .foregroundColor: theme.textColor.foreground
+        ]
+
+        for (rowIdx, row) in allRows.enumerated() {
+            let attrs = row.isHead ? headAttrs : baseAttrs
+            var line = ""
+            for (col, text) in row.cells.enumerated() where col < colCount {
+                line += text.padding(toLength: colWidths[col], withPad: " ", startingAt: 0)
+            }
+            result.append(NSAttributedString(string: line + "\n", attributes: attrs))
+
+            // Add separator after header row
+            if row.isHead {
+                let sep = colWidths.map { String(repeating: "─", count: $0) }.joined()
                 let sepAttrs: [NSAttributedString.Key: Any] = [
-                    .font: theme.paragraph.font,
-                    .paragraphStyle: paragraphStyle,
-                    .foregroundColor: Color.gray
+                    .font: monoFont, .foregroundColor: Color.gray
                 ]
-                result.append(NSAttributedString(string: separator + "\n", attributes: sepAttrs))
+                result.append(NSAttributedString(string: sep + "\n", attributes: sepAttrs))
             }
         }
         return result
