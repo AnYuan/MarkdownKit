@@ -1,6 +1,6 @@
 import Foundation
 
-public protocol DiagramRenderingAdapter {
+public protocol DiagramRenderingAdapter: Sendable {
     func render(source: String, language: DiagramLanguage) async -> NSAttributedString?
 }
 

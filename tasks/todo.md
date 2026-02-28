@@ -40,7 +40,7 @@
 - [x] Implement `Texture`-style Display State logic: Asynchronously decode image data to `CGImage` on background thread
 - [x] Implement `Texture`-style Display State logic: Mount views onto main thread only when visible
 - [x] Implement `Texture`-style Display State logic: Purge memory-heavy backing stores when offscreen
-- [/] Add Unit Tests: Verify node virtualization limits memory consumption
+- [x] Add Unit Tests: Verify node virtualization limits memory consumption
 
 ## Phase 4: Extended Features (ChatGPT Parity)
 - [x] Integrate native "Copy Paste" UX for Code Blocks
@@ -88,3 +88,22 @@
 - [x] Robustness: Implement recursive depth limits (e.g., max 50 levels) in `MarkdownKitVisitor` and node traversal plugins to prevent Stack Overflows
 - [x] Robustness: Integrate a Fuzz testing suite (or permutation script testing) to ensure zero-crash parsing on hostile randomly generated markdown payloads
 - [x] Quality Assurance: Integrate `swift-snapshot-testing` framework and produce baseline reference images for core syntax element rendering (headers, tables, math, details) into UI tests
+- [x] Fix compiler warnings: Explicitly declare or exclude `__Snapshots__` resources in `Package.swift`
+
+## Phase 8: Diagram Rendering (Mermaid Support)
+- [x] Create `DiagramAdapter` protocol and plugin architecture
+- [x] Implement `MermaidDiagramAdapter` utilizing a lightweight headless WKWebView
+- [x] Add loading state, error fallback, and dynamic resizing for Mermaid diagram containers
+- [x] Add UI Snapshot Coverage for rendered mermaid diagrams
+
+
+## Phase 9: Accessibility (VoiceOver) Parity
+- [x] Audit virtualized `MarkdownTextView` blocks and define `UIAccessibilityElement` / `NSAccessibilityElement` boundaries
+- [x] Implement accessibility reading order for linear text content despite virtualized layouts
+- [x] Add accessibility traits for interactive nodes (Links, Interactive Tasklists, Math Blocks)
+- [x] Add VoiceOver announcements for complex structures (Tables, Code Blocks)
+
+## Phase 10: Developer Experience & Documentation (DocC)
+- [x] Adopt modern Swift documentation comments (`///`) across all public APIs and components
+- [x] Create structured DocC Tutorial articles covering: "Getting Started", "Customizing Theme", and "Writing an AST Plugin"
+- [x] Generate DocC archive and verify documentation coverage

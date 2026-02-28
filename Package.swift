@@ -47,6 +47,9 @@ let package = Package(
                 "MarkdownKit",
                 .product(name: "SnapshotTesting", package: "swift-snapshot-testing")
             ],
+            exclude: [
+                "__Snapshots__"
+            ],
             resources: [
                 .copy("Fixtures")
             ]

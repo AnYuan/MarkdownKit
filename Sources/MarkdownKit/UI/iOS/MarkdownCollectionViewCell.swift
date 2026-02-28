@@ -18,9 +18,13 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
     
     public override func prepareForReuse() {
         super.prepareForReuse()
-        // Texture principle: aggressively purge backing stores and views when offscreen
         hostedView?.removeFromSuperview()
         hostedView = nil
+        
+        self.isAccessibilityElement = false
+        self.accessibilityLabel = nil
+        self.accessibilityValue = nil
+        self.accessibilityTraits = .none
     }
     
     /// Mounts the pre-calculated `LayoutResult` onto the main thread.
@@ -47,6 +51,17 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
             self.contentView.addSubview(textView)
             self.hostedView = textView
             textView.configure(with: layout)
+        }
+        
+        // Configure Accessibility on the CollectionViewCell itself to allow
+        // VoiceOver to read sequentially over the virtualized UI list.
+        self.isAccessibilityElement = true
+        self.accessibilityTraits = PlatformAccessibility.accessibilityTraits(for: layout)
+        if let label = PlatformAccessibility.accessibilityLabel(for: layout) {
+            self.accessibilityLabel = label
+        }
+        if let value = PlatformAccessibility.accessibilityValue(for: layout) {
+            self.accessibilityValue = value
         }
     }
 }

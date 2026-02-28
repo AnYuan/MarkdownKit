@@ -96,13 +96,46 @@ public class MarkdownItemView: NSCollectionViewItem {
         // Replace text storage content with our pre-styled attributed string
         textView.textStorage?.setAttributedString(attrString)
 
-        // Code blocks get background + rounded corners
+        // Handle NSAccessibility for the textView
+        textView.setAccessibilityElement(true)
         if layout.node is CodeBlockNode || layout.node is DiagramNode {
             textView.drawsBackground = true
             textView.backgroundColor = NSColor.controlBackgroundColor
             textView.wantsLayer = true
             textView.layer?.cornerRadius = 6
             textView.textContainerInset = NSSize(width: 8, height: 8)
+            textView.setAccessibilityRole(.group)
+            textView.setAccessibilityLabel("Code Block")
+            textView.setAccessibilityValue(attrString.string)
+        } else if layout.node is TableNode {
+            textView.setAccessibilityRole(.group)
+            textView.setAccessibilityLabel("Table")
+        } else if let details = layout.node as? DetailsNode {
+            textView.setAccessibilityRole(.button)
+            textView.setAccessibilityLabel("Collapsible Section")
+            textView.setAccessibilityValue(details.isOpen ? "Expanded" : "Collapsed")
+        } else if layout.node is MathNode {
+            textView.setAccessibilityRole(.staticText)
+            textView.setAccessibilityLabel("Math Equation")
+            textView.setAccessibilityValue((layout.node as? MathNode)?.equation)
+        } else {
+            // General paragraphs and text
+            textView.setAccessibilityRole(.staticText)
+            
+            // Check if it's a task list item
+            var isTask = false
+            var isChecked = false
+            attrString.enumerateAttribute(.markdownCheckbox, in: NSRange(location: 0, length: attrString.length), options: []) { value, range, stop in
+                if let data = value as? CheckboxInteractionData {
+                    isTask = true
+                    isChecked = data.isChecked
+                    stop.pointee = true
+                }
+            }
+            if isTask {
+                textView.setAccessibilityRole(.checkBox)
+                textView.setAccessibilityValue(isChecked ? 1 : 0)
+            }
         }
 
         view.addSubview(textView)

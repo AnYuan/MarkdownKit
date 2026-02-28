@@ -1,7 +1,7 @@
 import Foundation
 import Markdown
 
-public enum DiagramLanguage: String, CaseIterable {
+public enum DiagramLanguage: String, CaseIterable, Sendable {
     case mermaid
     case geojson
     case topojson
