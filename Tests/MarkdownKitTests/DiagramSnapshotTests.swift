@@ -19,6 +19,9 @@ final class DiagramSnapshotTests: XCTestCase {
             C-->D;
         """
         
+        // Skip test when running headless (like via `swift test` CLI) as WKWebView JS execution and snapshotting loops hang.
+        try XCTSkipIf(ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil && NSApp == nil, "WKWebView requires a windowed app context")
+        
         // Render to NSAttributedString
         let attrString = await adapter.render(source: source, language: .mermaid)
         XCTAssertNotNil(attrString)

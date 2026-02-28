@@ -52,10 +52,41 @@ public final class LayoutSolver {
         }
         
         // 1. Convert AST to styled NSAttributedString based on Theme
-        let styledString = await createAttributedString(for: node, constrainedToWidth: maxWidth)
+        var styledString = await createAttributedString(for: node, constrainedToWidth: maxWidth)
         
         // 2. Measure exactly using the background TextKitCalculator
-        let size = textCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
+        var size: CGSize
+        
+        // Special handling for nodes that have internal padding in their UI representation
+        if let code = node as? CodeBlockNode {
+            let codeAttr = buildCodeBlockAttributedString(from: code)
+            styledString = codeAttr
+            
+            // TextKit needs to know that we inset the container 8pts horizontally by the UI view
+            // to accurately wrap the string if it's too long.
+            let insets = CGSize(width: 16, height: 16) // 8 left + 8 right, 8 top + 8 bottom
+            size = textCalculator.calculateSize(
+                for: codeAttr,
+                constrainedToWidth: max(0, maxWidth - insets.width)
+            )
+            size.width += insets.width
+            size.height += insets.height
+            
+        } else if let diagram = node as? DiagramNode {
+            let diagramAttr = await buildDiagramAttributedString(from: diagram)
+            styledString = diagramAttr
+            
+            let insets = CGSize(width: 16, height: 16)
+            size = textCalculator.calculateSize(
+                for: diagramAttr,
+                constrainedToWidth: max(0, maxWidth - insets.width)
+            )
+            size.width += insets.width
+            size.height += insets.height
+            
+        } else {
+            size = textCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
+        }
         
         // 3. Recurse down children (if they represent separate visual block elements)
         // For basic implementation, we assume paragraphs/headers handle their own inline children.
@@ -92,6 +123,7 @@ public final class LayoutSolver {
             string.append(buildTableAttributedString(from: table, constrainedToWidth: maxWidth))
 
         case let diagram as DiagramNode:
+            // This case is now handled in solve() for size calculation, but we still need to build the string here
             string.append(await buildDiagramAttributedString(from: diagram))
 
         case let details as DetailsNode:
