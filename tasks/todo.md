@@ -70,21 +70,21 @@
 - [x] Render collapsible sections natively in both iOS/macOS UI layers
 - [x] Add diagram block detection for fenced languages: `mermaid`, `geojson`, `topojson`, `stl`
 - [x] Implement pluggable diagram rendering adapters with code-block fallback when adapter is unavailable
-- [ ] Extend autolink support from URLs to issue/PR refs, commit SHAs, and `@mention` tokens (resolver-based)
-- [ ] Upgrade tasklist rendering to support editor-mode interaction toggles while preserving read-only mode
+- [x] Extend autolink support from URLs to issue/PR refs, commit SHAs, and `@mention` tokens (resolver-based)
+- [x] Upgrade tasklist rendering to support editor-mode interaction toggles while preserving read-only mode
 
 ### P2: Host-App Integration Boundaries
-- [ ] Expose extension APIs for attachment workflows (upload + insertion), kept out of renderer core
-- [ ] Expose extension APIs for permalink/snippet cards (repository context required)
-- [ ] Expose extension hooks for issue-keyword semantics (`close/fix/resolve`) for host products
+- [x] Expose extension APIs for attachment workflows (upload + insertion), kept out of renderer core
+- [x] Expose extension APIs for permalink/snippet cards (repository context required)
+- [x] Expose extension hooks for issue-keyword semantics (`close/fix/resolve`) for host products
 
 ### Cross-Cutting Test Tasks
-- [ ] Add snapshot coverage for table, code, math, and tasklist visual parity on iOS + macOS
-- [ ] Add feature-status matrix test docs linking each PRD §7 feature to test case names
+- [x] Add snapshot coverage for table, code, math, and tasklist visual parity on iOS + macOS
+- [x] Add feature-status matrix test docs linking each PRD §7 feature to test case names
 
 ## Phase 7: Production Readiness (Security & Robustness)
-- [ ] Security: Implement strict URL sanitization for `LinkNode` and `ImageNode` (filter out `javascript:`, `vbscript:`, etc.)
-- [ ] Security: Implement deterministic URI schema allow-listing (e.g., `http/https/mailto/tel/sms`) with configurable policies
-- [ ] Robustness: Implement recursive depth limits (e.g., max 50 levels) in `MarkdownKitVisitor` and node traversal plugins to prevent Stack Overflows
-- [ ] Robustness: Integrate a Fuzz testing suite (or permutation script testing) to ensure zero-crash parsing on hostile randomly generated markdown payloads
-- [ ] Quality Assurance: Integrate `swift-snapshot-testing` framework and produce baseline reference images for core syntax element rendering (headers, tables, math, details) into UI tests
+- [x] Security: Implement strict URL sanitization for `LinkNode` and `ImageNode` (filter out `javascript:`, `vbscript:`, etc.)
+- [x] Security: Implement deterministic URI schema allow-listing (e.g., `http/https/mailto/tel/sms`) with configurable policies
+- [x] Robustness: Implement recursive depth limits (e.g., max 50 levels) in `MarkdownKitVisitor` and node traversal plugins to prevent Stack Overflows
+- [x] Robustness: Integrate a Fuzz testing suite (or permutation script testing) to ensure zero-crash parsing on hostile randomly generated markdown payloads
+- [x] Quality Assurance: Integrate `swift-snapshot-testing` framework and produce baseline reference images for core syntax element rendering (headers, tables, math, details) into UI tests

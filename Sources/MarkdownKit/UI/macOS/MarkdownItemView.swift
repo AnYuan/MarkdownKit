@@ -6,37 +6,44 @@
 #if canImport(AppKit) && !targetEnvironment(macCatalyst)
 import AppKit
 
-private final class DetailsTextView: NSTextView {
+private final class InteractiveTextView: NSTextView {
     var summaryCharacterRange: NSRange = NSRange(location: NSNotFound, length: 0)
     var onSummaryClick: (() -> Void)?
+    var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
 
     override func mouseDown(with event: NSEvent) {
-        if didClickSummary(with: event) {
-            onSummaryClick?()
+        guard let layoutManager = layoutManager, let textContainer = textContainer else {
+            super.mouseDown(with: event)
             return
         }
-        super.mouseDown(with: event)
-    }
-
-    private func didClickSummary(with event: NSEvent) -> Bool {
-        guard summaryCharacterRange.location != NSNotFound,
-              summaryCharacterRange.length > 0,
-              let layoutManager,
-              let textContainer else {
-            return false
-        }
-
+        
         var point = convert(event.locationInWindow, from: nil)
         point.x -= textContainerInset.width
         point.y -= textContainerInset.height
-
+        
         guard layoutManager.usedRect(for: textContainer).contains(point) else {
-            return false
+            super.mouseDown(with: event)
+            return
         }
-
+        
         let glyphIndex = layoutManager.glyphIndex(for: point, in: textContainer)
         let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
-        return NSLocationInRange(characterIndex, summaryCharacterRange)
+        
+        // 1. Details summary toggle
+        if summaryCharacterRange.location != NSNotFound, NSLocationInRange(characterIndex, summaryCharacterRange) {
+            onSummaryClick?()
+            return
+        }
+        
+        // 2. Interactive checklists
+        if characterIndex < textStorage?.length ?? 0 {
+            if let interactionData = textStorage?.attribute(.markdownCheckbox, at: characterIndex, effectiveRange: nil) as? CheckboxInteractionData {
+                onCheckboxToggle?(interactionData)
+                return
+            }
+        }
+        
+        super.mouseDown(with: event)
     }
 }
 
@@ -58,7 +65,11 @@ public class MarkdownItemView: NSCollectionViewItem {
         hostedView = nil
     }
 
-    public func configure(with layout: LayoutResult, onToggleDetails: ((DetailsNode) -> Void)? = nil) {
+    public func configure(
+        with layout: LayoutResult,
+        onToggleDetails: ((DetailsNode) -> Void)? = nil,
+        onCheckboxToggle: ((CheckboxInteractionData) -> Void)? = nil
+    ) {
         hostedView?.removeFromSuperview()
         hostedView = nil
 
@@ -66,15 +77,13 @@ public class MarkdownItemView: NSCollectionViewItem {
 
         guard let attrString = layout.attributedString, attrString.length > 0 else { return }
 
-        // Use NSTextView for proper multi-line rich text rendering.
-        let textView: NSTextView
+        // Use InteractiveTextView for proper multi-line rich text rendering and interaction.
+        let textView = InteractiveTextView(frame: NSRect(origin: .zero, size: layout.size))
+        textView.onCheckboxToggle = onCheckboxToggle
+        
         if let details = layout.node as? DetailsNode {
-            let detailsView = DetailsTextView(frame: NSRect(origin: .zero, size: layout.size))
-            detailsView.summaryCharacterRange = detailsSummaryRange(in: attrString.string)
-            detailsView.onSummaryClick = { onToggleDetails?(details) }
-            textView = detailsView
-        } else {
-            textView = NSTextView(frame: NSRect(origin: .zero, size: layout.size))
+            textView.summaryCharacterRange = detailsSummaryRange(in: attrString.string)
+            textView.onSummaryClick = { onToggleDetails?(details) }
         }
 
         textView.isEditable = false

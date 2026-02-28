@@ -8,7 +8,8 @@ public struct URLSanitizer {
     
     /// The default set of allowed URL schemes.
     public static let defaultAllowedSchemes: Set<String> = [
-        "http", "https", "mailto", "tel", "sms", "ftp", "ftps", "file", "x-apple-reminder"
+        "http", "https", "mailto", "tel", "sms", "ftp", "ftps", "file", "x-apple-reminder",
+        "x-mention", "x-reference", "x-commit"
     ]
     
     /// Sanitizes an input URL string.

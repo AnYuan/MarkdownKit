@@ -174,13 +174,25 @@ public final class LayoutSolver {
 
                 // Determine prefix: checkbox > ordered number > bullet
                 var prefix: String
+                var isCheckbox = false
                 switch item.checkbox {
-                case .checked: prefix = "☑ "
-                case .unchecked: prefix = "☐ "
+                case .checked: 
+                    prefix = "☑ "
+                    isCheckbox = true
+                case .unchecked: 
+                    prefix = "☐ "
+                    isCheckbox = true
                 case .none:
                     prefix = list.isOrdered ? "\(itemIndex + 1). " : "• "
                 }
-                string.append(NSAttributedString(string: prefix, attributes: listAttrs))
+                
+                var itemPrefixAttrs = listAttrs
+                if isCheckbox, let range = item.range {
+                    let interactionState = CheckboxInteractionData(isChecked: item.checkbox == .checked, range: range)
+                    itemPrefixAttrs[.markdownCheckbox] = interactionState
+                }
+                
+                string.append(NSAttributedString(string: prefix, attributes: itemPrefixAttrs))
 
                 // Render item content
                 for itemChild in item.children {
