@@ -21,9 +21,14 @@ final class SyntaxMatrixTests: XCTestCase {
 
     func testSyntaxMatrixAcrossWidthsWithPluginPipeline() async throws {
         let localImagePath = try makeTemporaryPNGFilePath()
+        let relativeImageFixture = try makeRelativePNGFilePath()
         defer { try? FileManager.default.removeItem(atPath: localImagePath) }
+        defer { try? FileManager.default.removeItem(at: relativeImageFixture.absoluteURL) }
 
-        let fixtures = makeFixtures(localImagePath: localImagePath)
+        let fixtures = makeFixtures(
+            localImagePath: localImagePath,
+            relativeLocalImagePath: relativeImageFixture.relativePath
+        )
 
         for fixture in fixtures {
             let document = TestHelper.parse(fixture.markdown, plugins: pluginChain)
@@ -167,7 +172,7 @@ final class SyntaxMatrixTests: XCTestCase {
             let hasFallbackText = text.contains("x^2") || text.contains("a^2 + b^2 = c^2")
             XCTAssertTrue(hasMathAttachment || hasFallbackText, "[math] expected rendered math attachment or text fallback")
 
-        case "image-local":
+        case "image-local", "image-local-relative":
             XCTAssertTrue(containsAttachment(in: layout), "[image-local] expected inline image attachment")
 
         case "image-fallback":
@@ -343,7 +348,10 @@ final class SyntaxMatrixTests: XCTestCase {
         return node.children
     }
 
-    private func makeFixtures(localImagePath: String) -> [SyntaxFixture] {
+    private func makeFixtures(
+        localImagePath: String,
+        relativeLocalImagePath: String
+    ) -> [SyntaxFixture] {
         [
             SyntaxFixture(
                 id: "headers",
@@ -481,6 +489,11 @@ final class SyntaxMatrixTests: XCTestCase {
                 requiredNodeKinds: [.image]
             ),
             SyntaxFixture(
+                id: "image-local-relative",
+                markdown: "![Local Relative Image](\(relativeLocalImagePath))",
+                requiredNodeKinds: [.image]
+            ),
+            SyntaxFixture(
                 id: "image-fallback",
                 markdown: "![Missing Image](./Tests/Fixtures/does-not-exist.png)",
                 requiredNodeKinds: [.image]
@@ -500,6 +513,24 @@ final class SyntaxMatrixTests: XCTestCase {
 
         try data.write(to: url, options: .atomic)
         return url.path
+    }
+
+    private func makeRelativePNGFilePath() throws -> (relativePath: String, absoluteURL: URL) {
+        let base64PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO8B9n0AAAAASUVORK5CYII="
+
+        guard let data = Data(base64Encoded: base64PNG) else {
+            throw MatrixFixtureError.failedToDecodePNG
+        }
+
+        let cwdURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let fixtureDir = cwdURL.appendingPathComponent(".build/markdownkit-matrix-fixtures", isDirectory: true)
+        try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: true)
+
+        let fileURL = fixtureDir.appendingPathComponent("matrix-\(UUID().uuidString).png")
+        try data.write(to: fileURL, options: .atomic)
+
+        let relativePath = fileURL.path.replacingOccurrences(of: cwdURL.path + "/", with: "")
+        return (relativePath, fileURL)
     }
 }
 

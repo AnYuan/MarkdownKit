@@ -621,9 +621,18 @@ public final class LayoutSolver {
             if url.isFileURL {
                 data = try Data(contentsOf: url)
             } else {
-                let (networkData, response) = try await URLSession.shared.data(from: url)
+                let request = URLRequest(
+                    url: url,
+                    cachePolicy: .returnCacheDataElseLoad,
+                    timeoutInterval: 12.0
+                )
+                let (networkData, response) = try await URLSession.shared.data(for: request)
                 if let http = response as? HTTPURLResponse,
                    !(200...299).contains(http.statusCode) {
+                    return nil
+                }
+                if let mimeType = response.mimeType?.lowercased(),
+                   !mimeType.hasPrefix("image/") {
                     return nil
                 }
                 data = networkData
@@ -642,6 +651,16 @@ public final class LayoutSolver {
 
         if let url = URL(string: trimmed), let scheme = url.scheme, !scheme.isEmpty {
             return url
+        }
+
+        // If it looks like a URL but failed parsing, do not reinterpret it as a local file path.
+        if trimmed.contains("://") {
+            return nil
+        }
+
+        if trimmed.hasPrefix("~/") {
+            let expandedPath = (trimmed as NSString).expandingTildeInPath
+            return URL(fileURLWithPath: expandedPath)
         }
 
         if trimmed.hasPrefix("/") {

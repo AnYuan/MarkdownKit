@@ -50,6 +50,30 @@ final class AsyncImageViewLoadingTests: XCTestCase {
         XCTAssertNotNil(view.layer.contents, "Local image should load and decode into layer.contents")
     }
 
+    func testImageLoadingFromRelativeLocalPath() async throws {
+        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let fixtureDir = cwd.appendingPathComponent(".build/async-image-fixtures", isDirectory: true)
+        try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: true)
+
+        let fixtureURL = fixtureDir.appendingPathComponent("relative-\(UUID().uuidString).png")
+        let data = try Data(contentsOf: testImageURL)
+        try data.write(to: fixtureURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fixtureURL) }
+
+        let relativePath = fixtureURL.path.replacingOccurrences(
+            of: cwd.path + "/",
+            with: ""
+        )
+        let node = ImageNode(range: nil, source: relativePath, altText: "relative", title: nil)
+        let layout = LayoutResult(node: node, size: CGSize(width: 10, height: 10))
+
+        let view = AsyncImageView(frame: CGRect(origin: .zero, size: layout.size))
+        view.configure(with: layout)
+
+        try await waitForLayerContents(view)
+        XCTAssertNotNil(view.layer.contents, "Relative local image path should resolve and render")
+    }
+
     func testImageLoadingCancelsOnReconfigure() async throws {
         let nodeA = ImageNode(range: nil, source: testImageURL.absoluteString, altText: "A", title: nil)
         let layoutA = LayoutResult(node: nodeA, size: CGSize(width: 10, height: 10))

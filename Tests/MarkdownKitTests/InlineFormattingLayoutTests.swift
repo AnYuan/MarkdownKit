@@ -336,6 +336,24 @@ final class InlineFormattingLayoutTests: XCTestCase {
         XCTAssertTrue(foundSecondaryColor, "Image alt text should use secondaryLabelColor")
     }
 
+    func testImageRelativeLocalPathRendersAttachment() async throws {
+        let fixture = try makeRelativeFixtureImagePath()
+        defer { try? FileManager.default.removeItem(at: fixture.absoluteURL) }
+
+        let layout = await TestHelper.solveLayout("![local image](\(fixture.relativePath))")
+        let paraLayout = layout.children[0]
+
+        guard let attrStr = paraLayout.attributedString else {
+            XCTFail("Expected attributed string")
+            return
+        }
+
+        XCTAssertTrue(
+            attrStr.string.contains("\u{FFFC}"),
+            "Relative local image path should render an attachment"
+        )
+    }
+
     func testMathLayoutProducesOutput() async throws {
         // MathRenderer may succeed (image attachment) or fall back to raw equation text
         let markdown = "$E=mc^2$"
@@ -354,5 +372,22 @@ final class InlineFormattingLayoutTests: XCTestCase {
         let hasAttachment = text.contains("\u{FFFC}") // Object replacement character from NSTextAttachment
         XCTAssertTrue(hasEquation || hasAttachment,
             "Math layout should produce either equation text or image attachment, got: \(text)")
+    }
+
+    private func makeRelativeFixtureImagePath() throws -> (relativePath: String, absoluteURL: URL) {
+        let base64PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO8B9n0AAAAASUVORK5CYII="
+        guard let data = Data(base64Encoded: base64PNG) else {
+            throw NSError(domain: "InlineFormattingLayoutTests", code: 1)
+        }
+
+        let cwdURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let fixtureDir = cwdURL.appendingPathComponent(".build/inline-image-fixtures", isDirectory: true)
+        try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: true)
+
+        let imageURL = fixtureDir.appendingPathComponent("inline-\(UUID().uuidString).png")
+        try data.write(to: imageURL, options: .atomic)
+
+        let relativePath = imageURL.path.replacingOccurrences(of: cwdURL.path + "/", with: "")
+        return (relativePath, imageURL)
     }
 }

@@ -45,8 +45,8 @@ public class AsyncImageView: UIView {
         self.layer.contents = nil // Clear previous image immediately
         
         guard let imageNode = layout.node as? ImageNode,
-              let urlString = imageNode.source,
-              let url = URL(string: urlString) else {
+              let source = imageNode.source,
+              let url = resolvedImageURL(from: source) else {
             return
         }
         
@@ -66,13 +66,28 @@ public class AsyncImageView: UIView {
                 if url.isFileURL {
                     data = try Data(contentsOf: url)
                 } else {
-                    let (networkData, _) = try await self.urlSession.data(from: url)
+                    let request = URLRequest(
+                        url: url,
+                        cachePolicy: .returnCacheDataElseLoad,
+                        timeoutInterval: 12.0
+                    )
+                    let (networkData, response) = try await self.urlSession.data(for: request)
+                    if let http = response as? HTTPURLResponse,
+                       !(200...299).contains(http.statusCode) {
+                        return
+                    }
+                    if let mimeType = response.mimeType?.lowercased(),
+                       !mimeType.hasPrefix("image/") {
+                        return
+                    }
                     data = networkData
                 }
             } catch {
                 print("Failed to load image data for \(url): \(error)")
                 return
             }
+
+            guard !data.isEmpty else { return }
             
             if Task.isCancelled { return }
             
@@ -101,6 +116,31 @@ public class AsyncImageView: UIView {
                 self.layer.contents = decodedImage.cgImage
             }
         }
+    }
+
+    private func resolvedImageURL(from source: String) -> URL? {
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let url = URL(string: trimmed), let scheme = url.scheme, !scheme.isEmpty {
+            return url
+        }
+
+        if trimmed.contains("://") {
+            return nil
+        }
+
+        if trimmed.hasPrefix("~/") {
+            let expandedPath = (trimmed as NSString).expandingTildeInPath
+            return URL(fileURLWithPath: expandedPath)
+        }
+
+        if trimmed.hasPrefix("/") {
+            return URL(fileURLWithPath: trimmed)
+        }
+
+        let cwd = FileManager.default.currentDirectoryPath
+        return URL(fileURLWithPath: cwd).appendingPathComponent(trimmed)
     }
 }
 #endif
