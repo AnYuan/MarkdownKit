@@ -64,20 +64,22 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
 
     // MARK: - Width Tolerance
 
-    func testCacheRequiresExactWidthMatchDueToHashing() {
-        // NSCache uses hash first (exact CGFloat), so even though CacheKey.isEqual
-        // has 0.1 tolerance, different widths produce different hashes and result in misses.
+    func testCacheUsesDeterministicWidthBucketing() {
         let cache = LayoutCache()
         let node = DocumentNode(range: nil, children: [])
         let result = LayoutResult(node: node, size: CGSize(width: 100, height: 50))
 
         cache.setLayout(result, constrainedToWidth: 400.0)
 
-        // Exact width matches
+        // Exact width always matches
         XCTAssertNotNil(cache.getLayout(for: node, constrainedToWidth: 400.0))
 
-        // Slightly different widths miss due to hash difference
-        XCTAssertNil(cache.getLayout(for: node, constrainedToWidth: 400.05))
+        // Same 0.1pt bucket should hit
+        XCTAssertNotNil(cache.getLayout(for: node, constrainedToWidth: 400.05))
+        XCTAssertNotNil(cache.getLayout(for: node, constrainedToWidth: 400.099))
+
+        // Next bucket should miss
+        XCTAssertNil(cache.getLayout(for: node, constrainedToWidth: 400.1001))
         XCTAssertNil(cache.getLayout(for: node, constrainedToWidth: 400.2))
     }
 

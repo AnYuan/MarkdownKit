@@ -19,23 +19,30 @@ public final class LayoutCache {
     /// The internal key structure for NSCache.
     private class CacheKey: NSObject {
         let nodeId: UUID
-        let width: CGFloat
+        let normalizedWidthBucket: Int
+        private static let widthBucketScale: CGFloat = 10.0 // 0.1pt buckets
         
         init(nodeId: UUID, width: CGFloat) {
             self.nodeId = nodeId
-            self.width = width
+            self.normalizedWidthBucket = CacheKey.widthBucket(for: width)
         }
         
         override var hash: Int {
             var hasher = Hasher()
             hasher.combine(nodeId)
-            hasher.combine(width)
+            hasher.combine(normalizedWidthBucket)
             return hasher.finalize()
         }
         
         override func isEqual(_ object: Any?) -> Bool {
             guard let other = object as? CacheKey else { return false }
-            return self.nodeId == other.nodeId && abs(self.width - other.width) < 0.1
+            return self.nodeId == other.nodeId
+                && self.normalizedWidthBucket == other.normalizedWidthBucket
+        }
+
+        private static func widthBucket(for width: CGFloat) -> Int {
+            guard width.isFinite else { return 0 }
+            return Int((width * widthBucketScale).rounded(.towardZero))
         }
     }
     
