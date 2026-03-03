@@ -70,7 +70,10 @@ public struct Theme {
             foreground: .labelColor,
             background: NSColor.controlAccentColor.withAlphaComponent(0.22)
         )
-        let tableC = ColorToken(foreground: .gridColor, background: .controlBackgroundColor)
+        let tableC = ColorToken(
+            foreground: NSColor.labelColor.withAlphaComponent(0.15),
+            background: NSColor.labelColor.withAlphaComponent(0.04)
+        )
 #endif
         
         return Theme(

@@ -715,7 +715,11 @@ struct AttributedStringBuilder {
         if bodyRowIndex.isMultiple(of: 2) {
             return .clear
         }
-        return theme.tableColor.background.withAlphaComponent(0.45)
+        
+        let bg = theme.tableColor.background
+        var alpha: CGFloat = 1.0
+        bg.usingColorSpace(.deviceRGB)?.getRed(nil, green: nil, blue: nil, alpha: &alpha)
+        return bg.withAlphaComponent(alpha * 0.45)
     }
     #endif
 
