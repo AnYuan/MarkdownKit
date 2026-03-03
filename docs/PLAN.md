@@ -21,6 +21,12 @@ bash scripts/verify_all.sh
 
 It runs syntax matrix, plugin correctness, layout regressions, security suites, and CommonMark semantic subset checks. Optional benchmark suites can be included with `--with-benchmarks`.
 
+For release-level validation, run:
+
+```bash
+bash scripts/verify_all.sh --full
+```
+
 ### Phase A: Test Strategy Baseline (Docs + Scope Lock)
 **Goal**: lock verification scope and merge criteria.
 1. Update PRD quality sections with mandatory automation gates.
