@@ -31,7 +31,18 @@ run_suite "Critical Plugins" "DetailsExtractionPluginTests|DiagramExtractionPlug
 run_suite "Layout Regressions" "LayoutSolverExtendedTests|InlineFormattingLayoutTests|CrossPlatformLayoutTests|iOSTableLayoutTests"
 run_suite "Security Hardening" "URLSanitizerTests|DepthLimitTests|FuzzTests"
 run_suite "CommonMark Semantics" "CommonMarkSpecTests|ParserInlineFormattingTests|ParserLinkListTableTests"
-run_suite "Snapshot Stability" "SnapshotTests|iOSSnapshotTests"
+
+# Snapshot baselines are environment-sensitive (fonts/rendering stack/OS image).
+# Keep them in fast local validation, but skip in CI unless explicitly requested.
+if [[ "${MARKDOWNKIT_RUN_SNAPSHOTS_IN_CI:-0}" == "1" || "${CI:-false}" != "true" ]]; then
+  run_suite "Snapshot Stability" "SnapshotTests|iOSSnapshotTests"
+else
+  echo
+  echo "============================================================"
+  echo "[SKIP] Snapshot Stability"
+  echo "Reason: CI environment (set MARKDOWNKIT_RUN_SNAPSHOTS_IN_CI=1 to enable)"
+  echo "============================================================"
+fi
 
 if (( ${#FAILURES[@]} > 0 )); then
   echo
