@@ -10,7 +10,7 @@ It focuses on closing known gaps with low-risk, test-first, atomic commits.
 3. Prefer deterministic local fixtures; avoid external network dependency in default tests.
 4. Do not start a later item before its prerequisite item is merged.
 
-## C1. Fix Layout Cache Key Consistency (P0)
+## [x] C1. Fix Layout Cache Key Consistency (P0)
 
 - Objective: make `LayoutCache` hash/equality semantics consistent for width matching.
 - Problem:
@@ -29,7 +29,7 @@ It focuses on closing known gaps with low-risk, test-first, atomic commits.
 - Verify:
   - `swift test --filter LayoutCacheEdgeCaseTests`
 
-## C2. Inline Code Visual Upgrade (P0)
+## [x] C2. Inline Code Visual Upgrade (P0)
 
 - Objective: make inline code visually distinct and stable across light/dark appearance.
 - Problem:
@@ -50,7 +50,7 @@ It focuses on closing known gaps with low-risk, test-first, atomic commits.
 - Verify:
   - `swift test --filter "InlineFormattingLayoutTests|ThemeAndTokenTests"`
 
-## C3. iOS Table Rendering Readability Hardening (P0)
+## [x] C3. iOS Table Rendering Readability Hardening (P0)
 
 - Objective: ensure table text does not collapse vertically and remains readable at narrow widths.
 - Problem:
@@ -69,7 +69,7 @@ It focuses on closing known gaps with low-risk, test-first, atomic commits.
 - Verify:
   - `swift test --filter "iOSTableLayoutTests|CrossPlatformLayoutTests|iOSSnapshotTests"`
 
-## C4. Mermaid Rendering Sandbox Safety (P0)
+## [x] C4. Mermaid Rendering Sandbox Safety (P0)
 
 - Objective: avoid runtime fragility caused by remote Mermaid CDN and sandbox restrictions.
 - Problem:
@@ -88,7 +88,7 @@ It focuses on closing known gaps with low-risk, test-first, atomic commits.
 - Verify:
   - `swift test --filter DiagramLayoutTests`
 
-## C5. Image Loading Reliability and Fallback Coverage (P1)
+## [x] C5. Image Loading Reliability and Fallback Coverage (P1)
 
 - Objective: make image behavior predictable for remote/local/unavailable sources.
 - Problem:
@@ -108,7 +108,7 @@ It focuses on closing known gaps with low-risk, test-first, atomic commits.
 - Verify:
   - `swift test --filter "AsyncImageViewLoadingTests|InlineFormattingLayoutTests|SyntaxMatrixTests"`
 
-## C6. Public API Surface Cleanup (P1)
+## [x] C6. Public API Surface Cleanup (P1)
 
 - Objective: replace placeholder `MarkdownKit.swift` with minimal, stable entry APIs.
 - Problem:
@@ -129,7 +129,7 @@ It focuses on closing known gaps with low-risk, test-first, atomic commits.
 - Verify:
   - `swift test --filter MarkdownKitTests`
 
-## C7. CommonMark Semantic Validation Extension (P1)
+## [x] C7. CommonMark Semantic Validation Extension (P1)
 
 - Objective: go beyond crash resilience and validate selected semantic expectations.
 - Problem:
@@ -147,7 +147,7 @@ It focuses on closing known gaps with low-risk, test-first, atomic commits.
 - Verify:
   - `swift test --filter "CommonMarkSpecTests|ParserInlineFormattingTests|ParserLinkListTableTests"`
 
-## C8. One-Command Verification Entry (P1)
+## [x] C8. One-Command Verification Entry (P1)
 
 - Objective: provide one deterministic automation entrypoint for daily checks.
 - Problem:
@@ -187,4 +187,3 @@ Minimum required before declaring this wave complete:
 2. `swift test --filter "DetailsExtractionPluginTests|DiagramExtractionPluginTests|MathExtractionPluginTests|GitHubAutolinkPluginTests"`
 3. `swift test --filter "LayoutSolverExtendedTests|InlineFormattingLayoutTests|CrossPlatformLayoutTests|iOSTableLayoutTests"`
 4. `swift test --filter "URLSanitizerTests|DepthLimitTests|FuzzTests"`
-
