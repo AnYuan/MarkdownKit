@@ -15,7 +15,7 @@ struct ParagraphMapper: ASTNodeMapper {
 }
 
 struct TextMapper: ASTNodeMapper {
-    func map(_ node: Text, visitor: inout MarkdownKitVisitor) -> [MarkdownNode] {
+    func map(_ node: Markdown.Text, visitor: inout MarkdownKitVisitor) -> [MarkdownNode] {
         return [TextNode(range: node.range, text: node.string)]
     }
 }

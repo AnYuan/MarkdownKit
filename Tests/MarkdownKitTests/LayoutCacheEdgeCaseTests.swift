@@ -74,13 +74,13 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
         // Exact width always matches
         XCTAssertNotNil(cache.getLayout(for: node, constrainedToWidth: 400.0))
 
-        // Same 0.1pt bucket should hit
+        // Same rounded integer bucket should hit (400.0 -> 400, 400.49 -> 400)
         XCTAssertNotNil(cache.getLayout(for: node, constrainedToWidth: 400.05))
-        XCTAssertNotNil(cache.getLayout(for: node, constrainedToWidth: 400.099))
+        XCTAssertNotNil(cache.getLayout(for: node, constrainedToWidth: 400.49))
 
-        // Next bucket should miss
-        XCTAssertNil(cache.getLayout(for: node, constrainedToWidth: 400.1001))
-        XCTAssertNil(cache.getLayout(for: node, constrainedToWidth: 400.2))
+        // Next rounded bucket should miss (400.51 -> 401)
+        XCTAssertNil(cache.getLayout(for: node, constrainedToWidth: 400.51))
+        XCTAssertNil(cache.getLayout(for: node, constrainedToWidth: 401.0))
     }
 
     // MARK: - Concurrency

@@ -28,7 +28,7 @@ struct InlineCodeMapper: ASTNodeMapper {
 }
 
 struct LinkMapper: ASTNodeMapper {
-    func map(_ node: Link, visitor: inout MarkdownKitVisitor) -> [MarkdownNode] {
+    func map(_ node: Markdown.Link, visitor: inout MarkdownKitVisitor) -> [MarkdownNode] {
         let children = visitor.defaultVisit(node)
         return [LinkNode(range: node.range,
                          destination: node.destination,
@@ -38,7 +38,7 @@ struct LinkMapper: ASTNodeMapper {
 }
 
 struct ImageMapper: ASTNodeMapper {
-    func map(_ node: Image, visitor: inout MarkdownKitVisitor) -> [MarkdownNode] {
+    func map(_ node: Markdown.Image, visitor: inout MarkdownKitVisitor) -> [MarkdownNode] {
         return [ImageNode(range: node.range,
                           source: node.source,
                           altText: node.plainText,

@@ -136,22 +136,22 @@ final class IntegrationPipelineTests: XCTestCase {
         let codeC = ColorToken(foreground: .label, background: .secondarySystemBackground)
         let tableC = ColorToken(foreground: .separator, background: .secondarySystemGroupedBackground)
         #elseif canImport(AppKit)
-        let textC = ColorToken(foreground: .labelColor)
-        let codeC = ColorToken(foreground: .labelColor, background: .windowBackgroundColor)
-        let tableC = ColorToken(foreground: .gridColor, background: .controlBackgroundColor)
         #endif
 
         let customTheme = Theme(
-            header1: TypographyToken(font: Font.systemFont(ofSize: 36)),
-            header2: TypographyToken(font: Font.systemFont(ofSize: 28)),
-            header3: TypographyToken(font: Font.systemFont(ofSize: 22)),
-            paragraph: TypographyToken(font: Font.systemFont(ofSize: 18)),
-            codeBlock: TypographyToken(font: Font.monospacedSystemFont(ofSize: 15, weight: .regular)),
-            textColor: textC,
-            codeColor: codeC,
-            tableColor: tableC
+            typography: Theme.Typography(
+                header1: TypographyToken(font: Font.systemFont(ofSize: 36)),
+                header2: TypographyToken(font: Font.systemFont(ofSize: 28)),
+                header3: TypographyToken(font: Font.systemFont(ofSize: 22)),
+                paragraph: TypographyToken(font: Font.systemFont(ofSize: 18)),
+                codeBlock: TypographyToken(font: Font.monospacedSystemFont(ofSize: 16, weight: .regular))
+            ),
+            colors: Theme.Colors(
+                textColor: ColorToken(foreground: .blue),
+                codeColor: ColorToken(foreground: .green, background: .black),
+                tableColor: ColorToken(foreground: .gray, background: .darkGray)
+            )
         )
-
         let layout = await TestHelper.solveLayout("# Header", theme: customTheme)
         let headerLayout = layout.children[0]
 

@@ -35,7 +35,7 @@ final class VirtualizationTests: XCTestCase {
         PerformanceProfiler.measure(.layoutCalculation) {
             for child in docNode.children {
                 if let paragraph = child as? ParagraphNode, let textNode = paragraph.children.first as? TextNode {
-                    let str = NSAttributedString(string: textNode.text, attributes: [.font: theme.paragraph.font])
+                    let str = NSAttributedString(string: textNode.text, attributes: [.font: theme.typography.paragraph.font])
                     let size = calculator.calculateSize(for: str, constrainedToWidth: 400)
                     let layoutResult = LayoutResult(node: child, size: size, attributedString: str)
                     layoutModels.append(layoutResult)

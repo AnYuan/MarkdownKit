@@ -43,63 +43,75 @@ final class ThemeAndTokenTests: XCTestCase {
 
     func testDefaultThemeInitialization() {
         let theme = Theme.default
-        XCTAssertEqual(theme.header1.font.pointSize, 32)
-        XCTAssertEqual(theme.header2.font.pointSize, 24)
-        XCTAssertEqual(theme.header3.font.pointSize, 20)
-        XCTAssertEqual(theme.paragraph.font.pointSize, 16)
-        XCTAssertEqual(theme.codeBlock.font.pointSize, 14)
-        XCTAssertNotEqual(theme.inlineCodeColor.background, .clear)
+        XCTAssertEqual(theme.typography.header1.font.pointSize, 32)
+        XCTAssertEqual(theme.typography.header2.font.pointSize, 24)
+        XCTAssertEqual(theme.typography.header3.font.pointSize, 20)
+        XCTAssertEqual(theme.typography.paragraph.font.pointSize, 16)
+        XCTAssertEqual(theme.typography.codeBlock.font.pointSize, 14)
+        XCTAssertNotEqual(theme.colors.inlineCodeColor.background, .clear)
     }
 
     func testCustomThemeInitialization() {
         let theme = Theme(
-            header1: TypographyToken(font: Font.systemFont(ofSize: 40)),
-            header2: TypographyToken(font: Font.systemFont(ofSize: 30)),
-            header3: TypographyToken(font: Font.systemFont(ofSize: 22)),
-            paragraph: TypographyToken(font: Font.systemFont(ofSize: 18)),
-            codeBlock: TypographyToken(font: Font.monospacedSystemFont(ofSize: 16, weight: .regular)),
-            textColor: ColorToken(foreground: .white),
-            codeColor: ColorToken(foreground: .green, background: .black),
-            tableColor: ColorToken(foreground: .gray, background: .darkGray)
+            typography: Theme.Typography(
+                header1: TypographyToken(font: Font.systemFont(ofSize: 40)),
+                header2: TypographyToken(font: Font.systemFont(ofSize: 30)),
+                header3: TypographyToken(font: Font.systemFont(ofSize: 22)),
+                paragraph: TypographyToken(font: Font.systemFont(ofSize: 18)),
+                codeBlock: TypographyToken(font: Font.monospacedSystemFont(ofSize: 16, weight: .regular))
+            ),
+            colors: Theme.Colors(
+                textColor: ColorToken(foreground: .white),
+                codeColor: ColorToken(foreground: .green, background: .black),
+                tableColor: ColorToken(foreground: .gray, background: .darkGray)
+            )
         )
 
-        XCTAssertEqual(theme.header1.font.pointSize, 40)
-        XCTAssertEqual(theme.codeBlock.font.pointSize, 16)
-        XCTAssertEqual(theme.textColor.foreground, .white)
-        XCTAssertEqual(theme.codeColor.background, .black)
-        XCTAssertEqual(theme.inlineCodeColor.background, .black)
+        XCTAssertEqual(theme.typography.header1.font.pointSize, 40)
+        XCTAssertEqual(theme.typography.codeBlock.font.pointSize, 16)
+        XCTAssertEqual(theme.colors.textColor.foreground, .white)
+        XCTAssertEqual(theme.colors.codeColor.background, .black)
+        XCTAssertEqual(theme.colors.inlineCodeColor.background, .black)
     }
 
     func testCustomInlineCodeColorOverridesCodeColor() {
         let inlineCodeToken = ColorToken(foreground: .black, background: .yellow)
         let theme = Theme(
-            header1: TypographyToken(font: Font.systemFont(ofSize: 32)),
-            header2: TypographyToken(font: Font.systemFont(ofSize: 24)),
-            header3: TypographyToken(font: Font.systemFont(ofSize: 20)),
-            paragraph: TypographyToken(font: Font.systemFont(ofSize: 16)),
-            codeBlock: TypographyToken(font: Font.monospacedSystemFont(ofSize: 14, weight: .regular)),
-            textColor: ColorToken(foreground: .white),
-            codeColor: ColorToken(foreground: .green, background: .black),
-            inlineCodeColor: inlineCodeToken,
-            tableColor: ColorToken(foreground: .gray, background: .darkGray)
+            typography: Theme.Typography(
+                header1: TypographyToken(font: Font.systemFont(ofSize: 32)),
+                header2: TypographyToken(font: Font.systemFont(ofSize: 24)),
+                header3: TypographyToken(font: Font.systemFont(ofSize: 20)),
+                paragraph: TypographyToken(font: Font.systemFont(ofSize: 16)),
+                codeBlock: TypographyToken(font: Font.monospacedSystemFont(ofSize: 14, weight: .regular))
+            ),
+            colors: Theme.Colors(
+                textColor: ColorToken(foreground: .white),
+                codeColor: ColorToken(foreground: .green, background: .black),
+                inlineCodeColor: inlineCodeToken,
+                tableColor: ColorToken(foreground: .gray, background: .darkGray)
+            )
         )
 
-        XCTAssertEqual(theme.codeColor.background, .black)
-        XCTAssertEqual(theme.inlineCodeColor.foreground, .black)
-        XCTAssertEqual(theme.inlineCodeColor.background, .yellow)
+        XCTAssertEqual(theme.colors.codeColor.background, .black)
+        XCTAssertEqual(theme.colors.inlineCodeColor.foreground, .black)
+        XCTAssertEqual(theme.colors.inlineCodeColor.background, .yellow)
     }
 
     func testCustomThemeFlowsThroughLayoutSolver() async throws {
         let customFont = Font.boldSystemFont(ofSize: 48)
         let theme = Theme(
-            header1: TypographyToken(font: customFont),
-            header2: TypographyToken(font: Font.systemFont(ofSize: 24)),
-            header3: TypographyToken(font: Font.systemFont(ofSize: 20)),
-            paragraph: TypographyToken(font: Font.systemFont(ofSize: 16)),
-            codeBlock: TypographyToken(font: Font.monospacedSystemFont(ofSize: 14, weight: .regular)),
-            textColor: ColorToken(foreground: .red),
-            codeColor: ColorToken(foreground: .green, background: .black),
-            tableColor: ColorToken(foreground: .gray, background: .darkGray)
+            typography: Theme.Typography(
+                header1: TypographyToken(font: customFont),
+                header2: TypographyToken(font: Font.systemFont(ofSize: 24)),
+                header3: TypographyToken(font: Font.systemFont(ofSize: 20)),
+                paragraph: TypographyToken(font: Font.systemFont(ofSize: 16)),
+                codeBlock: TypographyToken(font: Font.monospacedSystemFont(ofSize: 14, weight: .regular))
+            ),
+            colors: Theme.Colors(
+                textColor: ColorToken(foreground: .red),
+                codeColor: ColorToken(foreground: .green, background: .black),
+                tableColor: ColorToken(foreground: .gray, background: .darkGray)
+            )
         )
 
         let layout = await TestHelper.solveLayout("# Big Header", theme: theme)

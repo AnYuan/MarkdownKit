@@ -34,14 +34,18 @@ final class HighlighterAndProfilerTests: XCTestCase {
     func testHighlightWithCustomTheme() {
         let customCode = TypographyToken(font: Font.monospacedSystemFont(ofSize: 20, weight: .bold))
         let theme = Theme(
-            header1: TypographyToken(font: Font.systemFont(ofSize: 32)),
-            header2: TypographyToken(font: Font.systemFont(ofSize: 24)),
-            header3: TypographyToken(font: Font.systemFont(ofSize: 20)),
-            paragraph: TypographyToken(font: Font.systemFont(ofSize: 16)),
-            codeBlock: customCode,
-            textColor: ColorToken(foreground: .white),
-            codeColor: ColorToken(foreground: .green, background: .black),
-            tableColor: ColorToken(foreground: .gray)
+            typography: Theme.Typography(
+                header1: TypographyToken(font: Font.systemFont(ofSize: 32)),
+                header2: TypographyToken(font: Font.systemFont(ofSize: 24)),
+                header3: TypographyToken(font: Font.systemFont(ofSize: 20)),
+                paragraph: TypographyToken(font: Font.systemFont(ofSize: 16)),
+                codeBlock: customCode
+            ),
+            colors: Theme.Colors(
+                textColor: ColorToken(foreground: .white),
+                codeColor: ColorToken(foreground: .green, background: .black),
+                tableColor: ColorToken(foreground: .gray, background: .darkGray)
+            )
         )
 
         let highlighter = SplashHighlighter(theme: theme)

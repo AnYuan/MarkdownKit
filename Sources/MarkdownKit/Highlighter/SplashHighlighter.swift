@@ -52,7 +52,28 @@ public struct SplashHighlighter {
     ///   - code: The raw string of code.
     ///   - language: Optional language identifier (e.g. "swift"). Splash defaults to Swift if unknown, which is usually fine for general C-family syntax.
     public func highlight(_ code: String, language: String? = nil) -> NSAttributedString {
-        return highlighter.highlight(code)
+        let isSwiftFamily = isSwiftLikeLanguage(language)
+        
+        if isSwiftFamily {
+            return highlighter.highlight(code)
+        } else {
+            // Passthrough for non-Swift languages (python, js, ruby, etc)
+            // to prevent Splash from confusing syntax and generating chaotic colors.
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: theme.typography.codeBlock.font,
+                .foregroundColor: theme.colors.textColor.foreground
+            ]
+            return NSAttributedString(string: code, attributes: attributes)
+        }
+    }
+    
+    private func isSwiftLikeLanguage(_ language: String?) -> Bool {
+        guard let lang = language?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !lang.isEmpty else {
+            return true // Omitted language blocks usually fallback to Swift-like tokenization gracefully
+        }
+        
+        let swiftAlike = Set(["swift", "c", "cpp", "c++", "objc", "objective-c", "java", "cs", "csharp"])
+        return swiftAlike.contains(lang)
     }
 }
 

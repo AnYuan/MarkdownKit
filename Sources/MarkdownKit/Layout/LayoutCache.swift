@@ -19,30 +19,25 @@ public final class LayoutCache {
     /// The internal key structure for NSCache.
     private class CacheKey: NSObject {
         let nodeId: UUID
-        let normalizedWidthBucket: Int
-        private static let widthBucketScale: CGFloat = 10.0 // 0.1pt buckets
+        let width: Int
         
         init(nodeId: UUID, width: CGFloat) {
             self.nodeId = nodeId
-            self.normalizedWidthBucket = CacheKey.widthBucket(for: width)
+            // Hash and compare exact integer widths since floating point jitter
+            // inside scroll views often breaks fuzzy hit rates.
+            self.width = Int(width.rounded())
         }
         
         override var hash: Int {
             var hasher = Hasher()
             hasher.combine(nodeId)
-            hasher.combine(normalizedWidthBucket)
+            hasher.combine(width)
             return hasher.finalize()
         }
         
         override func isEqual(_ object: Any?) -> Bool {
             guard let other = object as? CacheKey else { return false }
-            return self.nodeId == other.nodeId
-                && self.normalizedWidthBucket == other.normalizedWidthBucket
-        }
-
-        private static func widthBucket(for width: CGFloat) -> Int {
-            guard width.isFinite else { return 0 }
-            return Int((width * widthBucketScale).rounded(.towardZero))
+            return self.nodeId == other.nodeId && self.width == other.width
         }
     }
     

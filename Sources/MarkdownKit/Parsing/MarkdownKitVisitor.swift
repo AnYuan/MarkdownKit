@@ -47,7 +47,7 @@ public struct MarkdownKitVisitor: MarkupVisitor {
         ParagraphMapper().map(paragraph, visitor: &self)
     }
     
-    public mutating func visitText(_ text: Text) -> [MarkdownNode] {
+    public mutating func visitText(_ text: Markdown.Text) -> [MarkdownNode] {
         TextMapper().map(text, visitor: &self)
     }
     
@@ -61,11 +61,11 @@ public struct MarkdownKitVisitor: MarkupVisitor {
         InlineCodeMapper().map(inlineCode, visitor: &self)
     }
     
-    public mutating func visitImage(_ image: Image) -> [MarkdownNode] {
+    public mutating func visitImage(_ image: Markdown.Image) -> [MarkdownNode] {
         ImageMapper().map(image, visitor: &self)
     }
     
-    public mutating func visitLink(_ link: Link) -> [MarkdownNode] {
+    public mutating func visitLink(_ link: Markdown.Link) -> [MarkdownNode] {
         LinkMapper().map(link, visitor: &self)
     }
     
@@ -85,23 +85,23 @@ public struct MarkdownKitVisitor: MarkupVisitor {
     
     // MARK: - Tables (GFM)
     
-    public mutating func visitTable(_ table: Table) -> [MarkdownNode] {
+    public mutating func visitTable(_ table: Markdown.Table) -> [MarkdownNode] {
         TableMapper().map(table, visitor: &self)
     }
     
-    public mutating func visitTableHead(_ tableHead: Table.Head) -> [MarkdownNode] {
+    public mutating func visitTableHead(_ tableHead: Markdown.Table.Head) -> [MarkdownNode] {
         TableHeadMapper().map(tableHead, visitor: &self)
     }
     
-    public mutating func visitTableBody(_ tableBody: Table.Body) -> [MarkdownNode] {
+    public mutating func visitTableBody(_ tableBody: Markdown.Table.Body) -> [MarkdownNode] {
         TableBodyMapper().map(tableBody, visitor: &self)
     }
     
-    public mutating func visitTableRow(_ tableRow: Table.Row) -> [MarkdownNode] {
+    public mutating func visitTableRow(_ tableRow: Markdown.Table.Row) -> [MarkdownNode] {
         TableRowMapper().map(tableRow, visitor: &self)
     }
     
-    public mutating func visitTableCell(_ tableCell: Table.Cell) -> [MarkdownNode] {
+    public mutating func visitTableCell(_ tableCell: Markdown.Table.Cell) -> [MarkdownNode] {
         TableCellMapper().map(tableCell, visitor: &self)
     }
     
