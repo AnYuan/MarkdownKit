@@ -6,6 +6,7 @@ This document breaks down the execution strategy to fulfill the requirements def
 ## Related Docs
 - Technical debt roadmap: `docs/TechnicalDebtRoadmap.md`
 - Rendering sequence diagram: `docs/RenderingPipelineSequence.md`
+- Concurrency contract: `docs/ConcurrencyContract.md`
 - Codebase knowledge snapshot: `docs/CodebaseKnowledge.md`
 - Next atomic checklist: `docs/ImplementationChecklist.md`
 

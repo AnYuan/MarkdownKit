@@ -57,6 +57,36 @@ final class HighlighterAndProfilerTests: XCTestCase {
         XCTAssertTrue(result.string.contains("hello"))
     }
 
+    func testHighlightFallsBackToPlainForExplicitNonSwiftLanguage() {
+        let highlighter = SplashHighlighter()
+        let code = "let x = 42\nprint(x)"
+        let result = highlighter.highlight(code, language: "python")
+
+        var runCount = 0
+        result.enumerateAttributes(
+            in: NSRange(location: 0, length: result.length)
+        ) { _, _, _ in
+            runCount += 1
+        }
+
+        XCTAssertEqual(runCount, 1, "Explicit non-Swift language should avoid Swift tokenization")
+    }
+
+    func testHighlightTreatsSwiftLanguageCaseInsensitively() {
+        let highlighter = SplashHighlighter()
+        let result = highlighter.highlight("let x = 42\nprint(x)", language: "SWIFT")
+
+        var runCount = 0
+        result.enumerateAttributes(
+            in: NSRange(location: 0, length: result.length)
+        ) { _, _, _ in
+            runCount += 1
+        }
+
+        XCTAssertGreaterThan(runCount, 1,
+            "Swift aliases should still use syntax highlighting")
+    }
+
     // MARK: - PerformanceProfiler
 
     func testMeasureSyncReturnsNonNegativeTime() {

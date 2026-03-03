@@ -66,7 +66,7 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 - `swift test list`: **218** discoverable tests
 - `swift test`: **218 executed, 0 failures**
-- Known noise: repeated MathJax warnings for `\\binom` can still appear in benchmark/full runs
+- Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
 
@@ -141,11 +141,12 @@ High-value suites:
 
 ## 6. Known Gaps / Risks / Technical Debt
 
-1. Math conversion warnings (notably `\\binom`) still generate noisy logs in heavy runs.
-2. `SplashHighlighter.highlight(_:language:)` currently ignores the `language` argument.
+1. Math conversion warnings (notably `\\binom`) are deduplicated but can still emit one warning per unique failure signature.
+2. Syntax highlighting is currently Swift-only; explicit non-Swift fenced languages now fall back to plain code styling.
 3. iOS table rendering is still text/tab based, with lower visual richness than macOS table blocks.
 4. Full `swift test` feedback loop remains relatively heavy due to benchmark suites.
 5. Documentation can drift unless refreshed from repeatable command output.
+6. Concurrency constraints are documented (`docs/ConcurrencyContract.md`) but multi-actor stress coverage can be expanded.
 
 ## 7. Extension Points
 

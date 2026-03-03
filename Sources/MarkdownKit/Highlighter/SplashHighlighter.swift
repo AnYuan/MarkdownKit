@@ -19,6 +19,13 @@ public struct SplashHighlighter {
     
     private let highlighter: SyntaxHighlighter<AttributedStringOutputFormat>
     private let theme: Theme
+    private let plainCodeAttributes: [NSAttributedString.Key: Any]
+    private static let swiftLanguageAliases: Set<String> = [
+        "swift",
+        "swift5",
+        "swift6",
+        "swiftlang"
+    ]
     
     public init(theme: Theme = .default) {
         self.theme = theme
@@ -45,14 +52,30 @@ public struct SplashHighlighter {
         
         let format = AttributedStringOutputFormat(theme: splashTheme)
         self.highlighter = SyntaxHighlighter(format: format)
+        self.plainCodeAttributes = [
+            .font: theme.codeBlock.font,
+            .foregroundColor: theme.codeColor.foreground
+        ]
     }
     
     /// Returns a syntax-highlighted attributed string for the given code.
     /// - Parameters:
     ///   - code: The raw string of code.
-    ///   - language: Optional language identifier (e.g. "swift"). Splash defaults to Swift if unknown, which is usually fine for general C-family syntax.
+    ///   - language: Optional language identifier (e.g. "swift").
+    ///     When explicitly non-Swift, this falls back to plain code styling to avoid misleading token colors.
     public func highlight(_ code: String, language: String? = nil) -> NSAttributedString {
+        if let normalizedLanguage = normalizedLanguage(language),
+           !Self.swiftLanguageAliases.contains(normalizedLanguage) {
+            return NSAttributedString(string: code, attributes: plainCodeAttributes)
+        }
         return highlighter.highlight(code)
+    }
+
+    private func normalizedLanguage(_ language: String?) -> String? {
+        guard let language else { return nil }
+        let trimmed = language.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed.lowercased()
     }
 }
 
