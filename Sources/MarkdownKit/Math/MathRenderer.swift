@@ -115,8 +115,35 @@ public final class MathRenderer: NSObject, WKNavigationDelegate {
             <head>
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
               <style>
-                html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
-                #math-root { display: inline-block; margin: 0; padding: 0; }
+                html, body {
+                    margin: 0;
+                    padding: 0;
+                    background: transparent;
+                    overflow: hidden;
+                }
+                /* Use CSS variables for explicit color control, matching native appearances */
+                :root {
+                    color: -apple-system-label;
+                }
+                @media (prefers-color-scheme: dark) {
+                    :root { color: white; }
+                }
+                @media (prefers-color-scheme: light) {
+                    :root { color: black; }
+                }
+                #math-root {
+                    display: inline-block;
+                    margin: 0;
+                    padding: 0;
+                }
+                /* Force MathJax output to inherit the text color */
+                svg {
+                    color: inherit;
+                    fill: currentColor;
+                }
+                svg * {
+                    fill: inherit;
+                }
               </style>
             </head>
             <body>
