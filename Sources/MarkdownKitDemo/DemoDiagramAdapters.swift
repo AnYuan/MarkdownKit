@@ -6,7 +6,7 @@ import MarkdownKit
 enum DemoDiagramAdapters {
     static func makeRegistry() -> DiagramAdapterRegistry {
         var registry = DiagramAdapterRegistry()
-        registry.register(DemoMermaidAdapter(), for: .mermaid)
+        registry.register(MermaidDiagramAdapter(), for: .mermaid)
         registry.register(DemoGeoJSONAdapter(kind: "GeoJSON"), for: .geojson)
         registry.register(DemoGeoJSONAdapter(kind: "TopoJSON"), for: .topojson)
         registry.register(DemoSTLAdapter(), for: .stl)
@@ -54,29 +54,7 @@ private struct DemoSTLAdapter: DiagramRenderingAdapter {
     }
 }
 
-private struct DemoMermaidAdapter: DiagramRenderingAdapter {
-    func render(source: String, language: DiagramLanguage) async -> NSAttributedString? {
-        guard language == .mermaid else { return nil }
 
-        let summary = summarizeMermaid(source)
-        var lines = [
-            "Direction: \(summary.direction)",
-            "Nodes: \(summary.nodes.count)",
-            "Edges: \(summary.edges.count)"
-        ]
-
-        if !summary.edges.isEmpty {
-            lines.append("Sample edges:")
-            lines.append(contentsOf: summary.edges.prefix(4).map { "\($0.from) -> \($0.to)" })
-        }
-
-        if summary.nodes.isEmpty && summary.edges.isEmpty {
-            lines.append("No parsable nodes/edges found.")
-        }
-
-        return makeSummaryCard(title: "Mermaid Graph", lines: lines)
-    }
-}
 
 private struct MermaidSummary {
     struct Edge {
