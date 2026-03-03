@@ -268,14 +268,20 @@ final class InlineFormattingLayoutTests: XCTestCase {
             return
         }
 
-        var foundCodeBackground = false
-        attrStr.enumerateAttribute(.backgroundColor, in: NSRange(location: 0, length: attrStr.length)) { value, range, _ in
-            if value != nil {
-                let substring = (attrStr.string as NSString).substring(with: range)
-                if substring.contains("code") { foundCodeBackground = true }
-            }
+        var codeBackground: Color?
+        var codeForeground: Color?
+        attrStr.enumerateAttributes(
+            in: NSRange(location: 0, length: attrStr.length)
+        ) { attrs, range, _ in
+            let substring = (attrStr.string as NSString).substring(with: range)
+            guard substring.contains("code") else { return }
+            codeBackground = attrs[.backgroundColor] as? Color
+            codeForeground = attrs[.foregroundColor] as? Color
         }
-        XCTAssertTrue(foundCodeBackground, "Inline code should have a background color")
+
+        XCTAssertNotNil(codeBackground, "Inline code should set a background color")
+        XCTAssertNotEqual(codeBackground, .clear, "Inline code background should not be clear")
+        XCTAssertNotNil(codeForeground, "Inline code should set a foreground color")
     }
 
     func testLinkInsideParagraph() async throws {

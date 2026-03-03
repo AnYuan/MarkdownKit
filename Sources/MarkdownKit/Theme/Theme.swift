@@ -22,6 +22,7 @@ public struct Theme {
     
     public let textColor: ColorToken
     public let codeColor: ColorToken
+    public let inlineCodeColor: ColorToken
     public let tableColor: ColorToken
     
     public init(
@@ -32,6 +33,7 @@ public struct Theme {
         codeBlock: TypographyToken,
         textColor: ColorToken,
         codeColor: ColorToken,
+        inlineCodeColor: ColorToken? = nil,
         tableColor: ColorToken
     ) {
         self.header1 = header1
@@ -41,6 +43,7 @@ public struct Theme {
         self.codeBlock = codeBlock
         self.textColor = textColor
         self.codeColor = codeColor
+        self.inlineCodeColor = inlineCodeColor ?? codeColor
         self.tableColor = tableColor
     }
     
@@ -55,12 +58,17 @@ public struct Theme {
 #if canImport(UIKit)
         let textC = ColorToken(foreground: .label)
         let codeC = ColorToken(foreground: .label, background: .secondarySystemFill)
+        let inlineCodeC = ColorToken(foreground: .label, background: .tertiarySystemFill)
         let tableC = ColorToken(foreground: .separator, background: .secondarySystemGroupedBackground)
 #elseif canImport(AppKit)
         let textC = ColorToken(foreground: .labelColor)
         let codeC = ColorToken(
             foreground: .labelColor,
             background: NSColor.controlAccentColor.withAlphaComponent(0.14)
+        )
+        let inlineCodeC = ColorToken(
+            foreground: .labelColor,
+            background: NSColor.controlAccentColor.withAlphaComponent(0.22)
         )
         let tableC = ColorToken(foreground: .gridColor, background: .controlBackgroundColor)
 #endif
@@ -73,6 +81,7 @@ public struct Theme {
             codeBlock: code,
             textColor: textC,
             codeColor: codeC,
+            inlineCodeColor: inlineCodeC,
             tableColor: tableC
         )
     }

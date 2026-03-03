@@ -485,8 +485,8 @@ public final class LayoutSolver {
                     ofSize: max(11, baseFont.pointSize * 0.92),
                     weight: .regular
                 )
-                codeAttrs[.foregroundColor] = theme.codeColor.foreground
-                codeAttrs[.backgroundColor] = theme.codeColor.background
+                codeAttrs[.foregroundColor] = theme.inlineCodeColor.foreground
+                codeAttrs[.backgroundColor] = theme.inlineCodeColor.background
                 result.append(NSAttributedString(string: code.code, attributes: codeAttrs))
 
             case let link as LinkNode:

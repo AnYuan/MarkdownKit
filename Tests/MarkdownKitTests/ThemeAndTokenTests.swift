@@ -48,6 +48,7 @@ final class ThemeAndTokenTests: XCTestCase {
         XCTAssertEqual(theme.header3.font.pointSize, 20)
         XCTAssertEqual(theme.paragraph.font.pointSize, 16)
         XCTAssertEqual(theme.codeBlock.font.pointSize, 14)
+        XCTAssertNotEqual(theme.inlineCodeColor.background, .clear)
     }
 
     func testCustomThemeInitialization() {
@@ -66,6 +67,26 @@ final class ThemeAndTokenTests: XCTestCase {
         XCTAssertEqual(theme.codeBlock.font.pointSize, 16)
         XCTAssertEqual(theme.textColor.foreground, .white)
         XCTAssertEqual(theme.codeColor.background, .black)
+        XCTAssertEqual(theme.inlineCodeColor.background, .black)
+    }
+
+    func testCustomInlineCodeColorOverridesCodeColor() {
+        let inlineCodeToken = ColorToken(foreground: .black, background: .yellow)
+        let theme = Theme(
+            header1: TypographyToken(font: Font.systemFont(ofSize: 32)),
+            header2: TypographyToken(font: Font.systemFont(ofSize: 24)),
+            header3: TypographyToken(font: Font.systemFont(ofSize: 20)),
+            paragraph: TypographyToken(font: Font.systemFont(ofSize: 16)),
+            codeBlock: TypographyToken(font: Font.monospacedSystemFont(ofSize: 14, weight: .regular)),
+            textColor: ColorToken(foreground: .white),
+            codeColor: ColorToken(foreground: .green, background: .black),
+            inlineCodeColor: inlineCodeToken,
+            tableColor: ColorToken(foreground: .gray, background: .darkGray)
+        )
+
+        XCTAssertEqual(theme.codeColor.background, .black)
+        XCTAssertEqual(theme.inlineCodeColor.foreground, .black)
+        XCTAssertEqual(theme.inlineCodeColor.background, .yellow)
     }
 
     func testCustomThemeFlowsThroughLayoutSolver() async throws {
