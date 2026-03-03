@@ -204,5 +204,44 @@ final class iOSTableLayoutTests: XCTestCase {
                           "Narrow-width fallback should not rely on tab stops")
         }
     }
+
+    func testUIKitTableBodyRowsUseAlternatingBackgroundShading() async throws {
+        let markdown = """
+        | Name  | Score |
+        |-------|-------|
+        | Alice | 95    |
+        | Bob   | 87    |
+        """
+        let layout = await TestHelper.solveLayout(markdown, width: 420)
+        guard let attr = layout.children[0].attributedString else {
+            XCTFail("Table layout missing attributed string")
+            return
+        }
+
+        let fullText = attr.string as NSString
+        var aliceBackground: UIColor?
+        var bobBackground: UIColor?
+
+        attr.enumerateAttribute(.backgroundColor, in: NSRange(location: 0, length: attr.length)) { value, range, _ in
+            let snippet = fullText.substring(with: range)
+            if snippet.contains("Alice") {
+                aliceBackground = value as? UIColor
+            }
+            if snippet.contains("Bob") {
+                bobBackground = value as? UIColor
+            }
+        }
+
+        XCTAssertNotNil(aliceBackground, "First body row should carry background attribute")
+        XCTAssertNotNil(bobBackground, "Second body row should carry background attribute")
+
+        let aliceAlpha = aliceBackground?.cgColor.alpha ?? -1
+        let bobAlpha = bobBackground?.cgColor.alpha ?? -1
+
+        XCTAssertEqual(aliceAlpha, 0, accuracy: 0.01,
+                       "First body row should remain unshaded")
+        XCTAssertGreaterThan(bobAlpha, 0.01,
+                             "Second body row should receive subtle shading")
+    }
 }
 #endif

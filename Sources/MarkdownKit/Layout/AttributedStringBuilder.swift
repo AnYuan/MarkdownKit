@@ -754,9 +754,18 @@ struct AttributedStringBuilder {
         }
 
         let columnWidth = rawColumnWidth
+        var bodyRowIndex = 0
 
         for (rowIndex, row) in allRows.enumerated() {
             let cells = normalizedCells(for: row.cells, columnCount: columnCount)
+            let isLastRow = rowIndex == allRows.count - 1
+            let rowBackground = tableRowBackgroundColorUIKit(
+                isHeader: row.isHead,
+                bodyRowIndex: bodyRowIndex
+            )
+            if !row.isHead {
+                bodyRowIndex += 1
+            }
 
             // Build tab stops for each column, offset by the horizontal inset
             var tabStops: [NSTextTab] = []
@@ -777,7 +786,8 @@ struct AttributedStringBuilder {
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .paragraphStyle: paragraphStyle,
-                .foregroundColor: theme.textColor.foreground
+                .foregroundColor: theme.textColor.foreground,
+                .backgroundColor: rowBackground
             ]
 
             // Join cells with tabs so they snap to the tab stops
@@ -798,7 +808,29 @@ struct AttributedStringBuilder {
                     .foregroundColor: theme.tableColor.foreground
                 ]
 
-                let dashes = Array(repeating: String(repeating: "─", count: max(3, Int(columnWidth / 8))), count: columnCount)
+                let dashes = Array(
+                    repeating: String(repeating: "─", count: max(3, Int(columnWidth / 8))),
+                    count: columnCount
+                )
+                result.append(NSAttributedString(string: "\n" + dashes.joined(separator: "\t"), attributes: sepAttrs))
+            } else if !isLastRow {
+                // Add subtle separators for body rows to improve row boundaries on iOS.
+                let separatorStyle = NSMutableParagraphStyle()
+                separatorStyle.tabStops = tabStops
+                separatorStyle.firstLineHeadIndent = horizontalInset
+                separatorStyle.headIndent = horizontalInset
+                separatorStyle.paragraphSpacing = 2
+
+                let sepAttrs: [NSAttributedString.Key: Any] = [
+                    .font: cellFont,
+                    .paragraphStyle: separatorStyle,
+                    .foregroundColor: theme.tableColor.foreground.withAlphaComponent(0.55)
+                ]
+
+                let dashes = Array(
+                    repeating: String(repeating: "─", count: max(3, Int(columnWidth / 10))),
+                    count: columnCount
+                )
                 result.append(NSAttributedString(string: "\n" + dashes.joined(separator: "\t"), attributes: sepAttrs))
             }
 
@@ -808,6 +840,16 @@ struct AttributedStringBuilder {
         }
 
         return result
+    }
+
+    private func tableRowBackgroundColorUIKit(isHeader: Bool, bodyRowIndex: Int) -> Color {
+        if isHeader {
+            return theme.tableColor.background
+        }
+        if bodyRowIndex.isMultiple(of: 2) {
+            return .clear
+        }
+        return theme.tableColor.background.withAlphaComponent(0.45)
     }
 
     private func buildTableAttributedString_UIKitNarrowFallback(
