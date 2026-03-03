@@ -12,7 +12,12 @@ import UIKit
 /// (converting compressed JPEG/PNG data into uncompressed pixel byte buffers for the GPU).
 /// `AsyncImageView` guarantees this happens 100% on a background queue.
 public class AsyncImageView: UIView {
-    
+
+    /// When `true` (the default), images are fetched and decoded on a background queue.
+    /// Set to `false` to load file-URL images synchronously on the main thread (useful for
+    /// snapshot testing). Network URLs still use async loading regardless of this flag.
+    public var displaysAsynchronously: Bool = true
+
     private var currentImageTask: Task<Void, Never>?
     private let urlSession: URLSession
     
@@ -51,8 +56,23 @@ public class AsyncImageView: UIView {
         }
         
         let targetSize = layout.size
-        
-        // Start Texture's exact Display State process
+
+        // Synchronous path: load + decode on main thread for file URLs
+        if !displaysAsynchronously && url.isFileURL {
+            guard let data = try? Data(contentsOf: url), !data.isEmpty,
+                  let sourceImage = UIImage(data: data) else { return }
+            let scale = UIScreen.main.scale
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = scale
+            let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+            let decoded = renderer.image { _ in
+                sourceImage.draw(in: CGRect(origin: .zero, size: targetSize))
+            }
+            self.layer.contents = decoded.cgImage
+            return
+        }
+
+        // Asynchronous path: Texture's exact Display State process
         currentImageTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             

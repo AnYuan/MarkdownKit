@@ -13,7 +13,13 @@ public class AsyncCodeView: UIView {
     
     private let textView = AsyncTextView(frame: .zero)
     private let copyButton = UIButton(type: .system)
-    
+
+    /// Forwards to the inner `AsyncTextView.displaysAsynchronously`.
+    public var displaysAsynchronously: Bool {
+        get { textView.displaysAsynchronously }
+        set { textView.displaysAsynchronously = newValue }
+    }
+
     private let theme: Theme
     private var rawCode: String = ""
     
