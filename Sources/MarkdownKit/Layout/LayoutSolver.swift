@@ -805,21 +805,25 @@ public final class LayoutSolver {
         let headerFont = fontWithTrait(theme.paragraph.font, trait: .bold)
 
         // Calculate column widths using tab stops for alignment.
-        let availableWidth = max(160, maxWidth - 16)
+        // Reserve 8pt on each side (16pt total) so table content doesn't hug the edges.
+        let horizontalInset: CGFloat = 8
+        let availableWidth = max(160, maxWidth - horizontalInset * 2)
         let columnWidth = max(72, floor(availableWidth / CGFloat(columnCount)))
 
         for (rowIndex, row) in allRows.enumerated() {
             let cells = normalizedCells(for: row.cells, columnCount: columnCount)
 
-            // Build tab stops for each column
+            // Build tab stops for each column, offset by the horizontal inset
             var tabStops: [NSTextTab] = []
             for col in 0..<columnCount {
                 let alignment = tableTextAlignment(for: table, column: col)
-                tabStops.append(NSTextTab(textAlignment: alignment, location: columnWidth * CGFloat(col)))
+                tabStops.append(NSTextTab(textAlignment: alignment, location: horizontalInset + columnWidth * CGFloat(col)))
             }
 
             let paragraphStyle = NSMutableParagraphStyle()
             paragraphStyle.tabStops = tabStops
+            paragraphStyle.firstLineHeadIndent = horizontalInset
+            paragraphStyle.headIndent = horizontalInset
             paragraphStyle.alignment = tableTextAlignment(for: table, column: 0)
             paragraphStyle.lineHeightMultiple = theme.paragraph.lineHeightMultiple
             paragraphStyle.paragraphSpacing = 2
@@ -839,6 +843,8 @@ public final class LayoutSolver {
             if row.isHead {
                 let separatorStyle = NSMutableParagraphStyle()
                 separatorStyle.tabStops = tabStops
+                separatorStyle.firstLineHeadIndent = horizontalInset
+                separatorStyle.headIndent = horizontalInset
                 separatorStyle.paragraphSpacing = 2
 
                 let sepAttrs: [NSAttributedString.Key: Any] = [
