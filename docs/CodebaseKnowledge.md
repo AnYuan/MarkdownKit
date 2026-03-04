@@ -64,8 +64,8 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **223** discoverable tests
-- `swift test`: **223 executed, 0 failures**
+- `swift test list`: **236** discoverable tests
+- `swift test`: **236 executed, 0 failures**
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -109,12 +109,17 @@ Key facts:
 Primary files:
 - `Sources/MarkdownKit/Layout/LayoutSolver.swift`
 - `Sources/MarkdownKit/Layout/AttributedStringBuilder.swift`
+- `Sources/MarkdownKit/Layout/Builders/TableAttributedStringBuilder.swift`
+- `Sources/MarkdownKit/Layout/Builders/ImageAttachmentBuilder.swift`
+- `Sources/MarkdownKit/Layout/Builders/MathAttachmentBuilder.swift`
 - `Sources/MarkdownKit/Layout/TextKitCalculator.swift`
 - `Sources/MarkdownKit/Layout/LayoutCache.swift`
 - `Sources/MarkdownKit/Theme/Theme.swift`
 
 Key facts:
 - `LayoutCache` now uses deterministic width bucketing for hash/equality consistency.
+- `AttributedStringBuilder` acts as the master coordinator delegating block constructions to isolated async-friendly builders (Table, Math, Image).
+- `TextKitCalculator` safely isolates layout passes to avoid concurrent `NSLayoutManager` data dictionary deadlocks via tight locks.
 - Code blocks support optional language badge + Splash highlighting.
 - Inline code remains style-focused (no token-level inline lexing).
 
@@ -130,12 +135,15 @@ Primary files:
 - Shared components: `UI/Components/AsyncTextView.swift`, `AsyncCodeView.swift`, `AsyncImageView.swift`
 - macOS: `UI/macOS/MarkdownCollectionView_macOS.swift`, `UI/macOS/MarkdownItemView.swift`
 
+Key facts:
+- `MarkdownCollectionViewCell` (iOS) and `MarkdownItemView` (macOS) natively implement Texture-style view layer recycling, maintaining `AsyncView` allocations and CALayers across high-speed lists.
+
 ## 5. Automated Test Strategy (Current State)
 
 High-value suites:
 - Parser/plugin correctness: `Parser*Tests`, `ASTPluginTests`, `*ExtractionPluginTests`, `GitHubAutolinkPluginTests`
 - Layout invariants: `LayoutSolverExtendedTests`, `InlineFormattingLayoutTests`, `CrossPlatformLayoutTests`, `iOSTableLayoutTests`
-- Safety: `URLSanitizerTests`, `DepthLimitTests`, `FuzzTests`
+- Safety and Utils: `URLSanitizerTests`, `DepthLimitTests`, `FuzzTests`, `TableOfContentsBuilderTests`, `PlatformAccessibilityTests`, `PerformanceProfilerTests`
 - Visual regression: `SnapshotTests`, `iOSSnapshotTests`, `DiagramSnapshotTests`
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`, `BenchmarkCacheTests`
 
@@ -146,7 +154,6 @@ High-value suites:
 3. iOS table rendering is still text/tab based, with lower visual richness than macOS table blocks.
 4. Full `swift test` feedback loop remains relatively heavy due to benchmark suites.
 5. Documentation can drift unless refreshed from repeatable command output.
-6. Concurrency constraints are documented (`docs/ConcurrencyContract.md`) but multi-actor stress coverage can be expanded.
 
 ## 7. Extension Points
 
