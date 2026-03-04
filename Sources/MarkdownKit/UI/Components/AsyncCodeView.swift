@@ -39,7 +39,7 @@ public class AsyncCodeView: UIView {
     }
     
     private func setup() {
-        self.backgroundColor = theme.codeColor.background
+        self.backgroundColor = theme.colors.codeColor.background
         self.layer.cornerRadius = 8.0
         self.clipsToBounds = true
         
@@ -55,7 +55,7 @@ public class AsyncCodeView: UIView {
         let image = UIImage(systemName: "doc.on.doc", withConfiguration: config)
         copyButton.setImage(image, for: .normal)
         copyButton.tintColor = .secondaryLabel
-        copyButton.backgroundColor = theme.codeColor.background.withAlphaComponent(0.8)
+        copyButton.backgroundColor = theme.colors.codeColor.background.withAlphaComponent(0.8)
         copyButton.layer.cornerRadius = 6.0
         
         copyButton.addAction(UIAction { [weak self] _ in
