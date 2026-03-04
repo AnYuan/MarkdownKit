@@ -7,22 +7,26 @@ public struct GitHubAutolinkPlugin: ASTPlugin {
     
     public weak var delegate: MarkdownContextDelegate?
     
-    // Regular expressions for GitHub-style tokens
+    // Regular expressions for GitHub-style tokens (compile-time string literals — patterns are guaranteed valid)
+    private static let mentionPattern = "(?<![a-zA-Z0-9])@([a-zA-Z0-9-]+)"
+    private static let referencePattern = "(?<![a-zA-Z0-9])([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)?#([0-9]+)"
+    private static let commitPattern = "(?<![a-zA-Z0-9])[0-9a-f]{7,40}(?![a-zA-Z0-9])"
+
     private let mentionRegex: NSRegularExpression
     private let referenceRegex: NSRegularExpression
     private let commitRegex: NSRegularExpression
-    
+
     public init(delegate: MarkdownContextDelegate? = nil) {
         self.delegate = delegate
-        
-        // Match @username (alphanumeric with hyphens, not at the start of a word boundary necessarily if preceded by space)
-        self.mentionRegex = try! NSRegularExpression(pattern: "(?<![a-zA-Z0-9])@([a-zA-Z0-9-]+)", options: [])
-        
-        // Match #1234 or owner/repo#1234
-        self.referenceRegex = try! NSRegularExpression(pattern: "(?<![a-zA-Z0-9])([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)?#([0-9]+)", options: [])
-        
-        // Match 7-40 hex chars for SHAs
-        self.commitRegex = try! NSRegularExpression(pattern: "(?<![a-zA-Z0-9])[0-9a-f]{7,40}(?![a-zA-Z0-9])", options: [])
+
+        guard let mention = try? NSRegularExpression(pattern: Self.mentionPattern, options: []),
+              let reference = try? NSRegularExpression(pattern: Self.referencePattern, options: []),
+              let commit = try? NSRegularExpression(pattern: Self.commitPattern, options: []) else {
+            fatalError("GitHubAutolinkPlugin: invalid regex pattern — this is a programmer error")
+        }
+        self.mentionRegex = mention
+        self.referenceRegex = reference
+        self.commitRegex = commit
     }
     
     public func visit(_ nodes: [MarkdownNode]) -> [MarkdownNode] {

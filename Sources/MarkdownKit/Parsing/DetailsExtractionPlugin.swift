@@ -316,23 +316,40 @@ public struct DetailsExtractionPlugin: ASTPlugin {
         return match
     }
 
-    private static let detailsOpenRegex = try! NSRegularExpression(
-        pattern: #"(?i)^<details(?:\s+[^>]*)?>$"#
-    )
+    // swiftlint:disable force_try — patterns are compile-time string literals; failure is a programmer error.
+    private static let detailsOpenRegex: NSRegularExpression = {
+        guard let regex = try? NSRegularExpression(pattern: #"(?i)^<details(?:\s+[^>]*)?>$"#) else {
+            fatalError("Invalid regex pattern for detailsOpenRegex")
+        }
+        return regex
+    }()
 
-    private static let detailsCloseRegex = try! NSRegularExpression(
-        pattern: #"(?i)^</details>$"#
-    )
+    private static let detailsCloseRegex: NSRegularExpression = {
+        guard let regex = try? NSRegularExpression(pattern: #"(?i)^</details>$"#) else {
+            fatalError("Invalid regex pattern for detailsCloseRegex")
+        }
+        return regex
+    }()
 
-    private static let summaryOpenRegex = try! NSRegularExpression(
-        pattern: #"(?i)^<summary(?:\s+[^>]*)?>$"#
-    )
+    private static let summaryOpenRegex: NSRegularExpression = {
+        guard let regex = try? NSRegularExpression(pattern: #"(?i)^<summary(?:\s+[^>]*)?>$"#) else {
+            fatalError("Invalid regex pattern for summaryOpenRegex")
+        }
+        return regex
+    }()
 
-    private static let summaryCloseRegex = try! NSRegularExpression(
-        pattern: #"(?i)^</summary>$"#
-    )
+    private static let summaryCloseRegex: NSRegularExpression = {
+        guard let regex = try? NSRegularExpression(pattern: #"(?i)^</summary>$"#) else {
+            fatalError("Invalid regex pattern for summaryCloseRegex")
+        }
+        return regex
+    }()
 
-    private static let summaryInlineRegex = try! NSRegularExpression(
-        pattern: #"(?is)^<summary(?:\s+[^>]*)?>(.*?)</summary>$"#
-    )
+    private static let summaryInlineRegex: NSRegularExpression = {
+        guard let regex = try? NSRegularExpression(pattern: #"(?is)^<summary(?:\s+[^>]*)?>(.*?)</summary>$"#) else {
+            fatalError("Invalid regex pattern for summaryInlineRegex")
+        }
+        return regex
+    }()
+    // swiftlint:enable force_try
 }
