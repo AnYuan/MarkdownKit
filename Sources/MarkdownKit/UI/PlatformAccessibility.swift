@@ -55,17 +55,28 @@ public struct PlatformAccessibility {
         return nil
     }
     
+    /// Returns a VoiceOver hint describing the available interaction for a given layout node.
+    public static func accessibilityHint(for layout: LayoutResult) -> String? {
+        if layout.node is DetailsNode {
+            return "Double-tap to expand or collapse"
+        }
+        if layout.node is LinkNode {
+            return "Double-tap to open link"
+        }
+        return nil
+    }
+
     #if canImport(UIKit)
     /// Returns the corresponding UIAccessibilityTraits for iOS.
     public static func accessibilityTraits(for layout: LayoutResult) -> UIAccessibilityTraits {
         var traits: UIAccessibilityTraits = .staticText
-        
+
         if layout.node is DetailsNode || layout.node is LinkNode {
             traits.insert(.button)
         } else if layout.node is ImageNode {
             traits.insert(.image)
         }
-        
+
         return traits
     }
     #endif

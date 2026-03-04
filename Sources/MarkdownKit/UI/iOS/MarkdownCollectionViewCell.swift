@@ -24,6 +24,7 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
         self.isAccessibilityElement = false
         self.accessibilityLabel = nil
         self.accessibilityValue = nil
+        self.accessibilityHint = nil
         self.accessibilityTraits = .none
     }
     
@@ -62,6 +63,9 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
         }
         if let value = PlatformAccessibility.accessibilityValue(for: layout) {
             self.accessibilityValue = value
+        }
+        if let hint = PlatformAccessibility.accessibilityHint(for: layout) {
+            self.accessibilityHint = hint
         }
     }
 }
