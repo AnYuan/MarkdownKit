@@ -31,4 +31,6 @@ jobs:
         run: swift build
 
       - name: Fast verification
+        env:
+          MARKDOWNKIT_RUN_SNAPSHOTS_IN_CI: "1"
         run: bash scripts/verify_fast.sh
