@@ -8,11 +8,11 @@ import AppKit
 
 @MainActor
 final class SnapshotTests: XCTestCase {
-    // Tolerate font-rasterization and antialiasing variance across different macOS
-    // environments (local vs CI runners).  95% pixel match + 95% perceptual match
-    // catches real visual regressions while ignoring sub-pixel rendering differences.
-    private let imagePrecision: Float = 0.95
-    private let imagePerceptualPrecision: Float = 0.95
+    // CI uses record-then-verify (same environment), so high precision is safe.
+    // 99.8% pixel match catches real regressions; 99% perceptual match tolerates
+    // only imperceptible antialiasing jitter.
+    private let imagePrecision: Float = 0.998
+    private let imagePerceptualPrecision: Float = 0.99
 
     private var imageStrategy: Snapshotting<NSView, NSImage> {
         .image(
