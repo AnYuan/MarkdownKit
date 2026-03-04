@@ -8,6 +8,16 @@ import AppKit
 
 @MainActor
 final class SnapshotTests: XCTestCase {
+    // Allow tiny antialiasing/font rasterization variance across macOS runners.
+    private let imagePrecision: Float = 0.998
+    private let imagePerceptualPrecision: Float = 0.99
+
+    private var imageStrategy: Snapshotting<NSView, NSImage> {
+        .image(
+            precision: imagePrecision,
+            perceptualPrecision: imagePerceptualPrecision
+        )
+    }
     
     override func setUp() {
         super.setUp()
@@ -46,7 +56,7 @@ final class SnapshotTests: XCTestCase {
         container.addSubview(item.view)
         
         // Assert snapshot directly on the container view
-        assertSnapshot(of: container, as: .image)
+        assertSnapshot(of: container, as: imageStrategy)
     }
     
     func testCodeBlockRendering() async throws {
@@ -83,7 +93,7 @@ final class SnapshotTests: XCTestCase {
         container.addSubview(item.view)
         
         // Assert snapshot directly on the container view
-        assertSnapshot(of: container, as: .image)
+        assertSnapshot(of: container, as: imageStrategy)
     }
     
     func testMathRendering() async throws {
@@ -120,7 +130,7 @@ final class SnapshotTests: XCTestCase {
             container.addSubview(item.view)
         }
         
-        assertSnapshot(of: container, as: .image)
+        assertSnapshot(of: container, as: imageStrategy)
     }
     
     func testTasklistRendering() async throws {
@@ -151,7 +161,7 @@ final class SnapshotTests: XCTestCase {
         SnapshotTestHelper.applyStableAppearance(to: container)
         container.addSubview(item.view)
         
-        assertSnapshot(of: container, as: .image)
+        assertSnapshot(of: container, as: imageStrategy)
     }
 }
 #endif
