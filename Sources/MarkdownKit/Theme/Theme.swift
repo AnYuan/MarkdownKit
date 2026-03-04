@@ -44,17 +44,26 @@ public struct Theme: Equatable {
         public let codeColor: ColorToken
         public let inlineCodeColor: ColorToken
         public let tableColor: ColorToken
-        
+        public let linkColor: ColorToken
+        public let blockQuoteColor: ColorToken
+        public let thematicBreakColor: ColorToken
+
         public init(
             textColor: ColorToken,
             codeColor: ColorToken,
             inlineCodeColor: ColorToken? = nil,
-            tableColor: ColorToken
+            tableColor: ColorToken,
+            linkColor: ColorToken? = nil,
+            blockQuoteColor: ColorToken? = nil,
+            thematicBreakColor: ColorToken? = nil
         ) {
             self.textColor = textColor
             self.codeColor = codeColor
             self.inlineCodeColor = inlineCodeColor ?? codeColor
             self.tableColor = tableColor
+            self.linkColor = linkColor ?? ColorToken(foreground: .systemBlue)
+            self.blockQuoteColor = blockQuoteColor ?? ColorToken(foreground: .systemBlue, background: .gray)
+            self.thematicBreakColor = thematicBreakColor ?? ColorToken(foreground: .gray)
         }
     }
     

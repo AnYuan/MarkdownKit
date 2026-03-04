@@ -96,6 +96,17 @@ public final class MathRenderer: NSObject, WKNavigationDelegate {
     private var pendingRenders: [PendingRender] = []
     private var isProcessingRender = false
 
+    /// Cache of successfully rendered math images, keyed by LaTeX string.
+    /// Static + nonisolated because NSCache is internally thread-safe,
+    /// and the sync layout path needs to access it without MainActor.
+    private nonisolated(unsafe) static let imageCache = NSCache<NSString, NativeImage>()
+
+    /// Returns a previously rendered image for the given LaTeX, or nil if not cached.
+    /// Thread-safe (NSCache is internally synchronized). Designed for the sync layout path.
+    public nonisolated static func cachedImage(for latex: String) -> NativeImage? {
+        imageCache.object(forKey: latex as NSString)
+    }
+
     private override init() {
         super.init()
         setupBackgroundWebView()
@@ -135,7 +146,13 @@ public final class MathRenderer: NSObject, WKNavigationDelegate {
                 let dropped = self.pendingRenders.removeFirst()
                 dropped.completion(nil)
             }
-            self.pendingRenders.append(PendingRender(svg: svg, completion: completion))
+            let cacheKey = latex
+            self.pendingRenders.append(PendingRender(svg: svg, completion: { image in
+                if let image {
+                    MathRenderer.imageCache.setObject(image, forKey: cacheKey as NSString)
+                }
+                completion(image)
+            }))
             self.drainRenderQueue()
         }
     }

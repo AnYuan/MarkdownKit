@@ -16,6 +16,8 @@ public class MarkdownCollectionView: UIView {
     
     public weak var themeDelegate: MarkdownCollectionViewThemeDelegate?
     public var onToggleDetails: ((Int, DetailsNode) -> Void)?
+    public var onLinkTap: ((URL) -> Void)?
+    public var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
 
     private let flowLayout = UICollectionViewFlowLayout()
     private lazy var collectionView: UICollectionView = {
@@ -81,6 +83,14 @@ extension MarkdownCollectionView: UICollectionViewDataSource, UICollectionViewDe
         }
 
         let layoutResult = layouts[indexPath.item]
+
+        // Wire interaction callbacks before configure() so AsyncTextView picks them up
+        cell.onLinkTap = onLinkTap
+        cell.onCheckboxToggle = onCheckboxToggle
+        cell.onDetailsTap = { [weak self] details in
+            self?.onToggleDetails?(indexPath.item, details)
+        }
+
         cell.configure(with: layoutResult)
 
         return cell

@@ -97,6 +97,46 @@ final class ThemeAndTokenTests: XCTestCase {
         XCTAssertEqual(theme.colors.inlineCodeColor.background, .yellow)
     }
 
+    func testDefaultThemeHasLinkAndBlockQuoteColors() {
+        let theme = Theme.default
+        XCTAssertEqual(theme.colors.linkColor.foreground, .systemBlue)
+        XCTAssertEqual(theme.colors.blockQuoteColor.foreground, .systemBlue)
+        XCTAssertEqual(theme.colors.blockQuoteColor.background, .gray)
+        XCTAssertEqual(theme.colors.thematicBreakColor.foreground, .gray)
+    }
+
+    func testCustomLinkColorFlowsToAttributedString() async throws {
+        let theme = Theme(
+            typography: Theme.Typography(
+                header1: TypographyToken(font: Font.systemFont(ofSize: 32)),
+                header2: TypographyToken(font: Font.systemFont(ofSize: 24)),
+                header3: TypographyToken(font: Font.systemFont(ofSize: 20)),
+                paragraph: TypographyToken(font: Font.systemFont(ofSize: 16)),
+                codeBlock: TypographyToken(font: Font.monospacedSystemFont(ofSize: 14, weight: .regular))
+            ),
+            colors: Theme.Colors(
+                textColor: ColorToken(foreground: .white),
+                codeColor: ColorToken(foreground: .green, background: .black),
+                tableColor: ColorToken(foreground: .gray, background: .darkGray),
+                linkColor: ColorToken(foreground: .red)
+            )
+        )
+
+        let layout = await TestHelper.solveLayout("[link](https://example.com)", theme: theme)
+        guard let attrStr = layout.children.first?.attributedString else {
+            XCTFail("Missing attributed string")
+            return
+        }
+
+        var foundLinkColor: Color?
+        attrStr.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attrStr.length)) { value, _, _ in
+            if let color = value as? Color, color == .red {
+                foundLinkColor = color
+            }
+        }
+        XCTAssertEqual(foundLinkColor, .red, "Custom link color should flow through to rendered link")
+    }
+
     func testCustomThemeFlowsThroughLayoutSolver() async throws {
         let customFont = Font.boldSystemFont(ofSize: 48)
         let theme = Theme(

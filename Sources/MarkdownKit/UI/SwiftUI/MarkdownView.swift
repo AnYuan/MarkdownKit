@@ -13,11 +13,11 @@ public struct MarkdownView: View {
     private let text: String
     private let theme: Theme
     private let plugins: [ASTPlugin]
-    
-    // Internal state to hold the pre-calculated layout elements.
-    // This allows background-thread parsing and prevents hangs on the main thread during render.
+    private var linkTapHandler: ((URL) -> Void)?
+    private var checkboxToggleHandler: ((CheckboxInteractionData) -> Void)?
+
     @StateObject private var engine = MarkdownEngine()
-    
+
     /// Initializes a high-performance native Markdown view.
     /// - Parameters:
     ///   - text: The Raw Markdown string to render.
@@ -32,14 +32,16 @@ public struct MarkdownView: View {
         self.theme = theme
         self.plugins = plugins
     }
-    
+
     public var body: some View {
         GeometryReader { geometry in
             MarkdownViewRepresentable(
                 layouts: engine.layouts,
                 onToggleDetails: { index, details in
                     engine.toggleDetails(at: index, currentlyOpen: details.isOpen, width: geometry.size.width)
-                }
+                },
+                onLinkTap: linkTapHandler,
+                onCheckboxToggle: checkboxToggleHandler
             )
             .onChange(of: text) { _, newText in
                 engine.render(markdown: newText, plugins: plugins, theme: theme, width: geometry.size.width)
@@ -48,6 +50,21 @@ public struct MarkdownView: View {
                 engine.render(markdown: text, plugins: plugins, theme: theme, width: newWidth)
             }
         }
+    }
+
+    /// Registers a callback when the user taps a link in the rendered markdown.
+    /// If no callback is registered, links open in the default browser.
+    public func onLinkTap(_ handler: @escaping (URL) -> Void) -> MarkdownView {
+        var copy = self
+        copy.linkTapHandler = handler
+        return copy
+    }
+
+    /// Registers a callback when the user toggles a checkbox in the rendered markdown.
+    public func onCheckboxToggle(_ handler: @escaping (CheckboxInteractionData) -> Void) -> MarkdownView {
+        var copy = self
+        copy.checkboxToggleHandler = handler
+        return copy
     }
 }
 

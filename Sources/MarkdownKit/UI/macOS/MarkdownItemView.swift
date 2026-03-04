@@ -10,6 +10,7 @@ private final class InteractiveTextView: NSTextView {
     var summaryCharacterRange: NSRange = NSRange(location: NSNotFound, length: 0)
     var onSummaryClick: (() -> Void)?
     var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
+    var onLinkTap: ((URL) -> Void)?
 
     override func mouseDown(with event: NSEvent) {
         guard let layoutManager = layoutManager, let textContainer = textContainer else {
@@ -42,7 +43,15 @@ private final class InteractiveTextView: NSTextView {
                 return
             }
         }
-        
+
+        // 3. Link taps
+        if characterIndex < textStorage?.length ?? 0 {
+            if let url = textStorage?.attribute(.link, at: characterIndex, effectiveRange: nil) as? URL {
+                onLinkTap?(url)
+                return
+            }
+        }
+
         super.mouseDown(with: event)
     }
 }
@@ -68,7 +77,8 @@ public class MarkdownItemView: NSCollectionViewItem {
     public func configure(
         with layout: LayoutResult,
         onToggleDetails: ((DetailsNode) -> Void)? = nil,
-        onCheckboxToggle: ((CheckboxInteractionData) -> Void)? = nil
+        onCheckboxToggle: ((CheckboxInteractionData) -> Void)? = nil,
+        onLinkTap: ((URL) -> Void)? = nil
     ) {
         hostedView?.removeFromSuperview()
         hostedView = nil
@@ -80,7 +90,8 @@ public class MarkdownItemView: NSCollectionViewItem {
         // Use InteractiveTextView for proper multi-line rich text rendering and interaction.
         let textView = InteractiveTextView(frame: NSRect(origin: .zero, size: layout.size))
         textView.onCheckboxToggle = onCheckboxToggle
-        
+        textView.onLinkTap = onLinkTap
+
         if let details = layout.node as? DetailsNode {
             textView.summaryCharacterRange = detailsSummaryRange(in: attrString.string)
             textView.onSummaryClick = { onToggleDetails?(details) }

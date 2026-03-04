@@ -11,6 +11,9 @@ import UIKit
 /// Upon receiving a `LayoutResult`, it dispatches text drawing to a background GCD queue,
 /// generating a `CGImage` of the text pixel-perfectly, and then sets the `layer.contents` on the main thread.
 /// This utterly eliminates main-thread blocking when scrolling millions of words.
+///
+/// Interaction is handled via TextKit 1 hit-testing on the original `NSAttributedString`
+/// (same approach as Texture's ASTextNode2), with a highlight overlay CALayer for pressed state.
 public class AsyncTextView: UIView {
 
     /// When `true` (the default), text is rasterized on a background executor and
@@ -19,7 +22,35 @@ public class AsyncTextView: UIView {
     /// snapshot testing and small-content previews.
     public var displaysAsynchronously: Bool = true
 
+    // MARK: - Interaction Callbacks
+
+    /// Called when the user taps a link. If nil, links open via `UIApplication.shared.open()`.
+    public var onLinkTap: ((URL) -> Void)?
+
+    /// Called when the user taps a checkbox prefix.
+    public var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
+
+    // MARK: - Private State
+
     private var currentDrawTask: Task<Void, Never>?
+
+    /// Retained for hit-testing after rasterization.
+    private var currentAttributedString: NSAttributedString?
+    private var currentSize: CGSize = .zero
+
+    /// Lazily created on first tap. Invalidated on reconfigure.
+    private var hitTester: TextKitHitTester?
+
+    /// Semi-transparent overlay for pressed-state visual feedback.
+    /// Inspired by Texture's ASHighlightOverlayLayer.
+    private lazy var highlightLayer: CALayer = {
+        let hl = CALayer()
+        hl.cornerRadius = 3
+        hl.isHidden = true
+        return hl
+    }()
+
+    // MARK: - Init
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -33,19 +64,34 @@ public class AsyncTextView: UIView {
 
     private func setup() {
         self.backgroundColor = .clear
+
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        addGestureRecognizer(tapGesture)
+
+        let pressGesture = UILongPressGestureRecognizer(target: self, action: #selector(handlePress(_:)))
+        pressGesture.minimumPressDuration = 0.05
+        pressGesture.cancelsTouchesInView = false
+        addGestureRecognizer(pressGesture)
     }
+
+    // MARK: - Configure
 
     /// Binds the `LayoutResult` constraint to the view, launching an asynchronous drawing operation.
     public func configure(with layout: LayoutResult) {
         // Cancel any pending draw operation if this view was recycled quickly
         currentDrawTask?.cancel()
+        hitTester = nil // Invalidate stale hit-tester on reconfigure
 
         self.frame.size = layout.size
+        self.currentSize = layout.size
 
         guard let string = layout.attributedString, string.length > 0 else {
             self.layer.contents = nil
+            self.currentAttributedString = nil
             return
         }
+
+        self.currentAttributedString = string
 
         let size = layout.size
         let scale = UIScreen.main.scale
@@ -70,6 +116,100 @@ public class AsyncTextView: UIView {
             )
         }
     }
+
+    // MARK: - Tap Handling
+
+    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+        guard let attrString = currentAttributedString else { return }
+        let point = gesture.location(in: self)
+
+        if hitTester == nil {
+            hitTester = TextKitHitTester(attributedString: attrString, containerSize: currentSize)
+        }
+
+        guard let charIndex = hitTester?.characterIndex(at: point) else { return }
+
+        // 1. Check for link
+        if let url: URL = hitTester?.attribute(.link, at: charIndex) {
+            if let handler = onLinkTap {
+                handler(url)
+            } else {
+                UIApplication.shared.open(url)
+            }
+            return
+        }
+
+        // 2. Check for checkbox
+        if let data: CheckboxInteractionData = hitTester?.attribute(.markdownCheckbox, at: charIndex) {
+            onCheckboxToggle?(data)
+            return
+        }
+    }
+
+    // MARK: - Press Highlight
+
+    @objc private func handlePress(_ gesture: UILongPressGestureRecognizer) {
+        switch gesture.state {
+        case .began:
+            showHighlight(at: gesture.location(in: self))
+        case .ended, .cancelled, .failed:
+            hideHighlight()
+        default:
+            break
+        }
+    }
+
+    private func showHighlight(at point: CGPoint) {
+        guard let attrString = currentAttributedString else { return }
+
+        if hitTester == nil {
+            hitTester = TextKitHitTester(attributedString: attrString, containerSize: currentSize)
+        }
+
+        guard let charIndex = hitTester?.characterIndex(at: point) else { return }
+
+        // Determine the interactive range to highlight
+        var highlightRange: NSRange?
+
+        if hitTester?.effectiveRange(of: .link, at: charIndex) != nil {
+            highlightRange = hitTester?.effectiveRange(of: .link, at: charIndex)
+        } else if hitTester?.effectiveRange(of: .markdownCheckbox, at: charIndex) != nil {
+            highlightRange = hitTester?.effectiveRange(of: .markdownCheckbox, at: charIndex)
+        }
+
+        guard let range = highlightRange,
+              let rect = hitTester?.boundingRect(for: range) else { return }
+
+        // Texture-inspired highlight: light=0.11 / dark=0.22 opacity
+        let isDark = traitCollection.userInterfaceStyle == .dark
+        highlightLayer.backgroundColor = UIColor.systemBlue.withAlphaComponent(isDark ? 0.22 : 0.11).cgColor
+
+        if highlightLayer.superlayer == nil {
+            layer.addSublayer(highlightLayer)
+        }
+
+        // Animate in (Texture: fadeIn 0.1s)
+        highlightLayer.frame = rect.insetBy(dx: -2, dy: -1)
+        highlightLayer.opacity = 0
+        highlightLayer.isHidden = false
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.1)
+        highlightLayer.opacity = 1
+        CATransaction.commit()
+    }
+
+    private func hideHighlight() {
+        // Animate out (Texture: fadeOut 0.15s)
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.15)
+        CATransaction.setCompletionBlock { [weak self] in
+            self?.highlightLayer.isHidden = true
+        }
+        highlightLayer.opacity = 0
+        CATransaction.commit()
+    }
+
+    // MARK: - Rendering
 
     /// Renders synchronously on the calling thread. Used when `displaysAsynchronously` is `false`.
     private static func renderImageSync(

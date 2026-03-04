@@ -174,7 +174,7 @@ struct AttributedStringBuilder {
                 if let para = child as? ParagraphNode {
                     var quoteAttrs = defaultAttributes(for: theme.typography.paragraph)
                     quoteAttrs[.paragraphStyle] = quoteStyle
-                    quoteAttrs[.foregroundColor] = Color.gray
+                    quoteAttrs[.foregroundColor] = theme.colors.blockQuoteColor.background
                     let inlineStr = await buildInlineAttributedString(
                         from: para.children,
                         baseAttributes: quoteAttrs,
@@ -183,7 +183,7 @@ struct AttributedStringBuilder {
 
                     // Prepend quote bar
                     let bar = NSAttributedString(string: "┃ ", attributes: [
-                        .foregroundColor: Color.systemBlue,
+                        .foregroundColor: theme.colors.blockQuoteColor.foreground,
                         .font: theme.typography.paragraph.font,
                         .paragraphStyle: quoteStyle
                     ])
@@ -201,7 +201,7 @@ struct AttributedStringBuilder {
         case is ThematicBreakNode:
             let hrAttrs: [NSAttributedString.Key: Any] = [
                 .font: theme.typography.paragraph.font,
-                .foregroundColor: Color.gray
+                .foregroundColor: theme.colors.thematicBreakColor.foreground
             ]
             let line = String(repeating: "─", count: 40)
             string.append(NSAttributedString(string: line, attributes: hrAttrs))
@@ -209,7 +209,7 @@ struct AttributedStringBuilder {
         default:
             break
         }
-        
+
         return string
     }
 
@@ -234,9 +234,24 @@ struct AttributedStringBuilder {
             string.append(NSAttributedString(string: text.text, attributes: attributes))
 
         case let math as MathNode:
-            // Sync fallback: render formula as monospaced text
+            #if canImport(WebKit)
+            if let image = MathRenderer.cachedImage(for: math.equation) {
+                let attachment = NSTextAttachment()
+                attachment.image = image
+                attachment.bounds = attachmentBounds(
+                    for: image.size,
+                    isInline: math.isInline,
+                    font: theme.typography.paragraph.font
+                )
+                string.append(NSAttributedString(attachment: attachment))
+            } else {
+                let attr = defaultAttributes(for: theme.typography.codeBlock)
+                string.append(NSAttributedString(string: math.equation, attributes: attr))
+            }
+            #else
             let attr = defaultAttributes(for: theme.typography.codeBlock)
             string.append(NSAttributedString(string: math.equation, attributes: attr))
+            #endif
 
         case let paragraph as ParagraphNode:
             let baseAttrs = defaultAttributes(for: theme.typography.paragraph)
@@ -293,9 +308,9 @@ struct AttributedStringBuilder {
                 if let para = child as? ParagraphNode {
                     var quoteAttrs = defaultAttributes(for: theme.typography.paragraph)
                     quoteAttrs[.paragraphStyle] = quoteStyle
-                    quoteAttrs[.foregroundColor] = Color.gray
+                    quoteAttrs[.foregroundColor] = theme.colors.blockQuoteColor.background
                     let bar = NSAttributedString(string: "┃ ", attributes: [
-                        .foregroundColor: Color.systemBlue,
+                        .foregroundColor: theme.colors.blockQuoteColor.foreground,
                         .font: theme.typography.paragraph.font,
                         .paragraphStyle: quoteStyle
                     ])
@@ -310,7 +325,7 @@ struct AttributedStringBuilder {
         case is ThematicBreakNode:
             let hrAttrs: [NSAttributedString.Key: Any] = [
                 .font: theme.typography.paragraph.font,
-                .foregroundColor: Color.gray
+                .foregroundColor: theme.colors.thematicBreakColor.foreground
             ]
             string.append(NSAttributedString(string: String(repeating: "─", count: 40), attributes: hrAttrs))
 
@@ -340,7 +355,7 @@ struct AttributedStringBuilder {
                 result.append(NSAttributedString(string: code.code, attributes: codeAttrs))
             case let link as LinkNode:
                 var linkAttrs = baseAttributes
-                linkAttrs[.foregroundColor] = Color.systemBlue
+                linkAttrs[.foregroundColor] = theme.colors.linkColor.foreground
                 linkAttrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
                 if let dest = link.destination, let url = URL(string: dest) {
                     linkAttrs[.link] = url
@@ -363,10 +378,26 @@ struct AttributedStringBuilder {
                 stAttrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
                 result.append(buildInlineAttributedStringSync(from: strikethrough.children, baseAttributes: stAttrs))
             case let math as MathNode:
-                // Sync fallback: render as monospaced text
+                #if canImport(WebKit)
+                if let image = MathRenderer.cachedImage(for: math.equation) {
+                    let attachment = NSTextAttachment()
+                    attachment.image = image
+                    attachment.bounds = attachmentBounds(
+                        for: image.size,
+                        isInline: math.isInline,
+                        font: theme.typography.paragraph.font
+                    )
+                    result.append(NSAttributedString(attachment: attachment))
+                } else {
+                    var mathAttrs = baseAttributes
+                    mathAttrs[.font] = theme.typography.codeBlock.font
+                    result.append(NSAttributedString(string: math.equation, attributes: mathAttrs))
+                }
+                #else
                 var mathAttrs = baseAttributes
                 mathAttrs[.font] = theme.typography.codeBlock.font
                 result.append(NSAttributedString(string: math.equation, attributes: mathAttrs))
+                #endif
             default:
                 break
             }
@@ -559,7 +590,7 @@ struct AttributedStringBuilder {
 
             case let link as LinkNode:
                 var linkAttrs = baseAttributes
-                linkAttrs[.foregroundColor] = Color.systemBlue
+                linkAttrs[.foregroundColor] = theme.colors.linkColor.foreground
                 linkAttrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
                 if let dest = link.destination, let url = URL(string: dest) {
                     linkAttrs[.link] = url
@@ -600,7 +631,7 @@ struct AttributedStringBuilder {
                 } else {
                     var mathAttrs = baseAttributes
                     mathAttrs[.font] = theme.typography.codeBlock.font
-                    mathAttrs[.foregroundColor] = Color.systemPurple
+                    mathAttrs[.foregroundColor] = theme.colors.linkColor.foreground
                     let prefix = math.isInline ? "" : "\n"
                     let suffix = math.isInline ? "" : "\n"
                     result.append(NSAttributedString(string: "\(prefix)\(math.equation)\(suffix)", attributes: mathAttrs))

@@ -17,6 +17,7 @@ public class MarkdownCollectionView: NSView {
     public weak var themeDelegate: MarkdownCollectionViewThemeDelegate?
     public var onToggleDetails: ((Int, DetailsNode) -> Void)?
     public var onToggleCheckbox: ((CheckboxInteractionData) -> Void)?
+    public var onLinkTap: ((URL) -> Void)?
     
     private let scrollView = NSScrollView()
     private let collectionView = NSCollectionView()
@@ -92,6 +93,9 @@ extension MarkdownCollectionView: NSCollectionViewDataSource, NSCollectionViewDe
             },
             onCheckboxToggle: { [weak self] interactionData in
                 self?.onToggleCheckbox?(interactionData)
+            },
+            onLinkTap: { [weak self] url in
+                self?.onLinkTap?(url)
             }
         )
         
