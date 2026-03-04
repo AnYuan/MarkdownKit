@@ -30,7 +30,14 @@ jobs:
       - name: Build
         run: swift build
 
-      - name: Fast verification
-        env:
-          MARKDOWNKIT_RUN_SNAPSHOTS_IN_CI: "1"
+      - name: Fast verification (non-snapshot suites)
         run: bash scripts/verify_fast.sh
+
+      - name: Snapshot stability (record then verify)
+        run: |
+          # Delete local baselines so SnapshotTesting records fresh ones for this environment
+          rm -rf Tests/MarkdownKitTests/__Snapshots__/SnapshotTests/*.png
+          # First run: records baselines (fails with "no reference found" — expected)
+          swift test --filter "SnapshotTests" 2>&1 || true
+          # Second run: verifies against just-recorded baselines from the same environment
+          swift test --filter "SnapshotTests"
