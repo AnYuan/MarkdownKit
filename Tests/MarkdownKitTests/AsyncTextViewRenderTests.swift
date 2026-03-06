@@ -92,5 +92,72 @@ final class AsyncTextViewRenderTests: XCTestCase {
         try await waitForLayerContents(view)
         XCTAssertNotNil(view.layer.contents, "Multi-line styled text should render to layer.contents")
     }
+
+    func testConfigureRendersAttachmentBackedString() {
+        let attachment = NSTextAttachment()
+        attachment.image = makeAttachmentImage()
+        attachment.bounds = CGRect(x: 0, y: 0, width: 48, height: 20)
+
+        let layout = LayoutResult(
+            node: TextNode(range: nil, text: "attachment"),
+            size: CGSize(width: 80, height: 28),
+            attributedString: NSAttributedString(attachment: attachment)
+        )
+
+        let view = AsyncTextView(frame: layout.size == .zero ? .zero : CGRect(origin: .zero, size: layout.size))
+        view.displaysAsynchronously = false
+        view.configure(with: layout)
+
+        guard let cgImage = view.layer.contents as? CGImage else {
+            XCTFail("Expected attachment rendering to produce a CGImage")
+            return
+        }
+
+        XCTAssertTrue(imageContainsNonWhitePixel(cgImage), "Attachment rendering should draw visible pixels into layer.contents")
+    }
+
+    private func makeAttachmentImage() -> UIImage {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 48, height: 20))
+        return renderer.image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 48, height: 20))
+            UIColor.black.setStroke()
+            context.cgContext.setLineWidth(2)
+            context.cgContext.stroke(CGRect(x: 1, y: 1, width: 46, height: 18))
+        }
+    }
+
+    private func imageContainsNonWhitePixel(_ image: CGImage) -> Bool {
+        let width = image.width
+        let height = image.height
+        let bytesPerRow = width * 4
+        var data = [UInt8](repeating: 0, count: height * bytesPerRow)
+
+        guard let context = CGContext(
+            data: &data,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return false
+        }
+
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        for index in stride(from: 0, to: data.count, by: 4) {
+            let red = data[index]
+            let green = data[index + 1]
+            let blue = data[index + 2]
+            let alpha = data[index + 3]
+            if alpha > 0, red < 250 || green < 250 || blue < 250 {
+                return true
+            }
+        }
+
+        return false
+    }
 }
 #endif

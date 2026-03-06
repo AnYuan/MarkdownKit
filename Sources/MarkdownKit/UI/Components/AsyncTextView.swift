@@ -249,12 +249,7 @@ public class AsyncTextView: UIView {
         format.scale = scale
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         let image = renderer.image { _ in
-            let drawRect = CGRect(origin: .zero, size: size)
-            drawString.draw(
-                with: drawRect,
-                options: [.usesLineFragmentOrigin],
-                context: nil
-            )
+            drawAttributedString(drawString, in: CGRect(origin: .zero, size: size))
         }
         return image.cgImage
     }
@@ -270,14 +265,27 @@ public class AsyncTextView: UIView {
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
 
         let image = renderer.image { _ in
-            let drawRect = CGRect(origin: .zero, size: size)
-            drawString.draw(
-                with: drawRect,
-                options: [.usesLineFragmentOrigin],
-                context: nil
-            )
+            drawAttributedString(drawString, in: CGRect(origin: .zero, size: size))
         }
         return image.cgImage
+    }
+
+    private static func drawAttributedString(
+        _ drawString: NSAttributedString,
+        in drawRect: CGRect
+    ) {
+        let textStorage = NSTextStorage(attributedString: drawString)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(size: drawRect.size)
+
+        textContainer.lineFragmentPadding = 0
+        textContainer.maximumNumberOfLines = 0
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+
+        let glyphRange = layoutManager.glyphRange(for: textContainer)
+        layoutManager.drawBackground(forGlyphRange: glyphRange, at: drawRect.origin)
+        layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: drawRect.origin)
     }
 }
 #endif
