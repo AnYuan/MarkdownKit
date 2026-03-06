@@ -15,14 +15,7 @@ public struct DefaultMathRenderingAdapter: MathRenderingAdapter {
     public func render(from node: MathNode, theme: Theme) async -> NSAttributedString {
         #if canImport(WebKit)
         if let image = await renderMath(latex: node.equation, display: !node.isInline) {
-            let attachment = NSTextAttachment()
-            attachment.image = image
-            attachment.bounds = Self.attachmentBounds(
-                for: image.size,
-                isInline: node.isInline,
-                font: theme.typography.paragraph.font
-            )
-            return NSAttributedString(attachment: attachment)
+            return Self.attachmentString(image: image, node: node, theme: theme)
         }
         #endif
         return Self.fallbackString(for: node, theme: theme)
@@ -31,17 +24,26 @@ public struct DefaultMathRenderingAdapter: MathRenderingAdapter {
     public func renderSync(from node: MathNode, theme: Theme) -> NSAttributedString {
         #if canImport(WebKit)
         if let image = MathRenderer.cachedImage(for: node.equation) {
-            let attachment = NSTextAttachment()
-            attachment.image = image
-            attachment.bounds = Self.attachmentBounds(
-                for: image.size,
-                isInline: node.isInline,
-                font: theme.typography.paragraph.font
-            )
-            return NSAttributedString(attachment: attachment)
+            return Self.attachmentString(image: image, node: node, theme: theme)
         }
         #endif
         return Self.fallbackString(for: node, theme: theme)
+    }
+
+    private static func attachmentString(image: NativeImage, node: MathNode, theme: Theme) -> NSAttributedString {
+        let font = theme.typography.paragraph.font
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = attachmentBounds(for: image.size, isInline: node.isInline, font: font)
+
+        let result = NSMutableAttributedString(attachment: attachment)
+        result.addAttribute(.font, value: font, range: NSRange(location: 0, length: result.length))
+        // Block math gets a trailing newline so it occupies its own line
+        // when merged with other blocks into a single attributed string.
+        if !node.isInline {
+            result.append(NSAttributedString(string: "\n", attributes: [.font: font]))
+        }
+        return result
     }
 
     // MARK: - Helpers
