@@ -120,6 +120,12 @@ public final class MathRenderer: NSObject, WKNavigationDelegate {
         imageCache.object(forKey: latex as NSString)
     }
 
+    /// Clears the rendered image cache. Call when switching color schemes
+    /// so formulas re-render with the correct text color.
+    public nonisolated static func clearImageCache() {
+        imageCache.removeAllObjects()
+    }
+
     private override init() {
         super.init()
         setupBackgroundWebView()
