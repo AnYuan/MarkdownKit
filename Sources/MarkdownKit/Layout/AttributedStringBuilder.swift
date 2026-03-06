@@ -16,11 +16,13 @@ struct AttributedStringBuilder {
     private let theme: Theme
     private let highlighter: SplashHighlighter
     private let diagramRegistry: DiagramAdapterRegistry
-    
-    init(theme: Theme, highlighter: SplashHighlighter, diagramRegistry: DiagramAdapterRegistry) {
+    private let mathAdapter: any MathRenderingAdapter
+
+    init(theme: Theme, highlighter: SplashHighlighter, diagramRegistry: DiagramAdapterRegistry, mathAdapter: any MathRenderingAdapter = DefaultMathRenderingAdapter()) {
         self.theme = theme
         self.highlighter = highlighter
         self.diagramRegistry = diagramRegistry
+        self.mathAdapter = mathAdapter
     }
     func buildString(for node: MarkdownNode, constrainedToWidth maxWidth: CGFloat) async -> NSAttributedString {
         let string = NSMutableAttributedString()
@@ -58,8 +60,8 @@ struct AttributedStringBuilder {
             string.append(NSAttributedString(string: text.text, attributes: attributes))
             
         case let math as MathNode:
-            string.append(await MathAttachmentBuilder.build(from: math, theme: theme))
-            
+            string.append(await mathAdapter.render(from: math, theme: theme))
+
         case let paragraph as ParagraphNode:
             let baseAttrs = defaultAttributes(for: theme.typography.paragraph)
             string.append(await buildInlineAttributedString(
@@ -212,7 +214,7 @@ struct AttributedStringBuilder {
             string.append(NSAttributedString(string: text.text, attributes: attributes))
 
         case let math as MathNode:
-            string.append(MathAttachmentBuilder.buildSync(from: math, theme: theme))
+            string.append(mathAdapter.renderSync(from: math, theme: theme))
 
         case let paragraph as ParagraphNode:
             let baseAttrs = defaultAttributes(for: theme.typography.paragraph)
@@ -339,7 +341,7 @@ struct AttributedStringBuilder {
                 stAttrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
                 result.append(buildInlineAttributedStringSync(from: strikethrough.children, baseAttributes: stAttrs))
             case let math as MathNode:
-                result.append(MathAttachmentBuilder.buildSync(from: math, theme: theme))
+                result.append(mathAdapter.renderSync(from: math, theme: theme))
             default:
                 break
             }
@@ -556,7 +558,7 @@ struct AttributedStringBuilder {
                 }
 
             case let math as MathNode:
-                result.append(await MathAttachmentBuilder.build(from: math, theme: theme))
+                result.append(await mathAdapter.render(from: math, theme: theme))
 
             case is EmphasisNode:
                 var italicAttrs = baseAttributes

@@ -24,7 +24,8 @@ public final class LayoutSolver: @unchecked Sendable {
     public init(
         theme: Theme = .default,
         cache: LayoutCache = LayoutCache(),
-        diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry()
+        diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry(),
+        mathAdapter: (any MathRenderingAdapter)? = nil
     ) {
         self.textCalculator = TextKitCalculator()
         self.cache = cache
@@ -32,7 +33,8 @@ public final class LayoutSolver: @unchecked Sendable {
         self.builder = AttributedStringBuilder(
             theme: theme,
             highlighter: highlighter,
-            diagramRegistry: diagramRegistry
+            diagramRegistry: diagramRegistry,
+            mathAdapter: mathAdapter ?? DefaultMathRenderingAdapter()
         )
     }
     
