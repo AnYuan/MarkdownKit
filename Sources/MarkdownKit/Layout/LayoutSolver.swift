@@ -53,20 +53,29 @@ public final class LayoutSolver: @unchecked Sendable {
         // Yield to the system to keep scroll rendering incredibly smooth for giant files
         // This is the cooperative multitasking layer
         await Task.yield()
-        
+
         // Return instantly if we already calculated this specific layout at this width
         if let cached = cache.getLayout(for: node, constrainedToWidth: maxWidth) {
             return cached
         }
-        
+
+        #if canImport(UIKit) && !os(watchOS)
+        // Card-style table rendering on iOS: bypass TextKit, draw directly via CGContext
+        if let table = node as? TableNode {
+            let result = solveTableCard(table: table, constrainedToWidth: maxWidth)
+            cache.setLayout(result, constrainedToWidth: maxWidth)
+            return result
+        }
+        #endif
+
         // 1. Convert AST to styled NSAttributedString based on Theme
         let styledString: NSAttributedString
         var size: CGSize
-        
+
         // Special handling for nodes that have internal padding in their UI representation
         if let code = node as? CodeBlockNode {
             styledString = builder.buildCodeBlockAttributedString(from: code)
-            
+
             // TextKit needs to know that we inset the container 8pts horizontally by the UI view
             // to accurately wrap the string if it's too long.
             let insets = CGSize(width: 16, height: 16) // 8 left + 8 right, 8 top + 8 bottom
@@ -76,10 +85,10 @@ public final class LayoutSolver: @unchecked Sendable {
             )
             size.width += insets.width
             size.height += insets.height
-            
+
         } else if let diagram = node as? DiagramNode {
             styledString = await builder.buildDiagramAttributedString(from: diagram)
-            
+
             let insets = CGSize(width: 16, height: 16)
             size = textCalculator.calculateSize(
                 for: styledString,
@@ -87,23 +96,23 @@ public final class LayoutSolver: @unchecked Sendable {
             )
             size.width += insets.width
             size.height += insets.height
-            
+
         } else {
             styledString = await builder.buildString(for: node, constrainedToWidth: maxWidth)
             size = textCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
         }
-        
+
         // 3. Recurse down children (if they represent separate visual block elements)
         // For basic implementation, we assume paragraphs/headers handle their own inline children.
         // But for Documents, we must layout all top-level blocks.
         var childLayouts: [LayoutResult] = []
-        
+
         if let doc = node as? DocumentNode {
             for child in doc.children {
                 childLayouts.append(await solve(node: child, constrainedToWidth: maxWidth))
             }
         }
-        
+
         // strictly immutable frame container
         let result = LayoutResult(
             node: node,
@@ -111,10 +120,10 @@ public final class LayoutSolver: @unchecked Sendable {
             attributedString: styledString,
             children: childLayouts
         )
-        
+
         // Memoize the result
         cache.setLayout(result, constrainedToWidth: maxWidth)
-        
+
         return result
     }
 
@@ -125,6 +134,14 @@ public final class LayoutSolver: @unchecked Sendable {
         if let cached = cache.getLayout(for: node, constrainedToWidth: maxWidth) {
             return cached
         }
+
+        #if canImport(UIKit) && !os(watchOS)
+        if let table = node as? TableNode {
+            let result = solveTableCard(table: table, constrainedToWidth: maxWidth)
+            cache.setLayout(result, constrainedToWidth: maxWidth)
+            return result
+        }
+        #endif
 
         let styledString: NSAttributedString
         var size: CGSize
@@ -160,4 +177,38 @@ public final class LayoutSolver: @unchecked Sendable {
         return result
     }
 
+    // MARK: - Table Card Layout (iOS only)
+
+    #if canImport(UIKit) && !os(watchOS)
+    /// Produces a `LayoutResult` for a table node that uses CGContext card rendering
+    /// instead of TextKit. The `customDraw` closure captures the pre-computed layout
+    /// and resolved colors so that rasterization is fully thread-safe.
+    private func solveTableCard(table: TableNode, constrainedToWidth maxWidth: CGFloat) -> LayoutResult {
+        let layout = TableCardRenderer.computeLayout(
+            from: table,
+            theme: builder.theme,
+            constrainedToWidth: maxWidth
+        )
+
+        // Resolve UIColor -> CGColor on the current thread (which has trait collection context).
+        let resolvedColors = TableCardRenderer.ResolvedColors.resolve(from: builder.theme)
+
+        let customDraw: @Sendable (CGContext, CGSize) -> Void = { context, size in
+            TableCardRenderer.draw(
+                layout: layout,
+                resolvedColors: resolvedColors,
+                in: context,
+                size: size
+            )
+        }
+
+        return LayoutResult(
+            node: table,
+            size: layout.totalSize,
+            attributedString: nil,
+            children: [],
+            customDraw: customDraw
+        )
+    }
+    #endif
 }

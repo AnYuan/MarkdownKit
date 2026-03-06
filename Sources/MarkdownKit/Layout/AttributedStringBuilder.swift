@@ -13,7 +13,7 @@ import AppKit
 
 /// A builder dedicated solely to converting the AST into an NSAttributedString.
 struct AttributedStringBuilder {
-    private let theme: Theme
+    let theme: Theme
     private let highlighter: SplashHighlighter
     private let diagramRegistry: DiagramAdapterRegistry
     private let mathAdapter: any MathRenderingAdapter
