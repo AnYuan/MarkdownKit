@@ -30,12 +30,18 @@ public class AsyncTextView: UIView {
     /// Called when the user taps a checkbox prefix.
     public var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
 
+    /// Set of custom attribute keys that should trigger tap callbacks.
+    public var customInteractiveAttributes: Set<NSAttributedString.Key> = []
+
+    /// Called when a tap lands on a character with a registered custom interactive attribute.
+    public var onCustomAttributeTap: ((NSAttributedString.Key, Any) -> Void)?
+
     // MARK: - Private State
 
     private var currentDrawTask: Task<Void, Never>?
 
-    /// Retained for hit-testing after rasterization.
-    private var currentAttributedString: NSAttributedString?
+    /// Retained for hit-testing after rasterization. Public read for content-change detection.
+    public private(set) var currentAttributedString: NSAttributedString?
     private var currentSize: CGSize = .zero
 
     /// Lazily created on first tap. Invalidated on reconfigure.
@@ -64,6 +70,10 @@ public class AsyncTextView: UIView {
 
     private func setup() {
         self.backgroundColor = .clear
+        // Pin old content at top-left during frame resizes so it doesn't stretch/distort
+        // while the new async draw is in-flight. Prevents visual flicker during streaming.
+        self.layer.contentsGravity = .topLeft
+        self.layer.contentsScale = UIScreen.main.scale
 
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         addGestureRecognizer(tapGesture)
@@ -86,8 +96,8 @@ public class AsyncTextView: UIView {
         self.currentSize = layout.size
 
         guard let string = layout.attributedString, string.length > 0 else {
-            self.layer.contents = nil
             self.currentAttributedString = nil
+            // Keep layer.contents — old rendered content remains visible as placeholder
             return
         }
 
@@ -144,6 +154,17 @@ public class AsyncTextView: UIView {
             onCheckboxToggle?(data)
             return
         }
+
+        // 3. Check custom interactive attributes
+        if let attrString = currentAttributedString, charIndex < attrString.length {
+            for key in customInteractiveAttributes {
+                let value = attrString.attribute(key, at: charIndex, effectiveRange: nil)
+                if let value {
+                    onCustomAttributeTap?(key, value)
+                    return
+                }
+            }
+        }
     }
 
     // MARK: - Press Highlight
@@ -175,6 +196,13 @@ public class AsyncTextView: UIView {
             highlightRange = hitTester?.effectiveRange(of: .link, at: charIndex)
         } else if hitTester?.effectiveRange(of: .markdownCheckbox, at: charIndex) != nil {
             highlightRange = hitTester?.effectiveRange(of: .markdownCheckbox, at: charIndex)
+        } else {
+            for key in customInteractiveAttributes {
+                if let range = hitTester?.effectiveRange(of: key, at: charIndex) {
+                    highlightRange = range
+                    break
+                }
+            }
         }
 
         guard let range = highlightRange,

@@ -99,6 +99,23 @@ public struct MathExtractionPlugin: ASTPlugin {
         var idx = 0
 
         while idx < text.count {
+            // Block math: $$...$$ within a paragraph (e.g. inside list items)
+            if idx + 1 < text.count, text[idx] == "$", text[idx + 1] == "$", !isEscaped(text, at: idx),
+               let close = findClosingDoubleDollar(in: text, startingAt: idx + 2) {
+                let equation = String(text[(idx + 2)..<close])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !equation.isEmpty {
+                    if !buffer.isEmpty {
+                        result.append(TextNode(range: nil, text: buffer))
+                        buffer.removeAll(keepingCapacity: true)
+                    }
+                    result.append(MathNode(range: nil, style: .block, equation: equation))
+                    idx = close + 2
+                    continue
+                }
+            }
+
+            // Inline math: $...$
             if text[idx] == "$", !isEscaped(text, at: idx), !isDoubleDollar(text, at: idx),
                let close = findClosingDollar(in: text, startingAt: idx + 1) {
                 let equation = String(text[(idx + 1)..<close])
@@ -127,6 +144,18 @@ public struct MathExtractionPlugin: ASTPlugin {
             result.append(TextNode(range: nil, text: buffer))
         }
         return result
+    }
+
+    private func findClosingDoubleDollar(in text: [Character], startingAt start: Int) -> Int? {
+        guard start < text.count else { return nil }
+        var idx = start
+        while idx + 1 < text.count {
+            if text[idx] == "$", text[idx + 1] == "$", !isEscaped(text, at: idx) {
+                return idx
+            }
+            idx += 1
+        }
+        return nil
     }
 
     private func transform(_ node: MarkdownNode) -> MarkdownNode {
