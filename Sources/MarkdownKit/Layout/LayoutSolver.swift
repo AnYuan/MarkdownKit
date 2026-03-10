@@ -86,7 +86,8 @@ public final class LayoutSolver: @unchecked Sendable {
 
             // TextKit needs to know that we inset the container 8pts horizontally by the UI view
             // to accurately wrap the string if it's too long.
-            let insets = CGSize(width: 16, height: 16) // 8 left + 8 right, 8 top + 8 bottom
+            let totalInset = builder.theme.codeBlock.layoutTotalInset
+            let insets = CGSize(width: totalInset, height: totalInset)
             size = textCalculator.calculateSize(
                 for: styledString,
                 constrainedToWidth: max(0, maxWidth - insets.width)
@@ -97,7 +98,8 @@ public final class LayoutSolver: @unchecked Sendable {
         } else if let diagram = node as? DiagramNode {
             styledString = await builder.buildDiagramAttributedString(from: diagram)
 
-            let insets = CGSize(width: 16, height: 16)
+            let totalInset = builder.theme.codeBlock.layoutTotalInset
+            let insets = CGSize(width: totalInset, height: totalInset)
             size = textCalculator.calculateSize(
                 for: styledString,
                 constrainedToWidth: max(0, maxWidth - insets.width)
@@ -162,7 +164,8 @@ public final class LayoutSolver: @unchecked Sendable {
 
         if let code = node as? CodeBlockNode {
             styledString = builder.buildCodeBlockAttributedString(from: code)
-            let insets = CGSize(width: 16, height: 16)
+            let totalInset = builder.theme.codeBlock.layoutTotalInset
+            let insets = CGSize(width: totalInset, height: totalInset)
             size = textCalculator.calculateSize(
                 for: styledString,
                 constrainedToWidth: max(0, maxWidth - insets.width)
@@ -195,9 +198,9 @@ public final class LayoutSolver: @unchecked Sendable {
 
     #if canImport(UIKit) && !os(watchOS)
     private func solveThematicBreak(node: MarkdownNode, constrainedToWidth maxWidth: CGFloat) -> LayoutResult {
-        let paddingTop: CGFloat = 16
-        let paddingBottom: CGFloat = 24
-        let dividerHeight: CGFloat = 0.5
+        let paddingTop = builder.theme.thematicBreak.paddingTop
+        let paddingBottom = builder.theme.thematicBreak.paddingBottom
+        let dividerHeight = builder.theme.thematicBreak.dividerHeight
         let totalHeight = paddingTop + dividerHeight + paddingBottom
         let totalSize = CGSize(width: maxWidth, height: totalHeight)
 

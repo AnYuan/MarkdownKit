@@ -22,9 +22,8 @@ public class AsyncCodeView: UIView {
 
     private let theme: Theme
     private var rawCode: String = ""
-    
-    // Setup generic paddings. Production engine will read these from Theme Tokens.
-    private let padding: CGFloat = 16.0 
+
+    private var padding: CGFloat { theme.codeBlock.viewPadding }
     
     public init(frame: CGRect, theme: Theme = .default) {
         self.theme = theme
@@ -40,7 +39,7 @@ public class AsyncCodeView: UIView {
     
     private func setup() {
         self.backgroundColor = theme.colors.codeColor.background
-        self.layer.cornerRadius = 8.0
+        self.layer.cornerRadius = theme.codeBlock.cornerRadius
         self.clipsToBounds = true
         
         addSubview(textView)
@@ -51,12 +50,12 @@ public class AsyncCodeView: UIView {
     }
     
     private func setupCopyButton() {
-        let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+        let config = UIImage.SymbolConfiguration(pointSize: theme.codeBlock.copyButtonIconSize, weight: .semibold)
         let image = UIImage(systemName: "doc.on.doc", withConfiguration: config)
         copyButton.setImage(image, for: .normal)
         copyButton.tintColor = .secondaryLabel
         copyButton.backgroundColor = theme.colors.codeColor.background.withAlphaComponent(0.8)
-        copyButton.layer.cornerRadius = 6.0
+        copyButton.layer.cornerRadius = theme.codeBlock.copyButtonCornerRadius
         
         copyButton.addAction(UIAction { [weak self] _ in
             self?.executeCopy()
@@ -69,7 +68,7 @@ public class AsyncCodeView: UIView {
         
         // Feedback animation
         let originalImage = copyButton.image(for: .normal)
-        let checkImage = UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .bold))
+        let checkImage = UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: theme.codeBlock.copyButtonIconSize, weight: .bold))
         
         UIView.animate(withDuration: 0.2) {
             self.copyButton.setImage(checkImage, for: .normal)
@@ -91,10 +90,11 @@ public class AsyncCodeView: UIView {
         textView.frame = bounds.insetBy(dx: padding, dy: padding)
         
         // Pin Copy button to top right
-        let buttonSize: CGFloat = 30
+        let buttonSize = theme.codeBlock.copyButtonSize
+        let buttonMargin = theme.codeBlock.copyButtonMargin
         copyButton.frame = CGRect(
-            x: bounds.width - buttonSize - 8,
-            y: 8,
+            x: bounds.width - buttonSize - buttonMargin,
+            y: buttonMargin,
             width: buttonSize,
             height: buttonSize
         )

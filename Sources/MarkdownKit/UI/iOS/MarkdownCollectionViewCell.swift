@@ -21,6 +21,7 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
     public var onLinkTap: ((URL) -> Void)?
     public var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
     public var onDetailsTap: ((DetailsNode) -> Void)?
+    public var theme: Theme = .default
 
     public override func prepareForReuse() {
         super.prepareForReuse()
@@ -58,7 +59,7 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
                 codeView.configure(with: layout)
             } else {
                 hostedView?.removeFromSuperview()
-                let codeView = AsyncCodeView(frame: CGRect(origin: .zero, size: layout.size))
+                let codeView = AsyncCodeView(frame: CGRect(origin: .zero, size: layout.size), theme: theme)
                 self.contentView.addSubview(codeView)
                 self.hostedView = codeView
                 codeView.configure(with: layout)
@@ -68,12 +69,14 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
             // Text or generic block containers
             if let textView = hostedView as? AsyncTextView {
                 textView.frame = CGRect(origin: .zero, size: layout.size)
+                textView.theme = theme
                 textView.onLinkTap = onLinkTap
                 textView.onCheckboxToggle = onCheckboxToggle
                 textView.configure(with: layout)
             } else {
                 hostedView?.removeFromSuperview()
                 let textView = AsyncTextView(frame: CGRect(origin: .zero, size: layout.size))
+                textView.theme = theme
                 textView.onLinkTap = onLinkTap
                 textView.onCheckboxToggle = onCheckboxToggle
                 self.contentView.addSubview(textView)

@@ -49,15 +49,6 @@ struct TableCardRenderer {
         let alignment: NSTextAlignment
     }
 
-    // MARK: - Layout Constants
-
-    private static let cornerRadius: CGFloat = 8
-    private static let borderWidth: CGFloat = 1
-    private static let cellPaddingH: CGFloat = 12
-    private static let cellPaddingV: CGFloat = 8
-    private static let dividerHeight: CGFloat = 0.5
-    private static let tableFontSize: CGFloat = 13
-
     // MARK: - Compute Layout
 
     /// Computes the full table layout from a `TableNode`, measuring every cell's text
@@ -67,6 +58,13 @@ struct TableCardRenderer {
         theme: Theme,
         constrainedToWidth maxWidth: CGFloat
     ) -> TableLayout {
+        let tableStyle = theme.table
+        let cornerRadius = tableStyle.cornerRadius
+        let borderWidth = tableStyle.borderWidth
+        let cellPaddingH = tableStyle.cellPaddingH
+        let cellPaddingV = tableStyle.cellPaddingV
+        let dividerHeight = tableStyle.dividerHeight
+
         let allRows = normalizedTableRows(from: table)
         let columnCount = allRows.map(\.cells.count).max() ?? 0
         guard columnCount > 0 else {
@@ -78,8 +76,8 @@ struct TableCardRenderer {
             )
         }
 
-        let headerFont = UIFont.systemFont(ofSize: tableFontSize, weight: .semibold)
-        let bodyFont = UIFont.systemFont(ofSize: tableFontSize, weight: .regular)
+        let headerFont = UIFont.systemFont(ofSize: tableStyle.fontSize, weight: .semibold)
+        let bodyFont = UIFont.systemFont(ofSize: tableStyle.fontSize, weight: .regular)
         let textColor = theme.colors.textColor.foreground
 
         // Available width for content after border on both sides

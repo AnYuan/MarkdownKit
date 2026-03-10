@@ -66,10 +66,11 @@ struct TableAttributedStringBuilder {
         textTable.collapsesBorders = true
         textTable.hidesEmptyCells = false
 
-        let availableTableWidth = max(160, maxWidth - 16)
+        let tableStyle = theme.table
+        let availableTableWidth = max(160, maxWidth - tableStyle.appKitHorizontalPadding)
         let perColumnWidth = max(72, floor(availableTableWidth / CGFloat(columnCount)))
-        let horizontalPadding = 16.0
-        let borderAllowance = 2.0
+        let horizontalPadding = tableStyle.appKitHorizontalPadding
+        let borderAllowance = tableStyle.appKitBorderAllowance
         let contentWidth = max(48, perColumnWidth - horizontalPadding - borderAllowance)
 
         var bodyRowIndex = 0
@@ -150,11 +151,11 @@ struct TableAttributedStringBuilder {
         if bodyRowIndex.isMultiple(of: 2) {
             return .clear
         }
-        
+
         let bg = theme.colors.tableColor.background
         var alpha: CGFloat = 1.0
         bg.usingColorSpace(.deviceRGB)?.getRed(nil, green: nil, blue: nil, alpha: &alpha)
-        return bg.withAlphaComponent(alpha * 0.45)
+        return bg.withAlphaComponent(alpha * theme.table.alternatingRowAlpha)
     }
     #endif
 
@@ -170,12 +171,12 @@ struct TableAttributedStringBuilder {
         let cellFont = theme.typography.paragraph.font
         let headerFont = fontWithTrait(cellFont, trait: .bold)
 
-        let horizontalInset: CGFloat = 8
+        let tableStyle = theme.table
+        let horizontalInset = tableStyle.uiKitHorizontalInset
         let availableWidth = max(160, maxWidth - horizontalInset * 2)
         let rawColumnWidth = floor(availableWidth / CGFloat(columnCount))
 
-        let minimumReadableColumnWidth: CGFloat = 36
-        if rawColumnWidth < minimumReadableColumnWidth {
+        if rawColumnWidth < tableStyle.minimumReadableColumnWidth {
             return buildTableAttributedString_UIKitNarrowFallback(
                 allRows: allRows,
                 columnCount: columnCount,
@@ -213,7 +214,7 @@ struct TableAttributedStringBuilder {
             paragraphStyleMut.headIndent = horizontalInset
             paragraphStyleMut.alignment = tableTextAlignment(for: table, column: 0)
             paragraphStyleMut.lineHeightMultiple = theme.typography.paragraph.lineHeightMultiple
-            paragraphStyleMut.paragraphSpacing = 2
+            paragraphStyleMut.paragraphSpacing = tableStyle.cellParagraphSpacing
             let paragraphStyle = paragraphStyleMut.copy() as! NSParagraphStyle
 
             let font = row.isHead ? headerFont : cellFont
@@ -239,7 +240,7 @@ struct TableAttributedStringBuilder {
                 separatorStyleMut.tabStops = tabStops
                 separatorStyleMut.firstLineHeadIndent = horizontalInset
                 separatorStyleMut.headIndent = horizontalInset
-                separatorStyleMut.paragraphSpacing = 2
+                separatorStyleMut.paragraphSpacing = tableStyle.cellParagraphSpacing
                 let separatorStyle = separatorStyleMut.copy() as! NSParagraphStyle
 
                 let sepAttrs: [NSAttributedString.Key: Any] = [
@@ -258,13 +259,13 @@ struct TableAttributedStringBuilder {
                 separatorStyleMut.tabStops = tabStops
                 separatorStyleMut.firstLineHeadIndent = horizontalInset
                 separatorStyleMut.headIndent = horizontalInset
-                separatorStyleMut.paragraphSpacing = 2
+                separatorStyleMut.paragraphSpacing = tableStyle.cellParagraphSpacing
                 let separatorStyle = separatorStyleMut.copy() as! NSParagraphStyle
 
                 let sepAttrs: [NSAttributedString.Key: Any] = [
                     .font: cellFont,
                     .paragraphStyle: separatorStyle,
-                    .foregroundColor: theme.colors.tableColor.foreground.withAlphaComponent(0.55)
+                    .foregroundColor: theme.colors.tableColor.foreground.withAlphaComponent(tableStyle.separatorAlpha)
                 ]
 
                 let dashes = Array(
@@ -289,7 +290,7 @@ struct TableAttributedStringBuilder {
         if bodyRowIndex.isMultiple(of: 2) {
             return .clear
         }
-        return theme.colors.tableColor.background.withAlphaComponent(0.45)
+        return theme.colors.tableColor.background.withAlphaComponent(theme.table.alternatingRowAlpha)
     }
 
     private static func buildTableAttributedString_UIKitNarrowFallback(
@@ -310,7 +311,7 @@ struct TableAttributedStringBuilder {
         paragraphStyleMut.lineBreakMode = .byWordWrapping
         let paragraphStyle = paragraphStyleMut.copy() as! NSParagraphStyle
 
-        let maxCharsNarrow = 12
+        let maxCharsNarrow = theme.table.narrowFallbackMaxChars
 
         for (rowIndex, row) in allRows.enumerated() {
             let cells = normalizedCells(for: row.cells, columnCount: columnCount)

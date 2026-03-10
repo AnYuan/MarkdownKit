@@ -41,7 +41,8 @@ public struct MarkdownView: View {
                     engine.toggleDetails(at: index, currentlyOpen: details.isOpen, width: geometry.size.width)
                 },
                 onLinkTap: linkTapHandler,
-                onCheckboxToggle: checkboxToggleHandler
+                onCheckboxToggle: checkboxToggleHandler,
+                theme: theme
             )
             .onChange(of: text) { _, newText in
                 engine.render(markdown: newText, plugins: plugins, theme: theme, width: geometry.size.width)

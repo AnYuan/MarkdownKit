@@ -45,30 +45,32 @@ public struct SplashHighlighter {
         // Map our global Theme's typography to Splash's specific Font format
         let splashFont = splashFontFrom(token: theme.typography.codeBlock)
 
+        let syntaxColors = theme.syntaxColors
+
         // Define a custom Splash theme bridging our ColorTokens for Light/Dark mode parity
         let splashTheme = Splash.Theme(
             font: splashFont,
             plainTextColor: splashColor(from: theme.colors.textColor.foreground),
             tokenColors: [
-                .keyword: splashColor(from: Color(red: 0.8, green: 0.1, blue: 0.5, alpha: 1.0)), // Pink/Purple
-                .string: splashColor(from: Color(red: 0.9, green: 0.3, blue: 0.3, alpha: 1.0)), // Red
-                .type: splashColor(from: Color(red: 0.1, green: 0.6, blue: 0.7, alpha: 1.0)), // Cyan/Teal
-                .call: splashColor(from: Color(red: 0.2, green: 0.5, blue: 0.9, alpha: 1.0)), // Blue
-                .number: splashColor(from: Color(red: 0.6, green: 0.4, blue: 0.9, alpha: 1.0)), // Purple
-                .comment: splashColor(from: Color(red: 0.5, green: 0.5, blue: 0.5, alpha: 1.0)), // Gray
-                .property: splashColor(from: Color(red: 0.2, green: 0.5, blue: 0.9, alpha: 1.0)), // Blue
-                .dotAccess: splashColor(from: Color(red: 0.2, green: 0.5, blue: 0.9, alpha: 1.0)), // Blue
-                .preprocessing: splashColor(from: Color(red: 0.6, green: 0.4, blue: 0.1, alpha: 1.0)) // Brown/Orange
+                .keyword: splashColor(from: syntaxColors.keyword),
+                .string: splashColor(from: syntaxColors.string),
+                .type: splashColor(from: syntaxColors.type),
+                .call: splashColor(from: syntaxColors.call),
+                .number: splashColor(from: syntaxColors.number),
+                .comment: splashColor(from: syntaxColors.comment),
+                .property: splashColor(from: syntaxColors.property),
+                .dotAccess: splashColor(from: syntaxColors.dotAccess),
+                .preprocessing: splashColor(from: syntaxColors.preprocessing)
             ]
         )
 
         let format = AttributedStringOutputFormat(theme: splashTheme)
         self.highlighter = SyntaxHighlighter(format: format)
         self.genericHighlighter = GenericKeywordHighlighter(
-            keywordColor: Color(red: 0.8, green: 0.1, blue: 0.5, alpha: 1.0),
-            stringColor: Color(red: 0.9, green: 0.3, blue: 0.3, alpha: 1.0),
-            commentColor: Color(red: 0.5, green: 0.5, blue: 0.5, alpha: 1.0),
-            numberColor: Color(red: 0.6, green: 0.4, blue: 0.9, alpha: 1.0),
+            keywordColor: syntaxColors.keyword,
+            stringColor: syntaxColors.string,
+            commentColor: syntaxColors.comment,
+            numberColor: syntaxColors.number,
             plainAttributes: { [
                 .font: theme.typography.codeBlock.font,
                 .foregroundColor: theme.colors.textColor.foreground

@@ -102,6 +102,7 @@ public class MarkdownItemView: NSCollectionViewItem {
 
     public func configure(
         with layout: LayoutResult,
+        theme: Theme = .default,
         onToggleDetails: ((DetailsNode) -> Void)? = nil,
         onCheckboxToggle: ((CheckboxInteractionData) -> Void)? = nil,
         onLinkTap: ((URL) -> Void)? = nil
@@ -131,8 +132,8 @@ public class MarkdownItemView: NSCollectionViewItem {
             textView.drawsBackground = true
             textView.backgroundColor = NSColor.controlBackgroundColor
             textView.wantsLayer = true
-            textView.layer?.cornerRadius = 6
-            textView.textContainerInset = NSSize(width: 8, height: 8)
+            textView.layer?.cornerRadius = theme.codeBlock.macOSCornerRadius
+            textView.textContainerInset = theme.codeBlock.macOSTextContainerInset
             textView.setAccessibilityRole(.group)
             textView.setAccessibilityLabel("Code Block")
             textView.setAccessibilityValue(attrString.string)

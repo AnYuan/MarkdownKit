@@ -16,6 +16,9 @@ import UIKit
 /// (same approach as Texture's ASTextNode2), with a highlight overlay CALayer for pressed state.
 public class AsyncTextView: UIView {
 
+    /// The theme controlling highlight style and other visual parameters.
+    public var theme: Theme = .default
+
     /// When `true` (the default), text is rasterized on a background executor and
     /// mounted to `layer.contents` asynchronously — identical to Texture's display pipeline.
     /// Set to `false` to render synchronously on the main thread, which is useful for
@@ -55,7 +58,7 @@ public class AsyncTextView: UIView {
     /// Inspired by Texture's ASHighlightOverlayLayer.
     private lazy var highlightLayer: CALayer = {
         let hl = CALayer()
-        hl.cornerRadius = 3
+        hl.cornerRadius = theme.highlight.cornerRadius
         hl.isHidden = true
         return hl
     }()
@@ -240,28 +243,27 @@ public class AsyncTextView: UIView {
         guard let range = highlightRange,
               let rect = hitTester?.boundingRect(for: range) else { return }
 
-        // Texture-inspired highlight: light=0.11 / dark=0.22 opacity
+        // Texture-inspired highlight
         let isDark = traitCollection.userInterfaceStyle == .dark
-        highlightLayer.backgroundColor = UIColor.systemBlue.withAlphaComponent(isDark ? 0.22 : 0.11).cgColor
+        let hlStyle = theme.highlight
+        highlightLayer.backgroundColor = UIColor.systemBlue.withAlphaComponent(isDark ? hlStyle.darkModeAlpha : hlStyle.lightModeAlpha).cgColor
 
         if highlightLayer.superlayer == nil {
             layer.addSublayer(highlightLayer)
         }
 
-        // Animate in (Texture: fadeIn 0.1s)
-        highlightLayer.frame = rect.insetBy(dx: -2, dy: -1)
+        highlightLayer.frame = rect.insetBy(dx: hlStyle.insetDX, dy: hlStyle.insetDY)
         highlightLayer.opacity = 0
         highlightLayer.isHidden = false
         CATransaction.begin()
-        CATransaction.setAnimationDuration(0.1)
+        CATransaction.setAnimationDuration(hlStyle.fadeInDuration)
         highlightLayer.opacity = 1
         CATransaction.commit()
     }
 
     private func hideHighlight() {
-        // Animate out (Texture: fadeOut 0.15s)
         CATransaction.begin()
-        CATransaction.setAnimationDuration(0.15)
+        CATransaction.setAnimationDuration(theme.highlight.fadeOutDuration)
         CATransaction.setCompletionBlock { [weak self] in
             self?.highlightLayer.isHidden = true
         }

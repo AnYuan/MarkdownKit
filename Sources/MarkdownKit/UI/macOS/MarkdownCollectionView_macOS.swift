@@ -18,6 +18,7 @@ public class MarkdownCollectionView: NSView {
     public var onToggleDetails: ((Int, DetailsNode) -> Void)?
     public var onToggleCheckbox: ((CheckboxInteractionData) -> Void)?
     public var onLinkTap: ((URL) -> Void)?
+    public var theme: Theme = .default
     
     private let scrollView = NSScrollView()
     private let collectionView = NSCollectionView()
@@ -88,6 +89,7 @@ extension MarkdownCollectionView: NSCollectionViewDataSource, NSCollectionViewDe
         let layoutResult = layouts[indexPath.item]
         item.configure(
             with: layoutResult,
+            theme: theme,
             onToggleDetails: { [weak self] details in
                 self?.onToggleDetails?(indexPath.item, details)
             },

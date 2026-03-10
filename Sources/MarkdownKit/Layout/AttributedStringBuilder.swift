@@ -90,13 +90,13 @@ struct AttributedStringBuilder {
                 var isCheckbox = false
                 switch item.checkbox {
                 case .checked:
-                    prefix = "☑ "
+                    prefix = theme.list.checkedCharacter
                     isCheckbox = true
                 case .unchecked:
-                    prefix = "☐ "
+                    prefix = theme.list.uncheckedCharacter
                     isCheckbox = true
                 case .none:
-                    prefix = list.isOrdered ? "\(currentListItemIndex). " : "• "
+                    prefix = list.isOrdered ? "\(currentListItemIndex). " : theme.list.bulletCharacter
                 }
 
                 // Measure prefix width to align continuation lines
@@ -135,7 +135,7 @@ struct AttributedStringBuilder {
                     } else if let nestedList = itemChild as? ListNode {
                         let nestedAttr = await buildString(for: nestedList, constrainedToWidth: maxWidth)
                         string.append(NSAttributedString(string: "\n"))
-                        let nestedIndent = prefixWidth + 16
+                        let nestedIndent = prefixWidth + theme.list.nestedIndentDelta
                         let indented = NSMutableAttributedString(attributedString: nestedAttr)
                         let indentStyle = NSMutableParagraphStyle()
                         indentStyle.headIndent = nestedIndent
@@ -158,8 +158,8 @@ struct AttributedStringBuilder {
 
         case let blockQuote as BlockQuoteNode:
             let quoteStyle = NSMutableParagraphStyle()
-            quoteStyle.headIndent = 16
-            quoteStyle.firstLineHeadIndent = 16
+            quoteStyle.headIndent = theme.blockQuote.indent
+            quoteStyle.firstLineHeadIndent = theme.blockQuote.indent
             quoteStyle.lineHeightMultiple = theme.typography.paragraph.lineHeightMultiple
             quoteStyle.paragraphSpacing = theme.typography.paragraph.paragraphSpacing
 
@@ -175,7 +175,7 @@ struct AttributedStringBuilder {
                     )
 
                     // Prepend quote bar
-                    let bar = NSAttributedString(string: "┃ ", attributes: [
+                    let bar = NSAttributedString(string: theme.blockQuote.barCharacter, attributes: [
                         .foregroundColor: theme.colors.blockQuoteColor.foreground,
                         .font: theme.typography.paragraph.font,
                         .paragraphStyle: quoteStyle
@@ -240,9 +240,9 @@ struct AttributedStringBuilder {
                 if string.length > 0 { string.append(NSAttributedString(string: "\n")) }
                 var prefix: String
                 switch item.checkbox {
-                case .checked: prefix = "☑ "
-                case .unchecked: prefix = "☐ "
-                case .none: prefix = list.isOrdered ? "\(currentListItemIndex). " : "• "
+                case .checked: prefix = theme.list.checkedCharacter
+                case .unchecked: prefix = theme.list.uncheckedCharacter
+                case .none: prefix = list.isOrdered ? "\(currentListItemIndex). " : theme.list.bulletCharacter
                 }
                 let prefixWidth = (prefix as NSString).size(withAttributes: [.font: font]).width
                 let itemStyle = NSMutableParagraphStyle()
@@ -262,7 +262,7 @@ struct AttributedStringBuilder {
                         string.append(buildInlineAttributedStringSync(from: para.children, baseAttributes: listAttrs))
                     } else if let nestedList = itemChild as? ListNode {
                         string.append(NSAttributedString(string: "\n"))
-                        let nestedIndent = prefixWidth + 16
+                        let nestedIndent = prefixWidth + theme.list.nestedIndentDelta
                         let nestedAttr = NSMutableAttributedString(attributedString: buildStringSync(for: nestedList, constrainedToWidth: maxWidth))
                         let indentStyle = NSMutableParagraphStyle()
                         indentStyle.headIndent = nestedIndent
@@ -280,8 +280,8 @@ struct AttributedStringBuilder {
 
         case let blockQuote as BlockQuoteNode:
             let quoteStyle = NSMutableParagraphStyle()
-            quoteStyle.headIndent = 16
-            quoteStyle.firstLineHeadIndent = 16
+            quoteStyle.headIndent = theme.blockQuote.indent
+            quoteStyle.firstLineHeadIndent = theme.blockQuote.indent
             quoteStyle.lineHeightMultiple = theme.typography.paragraph.lineHeightMultiple
             quoteStyle.paragraphSpacing = theme.typography.paragraph.paragraphSpacing
             for child in blockQuote.children {
@@ -289,7 +289,7 @@ struct AttributedStringBuilder {
                     var quoteAttrs = defaultAttributes(for: theme.typography.paragraph)
                     quoteAttrs[.paragraphStyle] = quoteStyle
                     quoteAttrs[.foregroundColor] = theme.colors.blockQuoteColor.background
-                    let bar = NSAttributedString(string: "┃ ", attributes: [
+                    let bar = NSAttributedString(string: theme.blockQuote.barCharacter, attributes: [
                         .foregroundColor: theme.colors.blockQuoteColor.foreground,
                         .font: theme.typography.paragraph.font,
                         .paragraphStyle: quoteStyle
@@ -325,7 +325,7 @@ struct AttributedStringBuilder {
             case let code as InlineCodeNode:
                 var codeAttrs = baseAttributes
                 let baseFont = (baseAttributes[.font] as? Font) ?? theme.typography.paragraph.font
-                codeAttrs[.font] = Font.monospacedSystemFont(ofSize: max(11, baseFont.pointSize * 0.92), weight: .regular)
+                codeAttrs[.font] = Font.monospacedSystemFont(ofSize: max(theme.codeBlock.inlineCodeMinFontSize, baseFont.pointSize * theme.codeBlock.inlineCodeFontSizeRatio), weight: .regular)
                 codeAttrs[.foregroundColor] = theme.colors.inlineCodeColor.foreground
                 codeAttrs[.backgroundColor] = theme.colors.inlineCodeColor.background
                 result.append(NSAttributedString(string: code.code, attributes: codeAttrs))
@@ -420,20 +420,17 @@ struct AttributedStringBuilder {
     }
 
     // MARK: - Code Block Helper
-    
-    // Extracted from the dynamic hot path to prevent CoreText cache contention under 8x concurrency scaling.
-    private static nonisolated(unsafe) let rawLabelFont = Font.monospacedSystemFont(ofSize: 11, weight: .semibold)
 
     func buildCodeBlockAttributedString(from code: CodeBlockNode) -> NSAttributedString {
         let result = NSMutableAttributedString()
 
         if let label = normalizedCodeLanguageLabel(from: code.language) {
             let labelStyle = NSMutableParagraphStyle()
-            labelStyle.paragraphSpacing = 6
+            labelStyle.paragraphSpacing = theme.codeBlock.labelParagraphSpacing
             labelStyle.lineHeightMultiple = 1.0
 
             let labelAttrs: [NSAttributedString.Key: Any] = [
-                .font: Self.rawLabelFont,
+                .font: theme.codeBlock.labelFont,
                 .foregroundColor: Color.platformSecondaryLabel,
                 .paragraphStyle: labelStyle
             ]
@@ -478,7 +475,7 @@ struct AttributedStringBuilder {
         let result = NSMutableAttributedString()
         let summaryAttrs = detailsSummaryAttributes()
 
-        let disclosure = details.isOpen ? "▼ " : "▶ "
+        let disclosure = details.isOpen ? theme.details.openDisclosure : theme.details.closedDisclosure
         result.append(NSAttributedString(string: disclosure, attributes: summaryAttrs))
 
         if let summary = details.summary, !summary.children.isEmpty {
@@ -540,7 +537,7 @@ struct AttributedStringBuilder {
                 var codeAttrs = baseAttributes
                 let baseFont = (baseAttributes[.font] as? Font) ?? theme.typography.paragraph.font
                 codeAttrs[.font] = Font.monospacedSystemFont(
-                    ofSize: max(11, baseFont.pointSize * 0.92),
+                    ofSize: max(theme.codeBlock.inlineCodeMinFontSize, baseFont.pointSize * theme.codeBlock.inlineCodeFontSizeRatio),
                     weight: .regular
                 )
                 codeAttrs[.foregroundColor] = theme.colors.inlineCodeColor.foreground
