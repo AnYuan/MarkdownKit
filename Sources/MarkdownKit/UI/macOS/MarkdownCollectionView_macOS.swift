@@ -19,10 +19,20 @@ public class MarkdownCollectionView: NSView {
     public var onToggleCheckbox: ((CheckboxInteractionData) -> Void)?
     public var onLinkTap: ((URL) -> Void)?
     public var theme: Theme = .default
+    var onEffectiveContentWidthChange: ((CGFloat) -> Void)? {
+        didSet {
+            reportEffectiveContentWidthIfNeeded(force: true)
+        }
+    }
+    var effectiveContentWidth: CGFloat {
+        let contentWidth = scrollView.contentSize.width
+        return contentWidth > 0 ? contentWidth : bounds.width
+    }
     
     private let scrollView = NSScrollView()
     private let collectionView = NSCollectionView()
     private let flowLayout = NSCollectionViewFlowLayout()
+    private var lastReportedContentWidth: CGFloat = 0
     
     public var layouts: [LayoutResult] = [] {
         didSet {
@@ -64,6 +74,7 @@ public class MarkdownCollectionView: NSView {
     public override func layout() {
         super.layout()
         scrollView.frame = bounds
+        reportEffectiveContentWidthIfNeeded()
         // Width dictates text wrapping; when view resizes, 
         // a new background LayoutSolver pass should be triggered externally.
     }
@@ -71,6 +82,15 @@ public class MarkdownCollectionView: NSView {
     public override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         themeDelegate?.markdownCollectionViewDidRequestThemeReload(self)
+    }
+
+    private func reportEffectiveContentWidthIfNeeded(force: Bool = false) {
+        let width = effectiveContentWidth
+        guard width > 50 else { return }
+        guard force || abs(width - lastReportedContentWidth) > 0.5 else { return }
+
+        lastReportedContentWidth = width
+        onEffectiveContentWidthChange?(width)
     }
 }
 
@@ -87,6 +107,7 @@ extension MarkdownCollectionView: NSCollectionViewDataSource, NSCollectionViewDe
         }
 
         let layoutResult = layouts[indexPath.item]
+        item.preferredContainerWidth = effectiveContentWidth
         item.configure(
             with: layoutResult,
             theme: theme,

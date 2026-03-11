@@ -148,6 +148,33 @@ final class MacOSUIComponentsTests: XCTestCase {
             "Recycled text view should show new content")
     }
 
+    func testConfigurePrefersContainerWidthOverSolvedWidth() {
+        let item = MarkdownItemView()
+        item.loadView()
+        item.view.frame = NSRect(x: 0, y: 0, width: 400, height: 80)
+
+        let node = ParagraphNode(range: nil, children: [TextNode(range: nil, text: "Wrapped text")])
+        let attrStr = NSAttributedString(
+            string: "Wrapped text",
+            attributes: [.font: NSFont.systemFont(ofSize: 14)]
+        )
+        let layoutResult = LayoutResult(
+            node: node,
+            size: CGSize(width: 260, height: 60),
+            attributedString: attrStr
+        )
+
+        item.configure(with: layoutResult)
+
+        guard let textView = item.view.subviews[0] as? NSTextView else {
+            XCTFail("Expected NSTextView subview")
+            return
+        }
+
+        XCTAssertEqual(textView.frame.width, 400, accuracy: 0.5)
+        XCTAssertEqual(textView.frame.height, 60, accuracy: 0.5)
+    }
+
     // MARK: - MarkdownCollectionView
 
     func testInitializesWithScrollViewSubview() {
@@ -156,6 +183,18 @@ final class MacOSUIComponentsTests: XCTestCase {
             "MarkdownCollectionView should contain at least one subview (scrollView)")
         XCTAssertTrue(view.subviews[0] is NSScrollView,
             "First subview should be NSScrollView")
+    }
+
+    func testReportsEffectiveContentWidthAfterLayout() {
+        let view = MarkdownCollectionView(frame: NSRect(x: 0, y: 0, width: 400, height: 600))
+        var reportedWidth: CGFloat?
+        view.onEffectiveContentWidthChange = { reportedWidth = $0 }
+
+        view.layoutSubtreeIfNeeded()
+
+        XCTAssertNotNil(reportedWidth, "Expected the macOS view to report an effective content width")
+        XCTAssertEqual(reportedWidth ?? 0, view.effectiveContentWidth, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(view.effectiveContentWidth, view.bounds.width)
     }
 }
 #endif

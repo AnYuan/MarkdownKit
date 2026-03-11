@@ -8,6 +8,7 @@ import UIKit
 struct MarkdownViewRepresentable: UIViewRepresentable {
     let layouts: [LayoutResult]
     let onToggleDetails: (Int, DetailsNode) -> Void
+    var onEffectiveContentWidthChange: ((CGFloat) -> Void)? = nil
     var onLinkTap: ((URL) -> Void)?
     var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
     var theme: Theme = .default
@@ -34,12 +35,14 @@ import AppKit
 struct MarkdownViewRepresentable: NSViewRepresentable {
     let layouts: [LayoutResult]
     let onToggleDetails: (Int, DetailsNode) -> Void
+    var onEffectiveContentWidthChange: ((CGFloat) -> Void)?
     var onLinkTap: ((URL) -> Void)?
     var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
     var theme: Theme = .default
 
     func makeNSView(context: Context) -> MarkdownCollectionView {
         let view = MarkdownCollectionView()
+        view.onEffectiveContentWidthChange = onEffectiveContentWidthChange
         return view
     }
 
@@ -47,6 +50,7 @@ struct MarkdownViewRepresentable: NSViewRepresentable {
         nsView.theme = theme
         nsView.layouts = layouts
         nsView.onToggleDetails = onToggleDetails
+        nsView.onEffectiveContentWidthChange = onEffectiveContentWidthChange
         nsView.onLinkTap = onLinkTap
         nsView.onToggleCheckbox = onCheckboxToggle
     }

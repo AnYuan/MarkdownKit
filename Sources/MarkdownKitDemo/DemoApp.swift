@@ -28,6 +28,7 @@ struct DemoApp: App {
 struct DemoContentView: View {
     @State private var selectedSyntax: SyntaxPage = .headers
     @State private var editableMarkdown: String = SyntaxPage.headers.source
+    @State private var previewIdentity = UUID()
 
     var body: some View {
         NavigationSplitView {
@@ -39,11 +40,13 @@ struct DemoContentView: View {
         } detail: {
             ThreePanelView(
                 sourceMarkdown: selectedSyntax.source,
-                editableMarkdown: $editableMarkdown
+                editableMarkdown: $editableMarkdown,
+                previewIdentity: previewIdentity
             )
         }
         .onChange(of: selectedSyntax) { _, newValue in
             editableMarkdown = newValue.source
+            previewIdentity = UUID()
         }
     }
 }
@@ -53,6 +56,7 @@ struct DemoContentView: View {
 struct ThreePanelView: View {
     let sourceMarkdown: String
     @Binding var editableMarkdown: String
+    let previewIdentity: UUID
     @State private var renderTime: Double = 0
     @State private var isRendering: Bool = false
 
@@ -94,6 +98,7 @@ struct ThreePanelView: View {
 
                 // Center: Preview (rendered)
                 MarkdownView(text: editableMarkdown)
+                    .id(previewIdentity)
                     .frame(minWidth: 300)
                     .background(Color(NSColor.textBackgroundColor))
 

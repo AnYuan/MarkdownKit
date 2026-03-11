@@ -38,17 +38,39 @@ public struct MarkdownView: View {
             MarkdownViewRepresentable(
                 layouts: engine.layouts,
                 onToggleDetails: { index, details in
-                    engine.toggleDetails(at: index, currentlyOpen: details.isOpen, width: geometry.size.width)
+                    engine.toggleDetails(
+                        at: index,
+                        currentlyOpen: details.isOpen,
+                        width: engine.preferredWidth(fallback: geometry.size.width)
+                    )
+                },
+                onEffectiveContentWidthChange: { newWidth in
+                    engine.updateEffectiveContentWidth(
+                        newWidth,
+                        markdown: text,
+                        plugins: plugins,
+                        theme: theme
+                    )
                 },
                 onLinkTap: linkTapHandler,
                 onCheckboxToggle: checkboxToggleHandler,
                 theme: theme
             )
             .onChange(of: text) { _, newText in
-                engine.render(markdown: newText, plugins: plugins, theme: theme, width: geometry.size.width)
+                engine.renderForCurrentPlatform(
+                    markdown: newText,
+                    plugins: plugins,
+                    theme: theme,
+                    fallbackWidth: geometry.size.width
+                )
             }
             .onChange(of: geometry.size.width) { _, newWidth in
-                engine.render(markdown: text, plugins: plugins, theme: theme, width: newWidth)
+                engine.renderOnGeometryChange(
+                    markdown: text,
+                    plugins: plugins,
+                    theme: theme,
+                    newWidth: newWidth
+                )
             }
         }
     }
@@ -82,10 +104,16 @@ private final class MarkdownEngine: ObservableObject {
     // Cache the previous successful AST and parser to enable fast sub-tree toggling (Details Node)
     private var lastAST: DocumentNode?
     private var lastTheme: Theme?
+    private var currentWidth: CGFloat = 0
+
+    func preferredWidth(fallback: CGFloat) -> CGFloat {
+        currentWidth > 50 ? currentWidth : fallback
+    }
     
     func render(markdown: String, plugins: [ASTPlugin], theme: Theme, width: CGFloat) {
         guard width > 50 else { return }
-        
+
+        currentWidth = width
         renderTask?.cancel()
         renderTask = Task {
             let parser = MarkdownParser(plugins: plugins)
@@ -104,12 +132,55 @@ private final class MarkdownEngine: ObservableObject {
             self.layouts = result.children
         }
     }
+
+    func renderForCurrentPlatform(
+        markdown: String,
+        plugins: [ASTPlugin],
+        theme: Theme,
+        fallbackWidth: CGFloat
+    ) {
+        #if canImport(AppKit) && !targetEnvironment(macCatalyst)
+        guard currentWidth > 50 else { return }
+        render(markdown: markdown, plugins: plugins, theme: theme, width: currentWidth)
+        #else
+        render(markdown: markdown, plugins: plugins, theme: theme, width: preferredWidth(fallback: fallbackWidth))
+        #endif
+    }
+
+    func renderOnGeometryChange(
+        markdown: String,
+        plugins: [ASTPlugin],
+        theme: Theme,
+        newWidth: CGFloat
+    ) {
+        #if canImport(AppKit) && !targetEnvironment(macCatalyst)
+        // AppKit re-reports the true scroll-content width from the NSView bridge.
+        // Rendering here causes a transient first-pass mismatch on startup and resize.
+        return
+        #else
+        render(markdown: markdown, plugins: plugins, theme: theme, width: preferredWidth(fallback: newWidth))
+        #endif
+    }
+
+    func updateEffectiveContentWidth(
+        _ width: CGFloat,
+        markdown: String,
+        plugins: [ASTPlugin],
+        theme: Theme
+    ) {
+        guard width > 50 else { return }
+        guard abs(width - currentWidth) > 0.5 else { return }
+
+        render(markdown: markdown, plugins: plugins, theme: theme, width: width)
+    }
     
     func toggleDetails(at index: Int, currentlyOpen: Bool, width: CGFloat) {
         guard let ast = lastAST, 
               ast.children.indices.contains(index),
               let details = ast.children[index] as? DetailsNode,
               let theme = lastTheme else { return }
+
+        let resolvedWidth = preferredWidth(fallback: width)
         
         var updatedChildren = ast.children
         updatedChildren[index] = DetailsNode(
@@ -123,7 +194,7 @@ private final class MarkdownEngine: ObservableObject {
         renderTask?.cancel()
         renderTask = Task {
             let solver = LayoutSolver(theme: theme)
-            let result = await solver.solve(node: toggledDocument, constrainedToWidth: width)
+            let result = await solver.solve(node: toggledDocument, constrainedToWidth: resolvedWidth)
             
             if Task.isCancelled { return }
             

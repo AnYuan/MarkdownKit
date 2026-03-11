@@ -464,6 +464,7 @@ struct AttributedStringBuilder {
         let rule = String(repeating: "─", count: 40)
         let style = NSMutableParagraphStyle()
         style.paragraphSpacing = theme.typography.paragraph.paragraphSpacing
+        style.lineBreakMode = .byClipping
         let attrs: [NSAttributedString.Key: Any] = [
             .font: theme.typography.paragraph.font,
             .foregroundColor: theme.colors.thematicBreakColor.foreground,

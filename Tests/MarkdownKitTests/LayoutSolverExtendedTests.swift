@@ -211,6 +211,34 @@ final class LayoutSolverExtendedTests: XCTestCase {
         XCTAssertFalse(firstBodyHasBackground, "First body row should remain unshaded")
         XCTAssertTrue(secondBodyHasBackground, "Second body row should use zebra striping")
     }
+
+    @MainActor
+    func testTableLayoutHeightMatchesOffscreenAppKitRendererForMultilineCells() async throws {
+        let markdown = """
+        | Pattern | Texture | MarkdownKit |
+        |---------|---------|-------------|
+        | Async Rendering | Sentinel-based cancellation, display queue, transaction batching | async/await, LayoutSolver |
+        | Layout | ASLayoutSpec tree -> ASLayout (bg thread) | LayoutSolver -> AttributedString (async) |
+        | Caching | Two-level layout cache (calculated + pending) | LayoutCache |
+        | Thread Safety | os_unfair_lock, RAII macros | Swift strict concurrency, actors |
+        | Cancellation | Atomic sentinel counter | Swift Task cancellation |
+        | Batching | RunLoopQueue, CATransactionQueue, AsyncTransactionGroup | N/A (SwiftUI manages) |
+
+        ## Next Section
+        """
+        let width: CGFloat = 320
+        let layout = await TestHelper.solveLayout(markdown, width: width)
+        XCTAssertGreaterThanOrEqual(layout.children.count, 2, "Expected table followed by heading")
+
+        let tableLayout = layout.children[0]
+        guard let attrStr = tableLayout.attributedString else {
+            XCTFail("Table layout missing attributed string")
+            return
+        }
+
+        let renderedHeight = offscreenAppKitHeight(for: attrStr, width: width)
+        XCTAssertEqual(tableLayout.size.height, renderedHeight, accuracy: 1.0)
+    }
     #endif
 
     func testClosedDetailsLayoutShowsOnlySummaryRow() async throws {
@@ -346,3 +374,22 @@ private func alpha(of color: Color?) -> CGFloat {
     return color?.alphaComponent ?? 0
     #endif
 }
+
+#if canImport(AppKit) && !targetEnvironment(macCatalyst)
+@MainActor
+private func offscreenAppKitHeight(for attributedString: NSAttributedString, width: CGFloat) -> CGFloat {
+    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: 10_000))
+    textView.isEditable = false
+    textView.isSelectable = false
+    textView.drawsBackground = false
+    textView.textContainerInset = .zero
+    textView.textContainer?.lineFragmentPadding = 0
+    textView.textContainer?.widthTracksTextView = true
+    textView.textContainer?.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+    textView.textStorage?.setAttributedString(attributedString)
+    textView.layoutManager?.ensureLayout(for: textView.textContainer!)
+
+    let usedRect = textView.layoutManager?.usedRect(for: textView.textContainer!) ?? .zero
+    return ceil(usedRect.height)
+}
+#endif

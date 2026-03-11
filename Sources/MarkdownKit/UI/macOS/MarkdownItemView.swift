@@ -62,6 +62,7 @@ public class MarkdownItemView: NSCollectionViewItem {
     public static let reuseIdentifier = NSUserInterfaceItemIdentifier("MarkdownItemView")
 
     private var hostedView: InteractiveTextView?
+    var preferredContainerWidth: CGFloat?
 
     public override func loadView() {
         self.view = NSView()
@@ -71,10 +72,15 @@ public class MarkdownItemView: NSCollectionViewItem {
         let textView = InteractiveTextView()
         textView.isEditable = false
         textView.isSelectable = false
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = false
         textView.drawsBackground = false
+        textView.minSize = .zero
         textView.textContainerInset = .zero
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.heightTracksTextView = true
+        textView.autoresizingMask = [.width, .height]
         
         self.view.addSubview(textView)
         self.hostedView = textView
@@ -98,6 +104,7 @@ public class MarkdownItemView: NSCollectionViewItem {
         hostedView?.drawsBackground = false
         hostedView?.layer?.cornerRadius = 0
         hostedView?.textContainerInset = .zero
+        preferredContainerWidth = nil
     }
 
     public func configure(
@@ -107,13 +114,24 @@ public class MarkdownItemView: NSCollectionViewItem {
         onCheckboxToggle: ((CheckboxInteractionData) -> Void)? = nil,
         onLinkTap: ((URL) -> Void)? = nil
     ) {
-        self.view.frame.size = layout.size
-
         guard let attrString = layout.attributedString, attrString.length > 0,
               let textView = hostedView else { return }
 
-        // Resize recycled view
-        textView.frame = NSRect(origin: .zero, size: layout.size)
+        let containerWidth = preferredContainerWidth
+            ?? (view.bounds.width > 0 ? view.bounds.width : layout.size.width)
+
+        view.frame.size = NSSize(width: containerWidth, height: layout.size.height)
+
+        textView.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: containerWidth,
+            height: layout.size.height
+        )
+        textView.textContainer?.containerSize = NSSize(
+            width: containerWidth,
+            height: layout.size.height
+        )
         
         textView.onCheckboxToggle = onCheckboxToggle
         textView.onLinkTap = onLinkTap
@@ -125,6 +143,9 @@ public class MarkdownItemView: NSCollectionViewItem {
 
         // Replace text storage content with our pre-styled attributed string
         textView.textStorage?.setAttributedString(attrString)
+        if let textContainer = textView.textContainer {
+            textView.layoutManager?.ensureLayout(for: textContainer)
+        }
 
         // Handle NSAccessibility for the textView
         textView.setAccessibilityElement(true)

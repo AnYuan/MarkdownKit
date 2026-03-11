@@ -146,6 +146,29 @@ final class InlineFormattingLayoutTests: XCTestCase {
         XCTAssertTrue(foundGray, "Thematic break should use gray foreground color")
     }
 
+    #if canImport(AppKit) && !targetEnvironment(macCatalyst)
+    func testThematicBreakLayoutStaysSingleLineInNarrowWidth() async throws {
+        let layout = await TestHelper.solveLayout("---", width: 80)
+        let hrLayout = layout.children[0]
+
+        guard let attrStr = hrLayout.attributedString else {
+            XCTFail("Expected attributed string for thematic break")
+            return
+        }
+
+        var foundClipping = false
+        attrStr.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: attrStr.length)) { value, _, _ in
+            guard let style = value as? NSParagraphStyle else { return }
+            if style.lineBreakMode == .byClipping {
+                foundClipping = true
+            }
+        }
+
+        XCTAssertTrue(foundClipping, "Thematic break should use clipping to avoid wrapping in narrow widths")
+        XCTAssertLessThanOrEqual(hrLayout.size.height, 20, "Narrow thematic break should remain a single visual line")
+    }
+    #endif
+
     // MARK: - Mixed Inline Formatting in Paragraph
 
     func testBoldInsideParagraphLayoutMixesFonts() async throws {
