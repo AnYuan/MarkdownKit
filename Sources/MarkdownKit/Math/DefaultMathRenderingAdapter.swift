@@ -1,4 +1,7 @@
 import Foundation
+import MathJaxSwift
+import SwiftDraw
+import os
 
 #if canImport(UIKit)
 import UIKit
@@ -6,31 +9,164 @@ import UIKit
 import AppKit
 #endif
 
-/// Default math rendering adapter that uses `MathRenderer` (WebKit + MathJaxSwift)
-/// for async rendering and cached images for sync rendering.
+/// Default math rendering adapter that uses MathJaxSwift (LaTeX → SVG) and
+/// SwiftDraw (SVG → UIImage) for precise, synchronous rasterization.
+///
+/// Previous implementation used WKWebView snapshots which caused imprecise
+/// heights due to layout timing. SwiftDraw renders SVG directly via
+/// CoreGraphics, producing exact dimensions without async WebView overhead.
 public struct DefaultMathRenderingAdapter: MathRenderingAdapter {
 
     public init() {}
 
+    // MARK: - MathRenderingAdapter
+
     public func render(from node: MathNode, theme: Theme) async -> NSAttributedString {
-        #if canImport(WebKit)
         let hex = Self.hexColor(theme.colors.textColor.foreground)
-        if let image = await renderMath(latex: node.equation, display: !node.isInline, textColor: hex) {
-            return Self.attachmentString(image: image, node: node, theme: theme)
+        let display = !node.isInline
+
+        // Check image cache first
+        let imgKey = Self.imageCacheKey(latex: node.equation, display: display, textColor: hex)
+        if let cached = Self.imageCache.object(forKey: imgKey as NSString) {
+            return Self.attachmentString(image: cached, node: node, theme: theme)
         }
-        #endif
-        return Self.fallbackString(for: node, theme: theme)
+
+        // Get SVG string (cached or freshly converted)
+        let svgKey = Self.svgCacheKey(latex: node.equation, display: display)
+        let svgString: String
+        if let cached = Self.svgCache.object(forKey: svgKey as NSString) {
+            svgString = cached as String
+        } else {
+            do {
+                let generated = try await engine.tex2svg(node.equation, display: display)
+                Self.svgCache.setObject(generated as NSString, forKey: svgKey as NSString)
+                svgString = generated
+            } catch {
+                if await warningSuppressor.shouldLog(String(describing: error)) {
+                    Self.logger.error("MathJaxSwift conversion failed: \(String(describing: error))")
+                }
+                return Self.fallbackString(for: node, theme: theme)
+            }
+        }
+
+        // Pre-process and rasterize via SwiftDraw
+        guard let image = Self.rasterize(svgString: svgString, theme: theme, textColor: hex) else {
+            return Self.fallbackString(for: node, theme: theme)
+        }
+
+        Self.imageCache.setObject(image, forKey: imgKey as NSString)
+        return Self.attachmentString(image: image, node: node, theme: theme)
     }
 
     public func renderSync(from node: MathNode, theme: Theme) -> NSAttributedString {
-        #if canImport(WebKit)
         let hex = Self.hexColor(theme.colors.textColor.foreground)
-        if let image = MathRenderer.cachedImage(for: node.equation, textColor: hex) {
-            return Self.attachmentString(image: image, node: node, theme: theme)
+        let display = !node.isInline
+
+        // Check image cache
+        let imgKey = Self.imageCacheKey(latex: node.equation, display: display, textColor: hex)
+        if let cached = Self.imageCache.object(forKey: imgKey as NSString) {
+            return Self.attachmentString(image: cached, node: node, theme: theme)
         }
-        #endif
-        return Self.fallbackString(for: node, theme: theme)
+
+        // If SVG is cached from a prior async render, we can rasterize synchronously
+        let svgKey = Self.svgCacheKey(latex: node.equation, display: display)
+        guard let cachedSVG = Self.svgCache.object(forKey: svgKey as NSString) as String? else {
+            return Self.fallbackString(for: node, theme: theme)
+        }
+
+        guard let image = Self.rasterize(svgString: cachedSVG, theme: theme, textColor: hex) else {
+            return Self.fallbackString(for: node, theme: theme)
+        }
+
+        Self.imageCache.setObject(image, forKey: imgKey as NSString)
+        return Self.attachmentString(image: image, node: node, theme: theme)
     }
+
+    // MARK: - Engine (MathJaxSwift)
+
+    /// Actor-isolated MathJaxSwift wrapper for thread-safe LaTeX → SVG conversion.
+    private actor Engine {
+        private var mathJax: MathJax?
+
+        private func makeTeXInputOptions() -> TeXInputProcessorOptions {
+            let opts = TeXInputProcessorOptions()
+            opts.loadPackages = [
+                TeXInputProcessorOptions.Packages.base,
+                TeXInputProcessorOptions.Packages.ams,
+                TeXInputProcessorOptions.Packages.newcommand,
+                TeXInputProcessorOptions.Packages.boldsymbol,
+            ]
+            return opts
+        }
+
+        func tex2svg(_ latex: String, display: Bool) throws -> String {
+            let engine: MathJax
+            if let existing = mathJax {
+                engine = existing
+            } else {
+                let created = try MathJax(preferredOutputFormat: .svg)
+                mathJax = created
+                engine = created
+            }
+            let conversionOptions = ConversionOptions(display: display)
+            return try engine.tex2svg(
+                latex,
+                css: false,
+                assistiveMml: false,
+                container: false,
+                styles: false,
+                conversionOptions: conversionOptions,
+                inputOptions: makeTeXInputOptions()
+            )
+        }
+    }
+
+    private let engine = Engine()
+    private let warningSuppressor = MathWarningSuppressor()
+    private static let logger = Logger(subsystem: "com.markdownkit", category: "MathRenderer")
+
+    // MARK: - Caching
+
+    /// SVG string cache: keyed by (latex, display). Color-independent since MathJax SVGs use `currentColor`.
+    private nonisolated(unsafe) static let svgCache = NSCache<NSString, NSString>()
+
+    /// Rendered image cache: keyed by (latex, display, textColor). Color-dependent.
+    private nonisolated(unsafe) static let imageCache = NSCache<NSString, NativeImage>()
+
+    private static func svgCacheKey(latex: String, display: Bool) -> String {
+        "\(latex)::display=\(display)"
+    }
+
+    private static func imageCacheKey(latex: String, display: Bool, textColor: String?) -> String {
+        var key = "\(latex)::display=\(display)"
+        if let textColor { key += "::color=\(textColor)" }
+        return key
+    }
+
+    // MARK: - Rasterization
+
+    /// Pre-processes and rasterizes an SVG string via SwiftDraw.
+    /// Returns nil if SVG parsing or rasterization fails.
+    private static func rasterize(svgString: String, theme: Theme, textColor: String?) -> NativeImage? {
+        let fontXHeight = theme.typography.paragraph.font.xHeight
+        let processed = MathSVGPreprocessor.preprocess(
+            svg: svgString,
+            fontXHeight: fontXHeight,
+            textColor: textColor
+        )
+
+        guard processed.size.width > 0, processed.size.height > 0,
+              var svg = SVG(xml: processed.svg) else {
+            return nil
+        }
+
+        // Scale from viewBox dimensions to exact point dimensions
+        svg.size(processed.size)
+
+        return svg.rasterize()
+    }
+
+    // MARK: - Attachment
 
     private static func attachmentString(image: NativeImage, node: MathNode, theme: Theme) -> NSAttributedString {
         let font = theme.typography.paragraph.font
@@ -40,8 +176,6 @@ public struct DefaultMathRenderingAdapter: MathRenderingAdapter {
 
         let result = NSMutableAttributedString(attachment: attachment)
         result.addAttribute(.font, value: font, range: NSRange(location: 0, length: result.length))
-        // Block math gets a trailing newline so it occupies its own line
-        // when merged with other blocks into a single attributed string.
         if !node.isInline {
             result.append(NSAttributedString(string: "\n", attributes: [.font: font]))
         }
@@ -49,18 +183,6 @@ public struct DefaultMathRenderingAdapter: MathRenderingAdapter {
     }
 
     // MARK: - Helpers
-
-    #if canImport(WebKit)
-    private func renderMath(latex: String, display: Bool, textColor: String?) async -> NativeImage? {
-        await withCheckedContinuation { continuation in
-            Task { @MainActor in
-                MathRenderer.shared.render(latex: latex, display: display, textColor: textColor) { image in
-                    continuation.resume(returning: image)
-                }
-            }
-        }
-    }
-    #endif
 
     /// Converts a native color to a CSS hex string (e.g. "#FFFFFF").
     static func hexColor(_ color: Color) -> String? {

@@ -44,7 +44,7 @@ public final class TextKitCalculator {
         #if canImport(AppKit) && !targetEnvironment(macCatalyst)
         return calculateSizeAppKit(for: attributedString, constrainedToWidth: maxWidth)
         #else
-        return calculateSizeTextKit2(for: attributedString, constrainedToWidth: maxWidth)
+        return calculateSizeTextKit1(for: attributedString, constrainedToWidth: maxWidth)
         #endif
     }
 }
@@ -73,28 +73,27 @@ private extension TextKitCalculator {
     #endif
 
     #if canImport(UIKit)
-    func calculateSizeTextKit2(
+    /// Uses TextKit 1 (NSLayoutManager) to match AsyncTextView's rendering engine.
+    /// TextKit 2 can underestimate the height of NSTextAttachment-heavy content
+    /// (e.g. math equations with tall fractions), causing clipping when AsyncTextView
+    /// renders via TextKit 1 at the measured size.
+    func calculateSizeTextKit1(
         for attributedString: NSAttributedString,
         constrainedToWidth maxWidth: CGFloat
     ) -> CGSize {
-        let textStorage = NSTextStorage()
-        let textContainer = NSTextContainer(size: CGSize(width: maxWidth, height: .greatestFiniteMagnitude))
-        let layoutManager = NSTextLayoutManager()
-        let textContentStorage = NSTextContentStorage()
+        let textStorage = NSTextStorage(attributedString: attributedString)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(
+            size: CGSize(width: maxWidth, height: .greatestFiniteMagnitude)
+        )
 
-        textContentStorage.addTextLayoutManager(layoutManager)
-        layoutManager.textContainer = textContainer
-        textContentStorage.textStorage = textStorage
         textContainer.lineFragmentPadding = 0
+        textContainer.maximumNumberOfLines = 0
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.ensureLayout(for: textContainer)
 
-        textStorage.setAttributedString(attributedString)
-        layoutManager.ensureLayout(for: layoutManager.documentRange)
-
-        guard let _ = layoutManager.textLayoutFragment(for: layoutManager.documentRange.location) else {
-            return .zero
-        }
-
-        let rect = layoutManager.usageBoundsForTextContainer
+        let rect = layoutManager.usedRect(for: textContainer)
         return CGSize(width: ceil(rect.width), height: ceil(rect.height))
     }
     #endif

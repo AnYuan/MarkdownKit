@@ -15,6 +15,7 @@
 		1B54325D65B57A9E8C302155 /* Markdown.framework in Dependencies */ = {isa = PBXBuildFile; fileRef = 6B168959692D099C795088C9 /* Markdown.framework */; };
 		1D57E4D7C704E12DFA6103FB /* MarkdownKitVisitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13E8BC26A9B26A61F5ECA46E /* MarkdownKitVisitor.swift */; };
 		2059E566FEF99710FEBCBEFF /* DiagramAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2D35A8645AE28C6539ACA74 /* DiagramAdapter.swift */; };
+		20C5C376F117936C0C35C9F8 /* SwiftDraw.framework in Dependencies */ = {isa = PBXBuildFile; fileRef = 3F1587B454350A15BFFAAD87 /* SwiftDraw.framework */; };
 		211695797A3ACA6F3DE92317 /* MarkdownCollectionViewCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = B95082F6386033363485ACE3 /* MarkdownCollectionViewCell.swift */; };
 		214D19D84FAF8830F97A496D /* MarkdownNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC8EF063E22AA71E2BB354FF /* MarkdownNode.swift */; };
 		241C6F44D5B3FAF578CCECD9 /* MathRenderingAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27FA6F23A5F302A1106DFDFA /* MathRenderingAdapter.swift */; };
@@ -44,6 +45,7 @@
 		797A421F843F4134420A766C /* MarkdownItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AE86887768C6BE121D2C805 /* MarkdownItemView.swift */; };
 		7B10D8FE76C70CE09C1E50D6 /* InlineMappers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DDB0EC4991D3FF7BEE8874 /* InlineMappers.swift */; };
 		7D82764D9DD3CE32E6C85B2A /* ImageNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24AEB0F38D90AEE91F506E75 /* ImageNode.swift */; };
+		7F8A0C49E577EB89498959E8 /* TableCardRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05C6EF37B87626C5AB925CEB /* TableCardRenderer.swift */; };
 		7FF200206C81090BE5E9A49F /* BlockQuoteNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E54B1789FF614F87AFCAD48 /* BlockQuoteNode.swift */; };
 		80B71DCCD24A9FD4142C64DA /* TextNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA59BF644AF7D0471D487814 /* TextNode.swift */; };
 		81D0A74871A7AFBF6DA3C972 /* LayoutResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91B62DB1313955EB0255C8A /* LayoutResult.swift */; };
@@ -78,6 +80,7 @@
 		E65014DA2B741C615A4D411B /* MermaidDiagramAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2BA6874E54EA3B811803A1A /* MermaidDiagramAdapter.swift */; };
 		E821C915BF6D81B571687610 /* TextKitCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA7570E1B9F183436D82FF17 /* TextKitCalculator.swift */; };
 		E8FF42FFC8C0744AFA06C6FD /* PerformanceProfiler.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF6DFAAB675FE80ECBFF49B5 /* PerformanceProfiler.swift */; };
+		EBB8609C6FA889118F7EABA1 /* MathSVGPreprocessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C180FD2FF4029245287E13D1 /* MathSVGPreprocessor.swift */; };
 		EF17328AE7AB168D3B708E15 /* MarkdownContextDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 906E20E9FA44343881081944 /* MarkdownContextDelegate.swift */; };
 		F9B77523983C5F00570CC92F /* MarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B99A027FEC11918F176A9A9D /* MarkdownView.swift */; };
 		FA6A83BA6A8E6B12E74A208A /* MarkdownKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF021A72B285BA8C1C6990D8 /* MarkdownKit.swift */; };
@@ -103,6 +106,7 @@
 				1B54325D65B57A9E8C302155 /* Markdown.framework in Dependencies */,
 				AD5B80F013AD41538BC539D2 /* MathJaxSwift.framework in Dependencies */,
 				D8BAFD48705F7100E3702799 /* Splash.framework in Dependencies */,
+				20C5C376F117936C0C35C9F8 /* SwiftDraw.framework in Dependencies */,
 			);
 			name = Dependencies;
 			runOnlyForDeploymentPostprocessing = 1;
@@ -132,6 +136,7 @@
 /* Begin PBXFileReference section */
 		00E44A2999EB07DC38219E8A /* ASTNodeMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTNodeMapper.swift; sourceTree = "<group>"; };
 		044682DE69FFDA74F66799AF /* BlockNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockNode.swift; sourceTree = "<group>"; };
+		05C6EF37B87626C5AB925CEB /* TableCardRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableCardRenderer.swift; sourceTree = "<group>"; };
 		06684A07072FB0AE0FFAC1B3 /* ListNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListNode.swift; sourceTree = "<group>"; };
 		0A6A2958B8DA537DFD5E490D /* AsyncTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncTextView.swift; sourceTree = "<group>"; };
 		0AE86887768C6BE121D2C805 /* MarkdownItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownItemView.swift; sourceTree = "<group>"; };
@@ -149,6 +154,7 @@
 		33B6A4DEE314F3B4EEB7FA53 /* DetailsNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailsNode.swift; sourceTree = "<group>"; };
 		3D1ABC55381950861D3EA807 /* MarkdownKit-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "MarkdownKit-Info.plist"; sourceTree = "<group>"; };
 		3E54B1789FF614F87AFCAD48 /* BlockQuoteNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockQuoteNode.swift; sourceTree = "<group>"; };
+		3F1587B454350A15BFFAAD87 /* SwiftDraw.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = SwiftDraw.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		3F81EEF5714646B77E06EF85 /* InlineCodeNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineCodeNode.swift; sourceTree = "<group>"; };
 		40BA4E97C872348EF77604AA /* MathJaxSwift.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MathJaxSwift.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		510E0D5E86BEE47E82DB1BC3 /* BasicMappers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BasicMappers.swift; sourceTree = "<group>"; };
@@ -189,6 +195,7 @@
 		BC65B9B1F133336D3D7AFA23 /* AsyncCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncCodeView.swift; sourceTree = "<group>"; };
 		BCA195E04BFB23F76985C540 /* ListMappers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListMappers.swift; sourceTree = "<group>"; };
 		BE31120EC13F6602EE170339 /* MarkdownKit_MarkdownKit.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MarkdownKit_MarkdownKit.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
+		C180FD2FF4029245287E13D1 /* MathSVGPreprocessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MathSVGPreprocessor.swift; sourceTree = "<group>"; };
 		C78CED32E84F5088C89B175E /* SplashHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashHighlighter.swift; sourceTree = "<group>"; };
 		C80E9D3F440978F5BA9BE819 /* MarkdownKit_MarkdownKit-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "MarkdownKit_MarkdownKit-Info.plist"; sourceTree = "<group>"; };
 		CA59BF644AF7D0471D487814 /* TextNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextNode.swift; sourceTree = "<group>"; };
@@ -295,6 +302,7 @@
 				9FA01C496D838BD0F0F9EBB1 /* MarkdownKit.framework */,
 				40BA4E97C872348EF77604AA /* MathJaxSwift.framework */,
 				59C8295DD28D3129B4A16C2F /* Splash.framework */,
+				3F1587B454350A15BFFAAD87 /* SwiftDraw.framework */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -314,6 +322,7 @@
 				93AA7E6C198A040B92891DA5 /* ImageAttachmentBuilder.swift */,
 				1890DEDD7B2F3967A7A415D1 /* MathAttachmentBuilder.swift */,
 				B2DD39EE21B1024897A2F258 /* TableAttributedStringBuilder.swift */,
+				05C6EF37B87626C5AB925CEB /* TableCardRenderer.swift */,
 			);
 			path = Builders;
 			sourceTree = "<group>";
@@ -463,6 +472,7 @@
 				98B7762552EAAB740D67CAD0 /* DefaultMathRenderingAdapter.swift */,
 				FB33B6948D2E6022EB6DD74E /* MathRenderer.swift */,
 				27FA6F23A5F302A1106DFDFA /* MathRenderingAdapter.swift */,
+				C180FD2FF4029245287E13D1 /* MathSVGPreprocessor.swift */,
 			);
 			path = Math;
 			sourceTree = "<group>";
@@ -635,6 +645,7 @@
 				BF893B8320665AAC422DD373 /* ImageAttachmentBuilder.swift in Sources */,
 				FF69A833517016587AABCEA3 /* MathAttachmentBuilder.swift in Sources */,
 				A359337C2B618509BECC62A5 /* TableAttributedStringBuilder.swift in Sources */,
+				7F8A0C49E577EB89498959E8 /* TableCardRenderer.swift in Sources */,
 				B68A7BADE69BB19EA34BFD9E /* ColorToken.swift in Sources */,
 				954F93AAE303EB69A8C44ADC /* LayoutCache.swift in Sources */,
 				81D0A74871A7AFBF6DA3C972 /* LayoutResult.swift in Sources */,
@@ -646,6 +657,7 @@
 				7682ABF4378F4C2C044A26F8 /* DefaultMathRenderingAdapter.swift in Sources */,
 				C90932A45B129AF85A984795 /* MathRenderer.swift in Sources */,
 				241C6F44D5B3FAF578CCECD9 /* MathRenderingAdapter.swift in Sources */,
+				EBB8609C6FA889118F7EABA1 /* MathSVGPreprocessor.swift in Sources */,
 				84254F6F471726392A67F1E7 /* BlockNode.swift in Sources */,
 				7FF200206C81090BE5E9A49F /* BlockQuoteNode.swift in Sources */,
 				4B0C94B8DF3FFCEBAAEB7C33 /* CodeBlockNode.swift in Sources */,
