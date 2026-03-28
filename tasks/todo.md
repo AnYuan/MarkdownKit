@@ -110,7 +110,7 @@
 
 ## Phase 11: High-Performance Pure Arithmetic Layout Engine (Pretext-inspired)
 *Note: Each step below must be implemented as a strictly atomic commit.*
-- [ ] Capture baseline performance metrics using the existing TextKit layout engine on text-heavy benchmark fixtures.
+- [x] Capture baseline performance metrics using the existing TextKit layout engine on text-heavy benchmark fixtures.
 - [ ] Create `ArithmeticTextCalculator` skeleton with basic string measurement for atomic validation.
 - [ ] Implement Structure of Arrays (SoA) string segmentation and word-width caching using CoreText.
 - [ ] Implement fast-path pure-math line breaking loop in `ArithmeticTextCalculator`.
