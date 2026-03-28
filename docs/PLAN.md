@@ -161,3 +161,14 @@ bash scripts/verify_all.sh --full
 1. Thoroughly execute the Self-Improvement Loop defined in `GEMINI.md`.
 2. Clean up memory leaks or performance hitches found during rigorous stress testing.
 3. **Quality Assurance**: Snapshot tests for the final render output ensuring complete visual parity with the expected ChatGPT-app visual designs. 
+
+## Phase 11: High-Performance Pure Arithmetic Layout Engine (Pretext-inspired)
+**Goal**: Bypass TextKit overhead and locks for pure text nodes using Structure of Arrays (SoA) and direct CoreText width measurements.
+*Execution Strategy: strictly atomic commits matching the steps below.*
+1. **Baseline**: Capture current performance metrics using the existing `TextKitCalculator` on text-heavy benchmark fixtures.
+2. **Skeleton**: Create `ArithmeticTextCalculator` stub and prove correct integration points before complex optimizations.
+3. **SoA Segmentation**: Implement `pretext`-inspired Structure of Arrays text segmentation and word-width caching using CoreText.
+4. **Math Breaking**: Implement the pure-arithmetic fast-path line breaking loop.
+5. **Parity Testing**: Write Unit Tests confirming 100% layout `CGSize` parity with `TextKitCalculator` for pure text nodes.
+6. **Routing**: Update `LayoutSolver` to selectively route pure text nodes to the arithmetic engine, with graceful fallback to TextKit for inline attachments (images, math) or complex text shaping.
+7. **Performance Validation**: Run benchmark comparisons (`ArithmeticTextCalculator` vs `TextKitCalculator`) and document throughput and tail-latency improvements.
