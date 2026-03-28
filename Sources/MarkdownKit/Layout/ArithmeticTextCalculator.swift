@@ -53,18 +53,52 @@ public final class ArithmeticTextCalculator {
 
         let preparedText = prepare(attributedString: attributedString)
         
-        // TODO: Implement the fast-path pure-math line breaking loop using `preparedText`
-        // For the atomic SoA commit, we fallback to a naive string measurement
-        // or a dummy bounding rect. To prove the integration without breaking anything
-        // we'll temporarily use standard boundingRect which is thread-safe.
-
-        let rect = attributedString.boundingRect(
-            with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            context: nil
-        )
-
-        return CGSize(width: ceil(rect.width), height: ceil(rect.height))
+        var currentLineWidth: CGFloat = 0
+        var currentLineHeight: CGFloat = 0
+        var totalHeight: CGFloat = 0
+        var maxComputedWidth: CGFloat = 0
+        
+        for i in 0..<preparedText.widths.count {
+            let width = preparedText.widths[i]
+            let isSpace = preparedText.isSpace[i]
+            let isNewline = preparedText.isNewline[i]
+            let height = preparedText.heights[i]
+            
+            if isNewline {
+                totalHeight += max(currentLineHeight, height)
+                currentLineWidth = 0
+                currentLineHeight = 0
+                continue
+            }
+            
+            if currentLineWidth + width > maxWidth && currentLineWidth > 0 {
+                // Break line
+                totalHeight += currentLineHeight
+                maxComputedWidth = max(maxComputedWidth, currentLineWidth)
+                
+                // If it's a space that caused the break, it might hang in CSS, 
+                // but usually it starts the next line (or gets discarded at the start).
+                // We'll mimic basic wrap behavior: drop leading spaces on new lines.
+                if isSpace {
+                    currentLineWidth = 0
+                    currentLineHeight = 0
+                } else {
+                    currentLineWidth = width
+                    currentLineHeight = height
+                }
+            } else {
+                currentLineWidth += width
+                currentLineHeight = max(currentLineHeight, height)
+            }
+        }
+        
+        // Add final line height if it wasn't empty
+        if currentLineWidth > 0 || totalHeight == 0 {
+            totalHeight += currentLineHeight
+            maxComputedWidth = max(maxComputedWidth, currentLineWidth)
+        }
+        
+        return CGSize(width: ceil(maxComputedWidth), height: ceil(totalHeight))
     }
 
     /// Segments the attributed string into words and whitespace, measuring the exact width
