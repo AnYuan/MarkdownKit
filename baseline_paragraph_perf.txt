@@ -1,0 +1,1 @@
+Baseline Paragraphs TextKit performance: Avg 3.92ms | P50 3.89ms | P95 4.31ms | Max 4.35ms
