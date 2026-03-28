@@ -18,6 +18,7 @@ import AppKit
 public final class LayoutSolver: @unchecked Sendable {
     
     private let textCalculator: TextKitCalculator
+    private let arithmeticCalculator: ArithmeticTextCalculator
     private let cache: LayoutCache
     private let builder: AttributedStringBuilder
     
@@ -28,6 +29,7 @@ public final class LayoutSolver: @unchecked Sendable {
         mathAdapter: (any MathRenderingAdapter)? = nil
     ) {
         self.textCalculator = TextKitCalculator()
+        self.arithmeticCalculator = ArithmeticTextCalculator()
         self.cache = cache
         let highlighter = SplashHighlighter(theme: theme)
         self.builder = AttributedStringBuilder(
@@ -109,7 +111,12 @@ public final class LayoutSolver: @unchecked Sendable {
 
         } else {
             styledString = await builder.buildString(for: node, constrainedToWidth: maxWidth)
-            size = textCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
+            
+            if isPureTextBlock(node) {
+                size = arithmeticCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
+            } else {
+                size = textCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
+            }
         }
 
         // 3. Recurse down children (if they represent separate visual block elements)
@@ -174,7 +181,12 @@ public final class LayoutSolver: @unchecked Sendable {
             size.height += insets.height
         } else {
             styledString = builder.buildStringSync(for: node, constrainedToWidth: maxWidth)
-            size = textCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
+            
+            if isPureTextBlock(node) {
+                size = arithmeticCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
+            } else {
+                size = textCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
+            }
         }
 
         var childLayouts: [LayoutResult] = []
@@ -258,4 +270,39 @@ public final class LayoutSolver: @unchecked Sendable {
         )
     }
     #endif
+
+    // MARK: - Routing Helpers
+
+    /// Determines if a node is a simple text block that can be safely routed
+    /// to the lock-free `ArithmeticTextCalculator`.
+    private func isPureTextBlock(_ node: MarkdownNode) -> Bool {
+        // Only route paragraph and header nodes for now
+        guard node is ParagraphNode || node is HeaderNode else {
+            return false
+        }
+        
+        var hasAttachments = false
+        
+        func traverse(_ n: MarkdownNode) {
+            if hasAttachments { return }
+            
+            // If we find any of these, we must use TextKit for accurate layout
+            if n is ImageNode || 
+               n is MathNode || 
+               n is DiagramNode || 
+               n is TableNode || 
+               n is CodeBlockNode ||
+               n is DetailsNode {
+                hasAttachments = true
+                return
+            }
+            
+            for child in n.children {
+                traverse(child)
+            }
+        }
+        
+        traverse(node)
+        return !hasAttachments
+    }
 }
