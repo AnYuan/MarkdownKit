@@ -57,6 +57,20 @@ public final class ArithmeticTextCalculator {
         var currentLineHeight: CGFloat = 0
         var totalHeight: CGFloat = 0
         var maxComputedWidth: CGFloat = 0
+        var lineCount = 0
+        
+        // We'll peek at the first segment's paragraph style for indent/spacing
+        // In a real implementation, we might need to handle per-segment styles more robustly.
+        var headIndent: CGFloat = 0
+        var firstLineHeadIndent: CGFloat = 0
+        
+        attributedString.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
+            if let style = value as? NSParagraphStyle {
+                headIndent = style.headIndent
+                firstLineHeadIndent = style.firstLineHeadIndent
+                stop.pointee = true
+            }
+        }
         
         for i in 0..<preparedText.widths.count {
             let width = preparedText.widths[i]
@@ -68,17 +82,19 @@ public final class ArithmeticTextCalculator {
                 totalHeight += max(currentLineHeight, height)
                 currentLineWidth = 0
                 currentLineHeight = 0
+                lineCount += 1
                 continue
             }
             
-            if currentLineWidth + width > maxWidth && currentLineWidth > 0 {
+            let currentIndent = (lineCount == 0) ? firstLineHeadIndent : headIndent
+            let availableWidth = maxWidth - currentIndent
+            
+            if currentLineWidth + width > availableWidth && currentLineWidth > 0 {
                 // Break line
                 totalHeight += currentLineHeight
-                maxComputedWidth = max(maxComputedWidth, currentLineWidth)
+                maxComputedWidth = max(maxComputedWidth, currentLineWidth + currentIndent)
                 
-                // If it's a space that caused the break, it might hang in CSS, 
-                // but usually it starts the next line (or gets discarded at the start).
-                // We'll mimic basic wrap behavior: drop leading spaces on new lines.
+                lineCount += 1
                 if isSpace {
                     currentLineWidth = 0
                     currentLineHeight = 0
@@ -94,11 +110,12 @@ public final class ArithmeticTextCalculator {
         
         // Add final line height if it wasn't empty
         if currentLineWidth > 0 || totalHeight == 0 {
+            let currentIndent = (lineCount == 0) ? firstLineHeadIndent : headIndent
             totalHeight += currentLineHeight
-            maxComputedWidth = max(maxComputedWidth, currentLineWidth)
+            maxComputedWidth = max(maxComputedWidth, currentLineWidth + currentIndent)
         }
         
-        return CGSize(width: ceil(maxComputedWidth), height: ceil(totalHeight))
+        return CGSize(width: ceil(maxComputedWidth), height: floor(totalHeight))
     }
 
     /// Segments the attributed string into words and whitespace, measuring the exact width
@@ -115,17 +132,16 @@ public final class ArithmeticTextCalculator {
             // Convert platform Font to CTFont
             #if canImport(UIKit)
             let ctFont = CTFontCreateWithName(font.fontName as CFString, font.pointSize, nil)
+            let lineHeightMetric = font.lineHeight
             #elseif canImport(AppKit)
             let ctFont = CTFontCreateWithName(font.fontName as CFString, font.pointSize, nil)
+            let lineHeightMetric = font.ascender - font.descender + font.leading
             #endif
             
             // Approximate line height based on font metrics
-            let ascent = CTFontGetAscent(ctFont)
-            let descent = CTFontGetDescent(ctFont)
-            let leading = CTFontGetLeading(ctFont)
+            var lineHeight = lineHeightMetric
             
             // Adjust line height multiplier if specified in paragraph style
-            var lineHeight = ascent + descent + leading
             if let paragraphStyle = attributes[.paragraphStyle] as? NSParagraphStyle {
                 let multiplier = paragraphStyle.lineHeightMultiple
                 if multiplier > 0 {
