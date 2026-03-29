@@ -116,4 +116,4 @@
 - [x] Implement fast-path pure-math line breaking loop in `ArithmeticTextCalculator`.
 - [x] Write strict parity Unit Tests comparing `ArithmeticTextCalculator` against `TextKitCalculator` exact `CGSize` outputs.
 - [x] Update `LayoutSolver` to route pure text nodes (no attachments) to `ArithmeticTextCalculator` with graceful fallback.
-- [ ] Run benchmark comparisons (`Arithmetic` vs `TextKit`) and document throughput improvements.
+- [x] Run benchmark comparisons (`Arithmetic` vs `TextKit`) and document throughput improvements.
