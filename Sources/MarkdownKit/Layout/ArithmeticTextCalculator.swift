@@ -105,7 +105,8 @@ public final class ArithmeticTextCalculator {
     /// of each segment using CoreText, and returning a Structure of Arrays (SoA) payload.
     private func prepare(attributedString: NSAttributedString) -> PreparedText {
         var preparedText = PreparedText()
-        let string = attributedString.string
+        let fullString = attributedString.string
+        let utf16Chars = Array(fullString.utf16) // Single allocation of the entire text buffer
         let fullRange = NSRange(location: 0, length: attributedString.length)
         
         attributedString.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
@@ -117,8 +118,6 @@ public final class ArithmeticTextCalculator {
             #elseif canImport(AppKit)
             let ctFont = CTFontCreateWithName(font.fontName as CFString, font.pointSize, nil)
             #endif
-            
-            let substring = (string as NSString).substring(with: range)
             
             // Approximate line height based on font metrics
             let ascent = CTFontGetAscent(ctFont)
@@ -134,66 +133,71 @@ public final class ArithmeticTextCalculator {
                 }
             }
             
-            // Simple segmentation: by word boundaries and spaces.
-            // Using NSString enumeration for words.
-            substring.enumerateSubstrings(in: substring.startIndex..<substring.endIndex, options: [.byWords, .substringNotRequired]) { _, substringRange, enclosingRange, _ in
-                // The enclosing range contains the word AND the trailing spaces/punctuation.
-                // To mirror pretext, we need to segment this carefully into [Word] [Space] [Punctuation]
-                // but for this initial SoA pass we'll do a simpler approach: process character by character
-                // or group words, then spaces.
+            // Reusable buffers for this font range to avoid allocating per-word
+            var glyphs = [CGGlyph](repeating: 0, count: range.length)
+            var advances = [CGSize](repeating: .zero, count: range.length)
+            
+            var segmentStartIndex = range.location
+            var isCurrentSpace = false
+            
+            // Inline helper to measure a chunk without allocations
+            func measureSegment(from start: Int, to end: Int, isSpace: Bool, isNewline: Bool) {
+                let count = end - start
+                guard count > 0 else {
+                    if isNewline { preparedText.append(width: 0, isSpace: true, isNewline: true, height: lineHeight) }
+                    return
+                }
                 
-                // Let's do a character-class based grouping for maximum precision on simple text
-                let groupString = String(substring[enclosingRange])
-                
-                // Extremely simple tokenizer for the PoC
-                var currentSegment = ""
-                var isCurrentSpace = false
-                
-                for char in groupString {
-                    let isSpace = char.isWhitespace
-                    let isNewline = char.isNewline
+                utf16Chars.withUnsafeBufferPointer { buffer in
+                    guard let baseAddress = buffer.baseAddress else { return }
+                    let ptr = baseAddress.advanced(by: start)
                     
-                    if isNewline {
-                        if !currentSegment.isEmpty {
-                            let width = self.measureText(currentSegment, font: ctFont)
-                            preparedText.append(width: width, isSpace: isCurrentSpace, isNewline: false, height: lineHeight)
-                            currentSegment = ""
-                        }
-                        preparedText.append(width: 0, isSpace: true, isNewline: true, height: lineHeight)
-                    } else if isSpace != isCurrentSpace {
-                        if !currentSegment.isEmpty {
-                            let width = self.measureText(currentSegment, font: ctFont)
-                            preparedText.append(width: width, isSpace: isCurrentSpace, isNewline: false, height: lineHeight)
-                        }
-                        currentSegment = String(char)
-                        isCurrentSpace = isSpace
+                    let hasGlyphs = CTFontGetGlyphsForCharacters(ctFont, ptr, &glyphs, count)
+                    if hasGlyphs {
+                        CTFontGetAdvancesForGlyphs(ctFont, .horizontal, glyphs, &advances, count)
+                        
+                        var width: CGFloat = 0
+                        for i in 0..<count { width += advances[i].width }
+                        preparedText.append(width: width, isSpace: isSpace, isNewline: false, height: lineHeight)
                     } else {
-                        currentSegment.append(char)
+                        preparedText.append(width: 0, isSpace: isSpace, isNewline: false, height: lineHeight)
                     }
                 }
                 
-                if !currentSegment.isEmpty {
-                    let width = self.measureText(currentSegment, font: ctFont)
-                    preparedText.append(width: width, isSpace: isCurrentSpace, isNewline: false, height: lineHeight)
+                if isNewline {
+                    preparedText.append(width: 0, isSpace: true, isNewline: true, height: lineHeight)
                 }
+            }
+            
+            // Scan through UTF-16 code units directly
+            for i in range.location ..< (range.location + range.length) {
+                let char = utf16Chars[i]
+                
+                // Fast basic checks for word boundaries
+                // 0x000A = LF (\n), 0x000D = CR (\r)
+                let isNewlineChar = char == 0x000A || char == 0x000D || char == 0x2028 || char == 0x2029
+                // 0x0020 = Space, 0x0009 = Tab
+                let isSpaceChar = char == 0x0020 || char == 0x0009
+                
+                if isNewlineChar {
+                    measureSegment(from: segmentStartIndex, to: i, isSpace: isCurrentSpace, isNewline: true)
+                    segmentStartIndex = i + 1
+                    isCurrentSpace = false // Reset after newline
+                } else if isSpaceChar != isCurrentSpace {
+                    if i > segmentStartIndex {
+                        measureSegment(from: segmentStartIndex, to: i, isSpace: isCurrentSpace, isNewline: false)
+                    }
+                    segmentStartIndex = i
+                    isCurrentSpace = isSpaceChar
+                }
+            }
+            
+            // Final segment in range
+            if segmentStartIndex < range.location + range.length {
+                measureSegment(from: segmentStartIndex, to: range.location + range.length, isSpace: isCurrentSpace, isNewline: false)
             }
         }
         
         return preparedText
-    }
-    
-    private func measureText(_ text: String, font: CTFont) -> CGFloat {
-        // Use CoreText to get exact advances for glyphs.
-        // This is significantly faster than using NSAttributedString.size()
-        let chars = Array(text.utf16)
-        var glyphs = [CGGlyph](repeating: 0, count: chars.count)
-        
-        let hasGlyphs = CTFontGetGlyphsForCharacters(font, chars, &glyphs, chars.count)
-        guard hasGlyphs else { return 0 }
-        
-        var advances = [CGSize](repeating: .zero, count: chars.count)
-        CTFontGetAdvancesForGlyphs(font, .horizontal, glyphs, &advances, chars.count)
-        
-        return advances.reduce(0) { $0 + $1.width }
     }
 }

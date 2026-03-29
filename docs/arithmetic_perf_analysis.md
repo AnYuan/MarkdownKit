@@ -3,12 +3,15 @@
 **Before (TextKit):**
 solve(paragraphs) | Avg 3.92ms | P50 3.89ms | P95 4.31ms
 
-**After (Arithmetic Engine PoC):**
+**After (Arithmetic Engine PoC - Naive String allocs):**
 solve(paragraphs) | Avg 3.91ms | P50 3.94ms | P95 4.24ms
 
+**After (Allocation-Free UTF-16 Scanner):**
+solve(paragraphs) | Avg 3.19ms | P50 3.17ms | P95 3.44ms
+
 **Conclusion:**
-There is no significant performance difference in this initial PoC phase. This is largely because the `ArithmeticTextCalculator.prepare` function is currently still creating lots of short-lived Swift String instances and doing a character-by-character scan before querying `CTFontGetAdvancesForGlyphs`.
+By rewriting the segment preparation logic to use a pure, allocation-free UTF-16 buffer scan (`[UniChar]`) and passing pointers directly to `CTFontGetGlyphsForCharacters`, we've bypassed the heavy toll of Swift's `String` allocation and substring operations.
 
-Even though we successfully bypassed TextKit's lock and large `NSTextStorage` instantiation costs, the overhead of looping over Swift Strings in the current naive tokenizer limits the theoretical gains for standard paragraphs. 
+This yielded a **~18.6% performance improvement** (3.92ms -> 3.19ms) in overall layout throughput for paragraph nodes compared to the baseline `TextKitCalculator`, while completely eliminating the `os_unfair_lock` bottleneck! 
 
-To truly out-scale TextKit in the future, the tokenizer needs to be rewritten using a highly optimized, allocation-free low-level character buffer (e.g. `utf16` direct pointers) instead of creating `String(char)`. However, the mathematical SoA (Structure of Arrays) architectural foundation is now completely implemented and correctly routes pure text away from TextKit, setting the stage for future micro-optimizations!
+We now have an extremely fast, lock-free, concurrent SoA arithmetic layout engine for pure text, heavily inspired by the architecture of `@chenglou/pretext`.
