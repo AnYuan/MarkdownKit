@@ -18,6 +18,23 @@ final class MarkdownKitBenchmarkTests: XCTestCase {
         DetailsExtractionPlugin(),
     ]
 
+    private var pureTextSampleStrings: [(String, NSAttributedString)] {
+        [
+            ("short", NSAttributedString(
+                string: "Hello World",
+                attributes: [.font: Font.systemFont(ofSize: 16)]
+            )),
+            ("paragraph", NSAttributedString(
+                string: String(repeating: "The quick brown fox jumps over the lazy dog. ", count: 20),
+                attributes: [.font: Font.systemFont(ofSize: 16)]
+            )),
+            ("long", NSAttributedString(
+                string: String(repeating: "A comprehensive paragraph with enough words. ", count: 200),
+                attributes: [.font: Font.systemFont(ofSize: 16)]
+            )),
+        ]
+    }
+
     // MARK: - Phase 1: Parse
 
     func testPhase1_Parse() {
@@ -93,6 +110,36 @@ final class MarkdownKitBenchmarkTests: XCTestCase {
 
     // MARK: - Phase 2: Layout
 
+    private func isolatedTextMeasurementResults() -> [BenchmarkResult] {
+        var results: [BenchmarkResult] = []
+
+        let textCalc = TextKitCalculator()
+        let arithmeticCalc = ArithmeticTextCalculator()
+
+        for (name, attrStr) in pureTextSampleStrings {
+            results.append(
+                harness.measure(label: "TextKit.calcSize", fixture: name) {
+                    _ = textCalc.calculateSize(for: attrStr, constrainedToWidth: self.defaultWidth)
+                }
+            )
+
+            results.append(
+                harness.measure(label: "Arithmetic.prepare", fixture: name) {
+                    _ = arithmeticCalc.prepare(attributedString: attrStr)
+                }
+            )
+
+            let prepared = arithmeticCalc.prepare(attributedString: attrStr)
+            results.append(
+                harness.measure(label: "Arithmetic.layout", fixture: name) {
+                    _ = arithmeticCalc.layout(prepared: prepared, constrainedToWidth: self.defaultWidth)
+                }
+            )
+        }
+
+        return results
+    }
+
     func testPhase2_Layout() async {
         var results: [BenchmarkResult] = []
 
@@ -111,30 +158,7 @@ final class MarkdownKitBenchmarkTests: XCTestCase {
             results.append(result)
         }
 
-        // TextKitCalculator.calculateSize in isolation
-        let textCalc = TextKitCalculator()
-        let sampleStrings: [(String, NSAttributedString)] = [
-            ("short", NSAttributedString(
-                string: "Hello World",
-                attributes: [.font: Font.systemFont(ofSize: 16)]
-            )),
-            ("paragraph", NSAttributedString(
-                string: String(repeating: "The quick brown fox jumps over the lazy dog. ", count: 20),
-                attributes: [.font: Font.systemFont(ofSize: 16)]
-            )),
-            ("long", NSAttributedString(
-                string: String(repeating: "A comprehensive paragraph with enough words. ", count: 200),
-                attributes: [.font: Font.systemFont(ofSize: 16)]
-            )),
-        ]
-
-        for (name, attrStr) in sampleStrings {
-            results.append(
-                harness.measure(label: "TextKit.calcSize", fixture: name) {
-                    _ = textCalc.calculateSize(for: attrStr, constrainedToWidth: self.defaultWidth)
-                }
-            )
-        }
+        results.append(contentsOf: isolatedTextMeasurementResults())
 
         // SplashHighlighter.highlight in isolation
         let highlighter = SplashHighlighter()
@@ -223,6 +247,8 @@ final class MarkdownKitBenchmarkTests: XCTestCase {
                 }
             )
         }
+
+        layoutResults.append(contentsOf: isolatedTextMeasurementResults())
 
         // --- Cache ---
         let medDoc = parser.parse(BenchmarkFixtures.medium)
