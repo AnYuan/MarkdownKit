@@ -149,4 +149,17 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         XCTAssertEqual(viaPreparedLayout.width, viaWrapper.width)
         XCTAssertEqual(viaPreparedLayout.height, viaWrapper.height)
     }
+
+    func testRepeatedCalculateSizeRemainsStable() {
+        let attributedString = makeAttributedString(
+            String(repeating: "Repeated words repeated words repeated words. ", count: 40)
+        )
+
+        let calculator = ArithmeticTextCalculator()
+        let first = calculator.calculateSize(for: attributedString, constrainedToWidth: 220)
+        let second = calculator.calculateSize(for: attributedString, constrainedToWidth: 220)
+
+        XCTAssertEqual(first.width, second.width)
+        XCTAssertEqual(first.height, second.height)
+    }
 }

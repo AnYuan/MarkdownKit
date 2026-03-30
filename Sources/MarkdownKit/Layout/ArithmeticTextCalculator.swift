@@ -5,7 +5,6 @@
 
 import Foundation
 import CoreText
-
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
@@ -25,6 +24,14 @@ import AppKit
 ///   complex text shaping requirements (e.g. Arabic, Thai ligatures).
 public final class ArithmeticTextCalculator {
 
+    private struct FontCacheKey: Hashable {
+        let fontName: String
+        let pointSizeMilli: Int
+    }
+
+    private static let widthCacheLock = NSLock()
+    private static nonisolated(unsafe) var cachedWidths: [FontCacheKey: [String: CGFloat]] = [:]
+
     /// Structure of Arrays (SoA) representing the segmented text for extremely fast iteration.
     struct PreparedText {
         var widths: [CGFloat] = []
@@ -43,6 +50,20 @@ public final class ArithmeticTextCalculator {
     }
 
     public init() {}
+
+    private static func cachedWidth(for text: String, fontKey: FontCacheKey) -> CGFloat? {
+        widthCacheLock.lock()
+        defer { widthCacheLock.unlock() }
+        return cachedWidths[fontKey]?[text]
+    }
+
+    private static func storeCachedWidth(_ width: CGFloat, for text: String, fontKey: FontCacheKey) {
+        widthCacheLock.lock()
+        defer { widthCacheLock.unlock() }
+        var fontWidths = cachedWidths[fontKey] ?? [:]
+        fontWidths[text] = width
+        cachedWidths[fontKey] = fontWidths
+    }
 
     /// Calculates the exact bounding size for a given attributed string constrained to a width.
     ///
@@ -124,12 +145,17 @@ public final class ArithmeticTextCalculator {
     private func buildPreparedText(from attributedString: NSAttributedString) -> PreparedText {
         var preparedText = PreparedText()
         let fullString = attributedString.string
+        let fullNSString = fullString as NSString
         let utf16Chars = Array(fullString.utf16) // Single allocation of the entire text buffer
         let fullRange = NSRange(location: 0, length: attributedString.length)
         var capturedParagraphStyle = false
         
         attributedString.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
             guard let font = attributes[.font] as? Font else { return }
+            let fontCacheKey = FontCacheKey(
+                fontName: font.fontName,
+                pointSizeMilli: Int((font.pointSize * 1000).rounded())
+            )
             
             // Convert platform Font to CTFont
             #if canImport(UIKit)
@@ -171,6 +197,15 @@ public final class ArithmeticTextCalculator {
                     if isNewline { preparedText.append(width: 0, isSpace: true, isNewline: true, height: lineHeight) }
                     return
                 }
+
+                let segmentText = fullNSString.substring(with: NSRange(location: start, length: count))
+                if let cachedWidth = Self.cachedWidth(for: segmentText, fontKey: fontCacheKey) {
+                    preparedText.append(width: cachedWidth, isSpace: isSpace, isNewline: false, height: lineHeight)
+                    if isNewline {
+                        preparedText.append(width: 0, isSpace: true, isNewline: true, height: lineHeight)
+                    }
+                    return
+                }
                 
                 utf16Chars.withUnsafeBufferPointer { buffer in
                     guard let baseAddress = buffer.baseAddress else { return }
@@ -182,8 +217,10 @@ public final class ArithmeticTextCalculator {
                         
                         var width: CGFloat = 0
                         for i in 0..<count { width += advances[i].width }
+                        Self.storeCachedWidth(width, for: segmentText, fontKey: fontCacheKey)
                         preparedText.append(width: width, isSpace: isSpace, isNewline: false, height: lineHeight)
                     } else {
+                        Self.storeCachedWidth(0, for: segmentText, fontKey: fontCacheKey)
                         preparedText.append(width: 0, isSpace: isSpace, isNewline: false, height: lineHeight)
                     }
                 }
