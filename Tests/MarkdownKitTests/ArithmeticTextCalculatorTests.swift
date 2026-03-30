@@ -8,31 +8,127 @@ import AppKit
 #endif
 
 final class ArithmeticTextCalculatorTests: XCTestCase {
-    
-    func testSimpleStringSizeParity() {
-        let text = "This is a simple paragraph without any complex formatting or attachments."
-        let font = Font.systemFont(ofSize: 16)
+
+    private struct OracleCase {
+        let name: String
+        let attributedString: NSAttributedString
+        let width: CGFloat
+        let widthAccuracy: CGFloat
+        let heightAccuracy: CGFloat
+    }
+
+    private func makeAttributedString(
+        _ text: String,
+        fontSize: CGFloat = 16,
+        configureParagraphStyle: ((NSMutableParagraphStyle) -> Void)? = nil
+    ) -> NSAttributedString {
+        let font = Font.systemFont(ofSize: fontSize)
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineBreakMode = .byWordWrapping
-        
+        configureParagraphStyle?(paragraphStyle)
+
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .paragraphStyle: paragraphStyle
         ]
-        
-        let attributedString = NSAttributedString(string: text, attributes: attrs)
-        
+
+        return NSAttributedString(string: text, attributes: attrs)
+    }
+
+    private func assertOracleParity(_ oracleCase: OracleCase, file: StaticString = #filePath, line: UInt = #line) {
         let arithmeticCalc = ArithmeticTextCalculator()
         let textKitCalc = TextKitCalculator()
-        
-        let width: CGFloat = 200
-        
-        let arithmeticSize = arithmeticCalc.calculateSize(for: attributedString, constrainedToWidth: width)
-        let textKitSize = textKitCalc.calculateSize(for: attributedString, constrainedToWidth: width)
-        
-        // Due to the extreme simplification in the tokenizer, heights might slightly differ.
-        // We test rough parity for now.
-        XCTAssertEqual(arithmeticSize.width, textKitSize.width, accuracy: 25.0, "Width should be roughly equal")
-        XCTAssertEqual(arithmeticSize.height, textKitSize.height, accuracy: 25.0, "Height should be roughly equal")
+
+        let arithmeticSize = arithmeticCalc.calculateSize(
+            for: oracleCase.attributedString,
+            constrainedToWidth: oracleCase.width
+        )
+        let textKitSize = textKitCalc.calculateSize(
+            for: oracleCase.attributedString,
+            constrainedToWidth: oracleCase.width
+        )
+
+        XCTAssertEqual(
+            arithmeticSize.width,
+            textKitSize.width,
+            accuracy: oracleCase.widthAccuracy,
+            "Width drifted for oracle case '\(oracleCase.name)'",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            arithmeticSize.height,
+            textKitSize.height,
+            accuracy: oracleCase.heightAccuracy,
+            "Height drifted for oracle case '\(oracleCase.name)'",
+            file: file,
+            line: line
+        )
+    }
+
+    func testSupportedPureTextOracleMatrixRoughParity() {
+        let cases: [OracleCase] = [
+            OracleCase(
+                name: "latin-paragraph",
+                attributedString: makeAttributedString(
+                    "This is a simple paragraph without any complex formatting or attachments."
+                ),
+                width: 200,
+                widthAccuracy: 25,
+                heightAccuracy: 25
+            ),
+            OracleCase(
+                name: "emoji-mix",
+                attributedString: makeAttributedString(
+                    "Hello 😀 world 😀 emoji wrap test"
+                ),
+                width: 140,
+                widthAccuracy: 25,
+                heightAccuracy: 25
+            ),
+            OracleCase(
+                name: "explicit-newlines",
+                attributedString: makeAttributedString(
+                    "Line one\nLine two\nLine three"
+                ),
+                width: 200,
+                widthAccuracy: 8,
+                heightAccuracy: 8
+            ),
+            OracleCase(
+                name: "paragraph-indents",
+                attributedString: makeAttributedString(
+                    "Indented paragraph with a second line that should wrap clearly."
+                ) { style in
+                    style.firstLineHeadIndent = 24
+                    style.headIndent = 12
+                },
+                width: 180,
+                widthAccuracy: 25,
+                heightAccuracy: 25
+            )
+        ]
+
+        for oracleCase in cases {
+            assertOracleParity(oracleCase)
+        }
+    }
+
+    func testCJKOracleDocumentsCurrentGap() {
+        let oracleCase = OracleCase(
+            name: "cjk-paragraph",
+            attributedString: makeAttributedString(
+                "这是一个用于测试换行和宽度计算的中文段落，没有任何附件。"
+            ),
+            width: 160,
+            widthAccuracy: 40,
+            heightAccuracy: 25
+        )
+
+        XCTExpectFailure(
+            "Current arithmetic measurement does not yet maintain rough parity for CJK text. This oracle stays in place so later Phase 11 commits can tighten it into a passing case."
+        ) {
+            assertOracleParity(oracleCase)
+        }
     }
 }
