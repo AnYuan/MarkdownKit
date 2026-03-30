@@ -31,6 +31,8 @@ public final class ArithmeticTextCalculator {
         var isSpace: [Bool] = []
         var isNewline: [Bool] = []
         var heights: [CGFloat] = []
+        var headIndent: CGFloat = 0
+        var firstLineHeadIndent: CGFloat = 0
         
         mutating func append(width: CGFloat, isSpace: Bool, isNewline: Bool, height: CGFloat) {
             self.widths.append(width)
@@ -52,26 +54,25 @@ public final class ArithmeticTextCalculator {
         guard attributedString.length > 0 else { return .zero }
 
         let preparedText = prepare(attributedString: attributedString)
-        
+        return layout(prepared: preparedText, constrainedToWidth: maxWidth)
+    }
+
+    /// Prepares a pure-text attributed string into a width-independent structure-of-arrays payload.
+    func prepare(attributedString: NSAttributedString) -> PreparedText {
+        guard attributedString.length > 0 else { return PreparedText() }
+        return buildPreparedText(from: attributedString)
+    }
+
+    /// Lays out a previously prepared payload at a specific width using pure arithmetic.
+    func layout(prepared preparedText: PreparedText, constrainedToWidth maxWidth: CGFloat) -> CGSize {
+        guard !preparedText.widths.isEmpty else { return .zero }
+
         var currentLineWidth: CGFloat = 0
         var currentLineHeight: CGFloat = 0
         var totalHeight: CGFloat = 0
         var maxComputedWidth: CGFloat = 0
         var lineCount = 0
-        
-        // We'll peek at the first segment's paragraph style for indent/spacing
-        // In a real implementation, we might need to handle per-segment styles more robustly.
-        var headIndent: CGFloat = 0
-        var firstLineHeadIndent: CGFloat = 0
-        
-        attributedString.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: attributedString.length), options: []) { value, _, stop in
-            if let style = value as? NSParagraphStyle {
-                headIndent = style.headIndent
-                firstLineHeadIndent = style.firstLineHeadIndent
-                stop.pointee = true
-            }
-        }
-        
+
         for i in 0..<preparedText.widths.count {
             let width = preparedText.widths[i]
             let isSpace = preparedText.isSpace[i]
@@ -86,7 +87,7 @@ public final class ArithmeticTextCalculator {
                 continue
             }
             
-            let currentIndent = (lineCount == 0) ? firstLineHeadIndent : headIndent
+            let currentIndent = (lineCount == 0) ? preparedText.firstLineHeadIndent : preparedText.headIndent
             let availableWidth = maxWidth - currentIndent
             
             if currentLineWidth + width > availableWidth && currentLineWidth > 0 {
@@ -110,7 +111,7 @@ public final class ArithmeticTextCalculator {
         
         // Add final line height if it wasn't empty
         if currentLineWidth > 0 || totalHeight == 0 {
-            let currentIndent = (lineCount == 0) ? firstLineHeadIndent : headIndent
+            let currentIndent = (lineCount == 0) ? preparedText.firstLineHeadIndent : preparedText.headIndent
             totalHeight += currentLineHeight
             maxComputedWidth = max(maxComputedWidth, currentLineWidth + currentIndent)
         }
@@ -120,11 +121,12 @@ public final class ArithmeticTextCalculator {
 
     /// Segments the attributed string into words and whitespace, measuring the exact width
     /// of each segment using CoreText, and returning a Structure of Arrays (SoA) payload.
-    private func prepare(attributedString: NSAttributedString) -> PreparedText {
+    private func buildPreparedText(from attributedString: NSAttributedString) -> PreparedText {
         var preparedText = PreparedText()
         let fullString = attributedString.string
         let utf16Chars = Array(fullString.utf16) // Single allocation of the entire text buffer
         let fullRange = NSRange(location: 0, length: attributedString.length)
+        var capturedParagraphStyle = false
         
         attributedString.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
             guard let font = attributes[.font] as? Font else { return }
@@ -146,6 +148,12 @@ public final class ArithmeticTextCalculator {
                 let multiplier = paragraphStyle.lineHeightMultiple
                 if multiplier > 0 {
                     lineHeight *= multiplier
+                }
+
+                if !capturedParagraphStyle {
+                    preparedText.headIndent = paragraphStyle.headIndent
+                    preparedText.firstLineHeadIndent = paragraphStyle.firstLineHeadIndent
+                    capturedParagraphStyle = true
                 }
             }
             

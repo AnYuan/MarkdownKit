@@ -131,4 +131,22 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
             assertOracleParity(oracleCase)
         }
     }
+
+    func testCalculateSizeMatchesPreparedLayoutPhase() {
+        let attributedString = makeAttributedString(
+            "Indented paragraph with explicit\nline breaks and enough text to wrap onto another line."
+        ) { style in
+            style.firstLineHeadIndent = 20
+            style.headIndent = 10
+        }
+
+        let calculator = ArithmeticTextCalculator()
+        let prepared = calculator.prepare(attributedString: attributedString)
+
+        let viaWrapper = calculator.calculateSize(for: attributedString, constrainedToWidth: 180)
+        let viaPreparedLayout = calculator.layout(prepared: prepared, constrainedToWidth: 180)
+
+        XCTAssertEqual(viaPreparedLayout.width, viaWrapper.width)
+        XCTAssertEqual(viaPreparedLayout.height, viaWrapper.height)
+    }
 }
