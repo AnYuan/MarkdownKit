@@ -32,19 +32,31 @@ public final class ArithmeticTextCalculator {
     private static let widthCacheLock = NSLock()
     private static nonisolated(unsafe) var cachedWidths: [FontCacheKey: [String: CGFloat]] = [:]
 
+    enum SegmentKind {
+        case text
+        case space
+        case hardBreak
+
+        var isSpace: Bool {
+            self == .space
+        }
+
+        var isHardBreak: Bool {
+            self == .hardBreak
+        }
+    }
+
     /// Structure of Arrays (SoA) representing the segmented text for extremely fast iteration.
     struct PreparedText {
         var widths: [CGFloat] = []
-        var isSpace: [Bool] = []
-        var isNewline: [Bool] = []
+        var kinds: [SegmentKind] = []
         var heights: [CGFloat] = []
         var headIndent: CGFloat = 0
         var firstLineHeadIndent: CGFloat = 0
         
-        mutating func append(width: CGFloat, isSpace: Bool, isNewline: Bool, height: CGFloat) {
+        mutating func append(width: CGFloat, kind: SegmentKind, height: CGFloat) {
             self.widths.append(width)
-            self.isSpace.append(isSpace)
-            self.isNewline.append(isNewline)
+            self.kinds.append(kind)
             self.heights.append(height)
         }
     }
@@ -96,11 +108,10 @@ public final class ArithmeticTextCalculator {
 
         for i in 0..<preparedText.widths.count {
             let width = preparedText.widths[i]
-            let isSpace = preparedText.isSpace[i]
-            let isNewline = preparedText.isNewline[i]
+            let kind = preparedText.kinds[i]
             let height = preparedText.heights[i]
             
-            if isNewline {
+            if kind.isHardBreak {
                 totalHeight += max(currentLineHeight, height)
                 currentLineWidth = 0
                 currentLineHeight = 0
@@ -117,7 +128,7 @@ public final class ArithmeticTextCalculator {
                 maxComputedWidth = max(maxComputedWidth, currentLineWidth + currentIndent)
                 
                 lineCount += 1
-                if isSpace {
+                if kind.isSpace {
                     currentLineWidth = 0
                     currentLineHeight = 0
                 } else {
@@ -191,18 +202,20 @@ public final class ArithmeticTextCalculator {
             var isCurrentSpace = false
             
             // Inline helper to measure a chunk without allocations
-            func measureSegment(from start: Int, to end: Int, isSpace: Bool, isNewline: Bool) {
+            func measureSegment(from start: Int, to end: Int, kind: SegmentKind, terminatesWithHardBreak: Bool) {
                 let count = end - start
                 guard count > 0 else {
-                    if isNewline { preparedText.append(width: 0, isSpace: true, isNewline: true, height: lineHeight) }
+                    if terminatesWithHardBreak {
+                        preparedText.append(width: 0, kind: .hardBreak, height: lineHeight)
+                    }
                     return
                 }
 
                 let segmentText = fullNSString.substring(with: NSRange(location: start, length: count))
                 if let cachedWidth = Self.cachedWidth(for: segmentText, fontKey: fontCacheKey) {
-                    preparedText.append(width: cachedWidth, isSpace: isSpace, isNewline: false, height: lineHeight)
-                    if isNewline {
-                        preparedText.append(width: 0, isSpace: true, isNewline: true, height: lineHeight)
+                    preparedText.append(width: cachedWidth, kind: kind, height: lineHeight)
+                    if terminatesWithHardBreak {
+                        preparedText.append(width: 0, kind: .hardBreak, height: lineHeight)
                     }
                     return
                 }
@@ -218,15 +231,15 @@ public final class ArithmeticTextCalculator {
                         var width: CGFloat = 0
                         for i in 0..<count { width += advances[i].width }
                         Self.storeCachedWidth(width, for: segmentText, fontKey: fontCacheKey)
-                        preparedText.append(width: width, isSpace: isSpace, isNewline: false, height: lineHeight)
+                        preparedText.append(width: width, kind: kind, height: lineHeight)
                     } else {
                         Self.storeCachedWidth(0, for: segmentText, fontKey: fontCacheKey)
-                        preparedText.append(width: 0, isSpace: isSpace, isNewline: false, height: lineHeight)
+                        preparedText.append(width: 0, kind: kind, height: lineHeight)
                     }
                 }
                 
-                if isNewline {
-                    preparedText.append(width: 0, isSpace: true, isNewline: true, height: lineHeight)
+                if terminatesWithHardBreak {
+                    preparedText.append(width: 0, kind: .hardBreak, height: lineHeight)
                 }
             }
             
@@ -241,12 +254,22 @@ public final class ArithmeticTextCalculator {
                 let isSpaceChar = char == 0x0020 || char == 0x0009
                 
                 if isNewlineChar {
-                    measureSegment(from: segmentStartIndex, to: i, isSpace: isCurrentSpace, isNewline: true)
+                    measureSegment(
+                        from: segmentStartIndex,
+                        to: i,
+                        kind: isCurrentSpace ? .space : .text,
+                        terminatesWithHardBreak: true
+                    )
                     segmentStartIndex = i + 1
                     isCurrentSpace = false // Reset after newline
                 } else if isSpaceChar != isCurrentSpace {
                     if i > segmentStartIndex {
-                        measureSegment(from: segmentStartIndex, to: i, isSpace: isCurrentSpace, isNewline: false)
+                        measureSegment(
+                            from: segmentStartIndex,
+                            to: i,
+                            kind: isCurrentSpace ? .space : .text,
+                            terminatesWithHardBreak: false
+                        )
                     }
                     segmentStartIndex = i
                     isCurrentSpace = isSpaceChar
@@ -255,7 +278,12 @@ public final class ArithmeticTextCalculator {
             
             // Final segment in range
             if segmentStartIndex < range.location + range.length {
-                measureSegment(from: segmentStartIndex, to: range.location + range.length, isSpace: isCurrentSpace, isNewline: false)
+                measureSegment(
+                    from: segmentStartIndex,
+                    to: range.location + range.length,
+                    kind: isCurrentSpace ? .space : .text,
+                    terminatesWithHardBreak: false
+                )
             }
         }
         

@@ -150,6 +150,20 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         XCTAssertEqual(viaPreparedLayout.height, viaWrapper.height)
     }
 
+    func testPrepareCapturesSegmentKinds() {
+        let attributedString = makeAttributedString("Alpha  beta\nGamma")
+        let calculator = ArithmeticTextCalculator()
+
+        let prepared = calculator.prepare(attributedString: attributedString)
+
+        XCTAssertEqual(
+            prepared.kinds,
+            [.text, .space, .text, .hardBreak, .text]
+        )
+        XCTAssertEqual(prepared.widths.count, prepared.kinds.count)
+        XCTAssertEqual(prepared.heights.count, prepared.kinds.count)
+    }
+
     func testRepeatedCalculateSizeRemainsStable() {
         let attributedString = makeAttributedString(
             String(repeating: "Repeated words repeated words repeated words. ", count: 40)
