@@ -35,6 +35,7 @@ public final class ArithmeticTextCalculator {
     enum SegmentKind {
         case text
         case space
+        case softHyphen
         case hardBreak
 
         var isSpace: Bool {
@@ -49,7 +50,7 @@ public final class ArithmeticTextCalculator {
             switch self {
             case .text:
                 return width
-            case .space, .hardBreak:
+            case .space, .softHyphen, .hardBreak:
                 return 0
             }
         }
@@ -58,7 +59,7 @@ public final class ArithmeticTextCalculator {
             switch self {
             case .text, .space:
                 return width
-            case .hardBreak:
+            case .softHyphen, .hardBreak:
                 return 0
             }
         }
@@ -94,12 +95,14 @@ public final class ArithmeticTextCalculator {
             height: CGFloat,
             text: String = "",
             fontName: String = "",
-            pointSize: CGFloat = 0
+            pointSize: CGFloat = 0,
+            lineEndFitAdvance: CGFloat? = nil,
+            lineEndPaintAdvance: CGFloat? = nil
         ) {
             self.widths.append(width)
             self.kinds.append(kind)
-            self.lineEndFitAdvances.append(kind.lineEndFitAdvance(for: width))
-            self.lineEndPaintAdvances.append(kind.lineEndPaintAdvance(for: width))
+            self.lineEndFitAdvances.append(lineEndFitAdvance ?? kind.lineEndFitAdvance(for: width))
+            self.lineEndPaintAdvances.append(lineEndPaintAdvance ?? kind.lineEndPaintAdvance(for: width))
             self.segmentTexts.append(text)
             self.fontNames.append(fontName)
             self.pointSizes.append(pointSize)
@@ -127,6 +130,20 @@ public final class ArithmeticTextCalculator {
         var fontWidths = cachedWidths[fontKey] ?? [:]
         fontWidths[text] = width
         cachedWidths[fontKey] = fontWidths
+    }
+
+    private static func measureTextWidth(_ text: String, ctFont: CTFont, fontKey: FontCacheKey) -> CGFloat {
+        if let cachedWidth = cachedWidth(for: text, fontKey: fontKey) {
+            return cachedWidth
+        }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            NSAttributedString.Key(kCTFontAttributeName as String): ctFont
+        ]
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
+        let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        storeCachedWidth(width, for: text, fontKey: fontKey)
+        return width
     }
 
     /// Calculates the exact bounding size for a given attributed string constrained to a width.
@@ -325,6 +342,8 @@ public final class ArithmeticTextCalculator {
                     capturedParagraphStyle = true
                 }
             }
+
+            let discretionaryHyphenWidth = Self.measureTextWidth("-", ctFont: ctFont, fontKey: fontCacheKey)
             
             // Reusable buffers for this font range to avoid allocating per-word
             var glyphs = [CGGlyph](repeating: 0, count: range.length)
@@ -403,12 +422,32 @@ public final class ArithmeticTextCalculator {
                 // Fast basic checks for word boundaries
                 // 0x000A = LF (\n), 0x000D = CR (\r)
                 let isNewlineChar = char == 0x000A || char == 0x000D || char == 0x2028 || char == 0x2029
+                // 0x00AD = Soft Hyphen
+                let isSoftHyphenChar = char == 0x00AD
                 // 0x0020 = Space, 0x0009 = Tab, 0x200B = Zero Width Space
                 // Non-breaking glue characters such as NBSP and Word Joiner intentionally
                 // stay in text segments so they do not create break opportunities.
                 let isSpaceChar = char == 0x0020 || char == 0x0009 || char == 0x200B
                 
-                if isNewlineChar {
+                if isSoftHyphenChar {
+                    if i > segmentStartIndex {
+                        measureSegment(
+                            from: segmentStartIndex,
+                            to: i,
+                            kind: isCurrentSpace ? .space : .text,
+                            terminatesWithHardBreak: false
+                        )
+                    }
+                    preparedText.append(
+                        width: 0,
+                        kind: .softHyphen,
+                        height: lineHeight,
+                        lineEndFitAdvance: discretionaryHyphenWidth,
+                        lineEndPaintAdvance: discretionaryHyphenWidth
+                    )
+                    segmentStartIndex = i + 1
+                    isCurrentSpace = false
+                } else if isNewlineChar {
                     measureSegment(
                         from: segmentStartIndex,
                         to: i,

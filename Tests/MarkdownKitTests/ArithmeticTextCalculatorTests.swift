@@ -193,6 +193,18 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         XCTAssertEqual(gluePrepared.kinds, [.text])
     }
 
+    func testPrepareTreatsSoftHyphenAsDiscretionaryBreak() {
+        let calculator = ArithmeticTextCalculator()
+        let prepared = calculator.prepare(
+            attributedString: makeAttributedString("micro\u{00AD}service")
+        )
+
+        XCTAssertEqual(prepared.kinds, [.text, .softHyphen, .text])
+        XCTAssertEqual(prepared.widths[1], 0, accuracy: 0.001)
+        XCTAssertGreaterThan(prepared.lineEndFitAdvances[1], 0)
+        XCTAssertEqual(prepared.lineEndFitAdvances[1], prepared.lineEndPaintAdvances[1], accuracy: 0.001)
+    }
+
     func testExplicitHardBreakUsesTrimmedLineEndWidth() {
         let attributedString = makeAttributedString("Longest line   \nshort")
         let arithmeticCalc = ArithmeticTextCalculator()
@@ -227,6 +239,18 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
 
         XCTAssertEqual(arithmeticSize.width, textKitSize.width, accuracy: 2)
         XCTAssertEqual(arithmeticSize.height, textKitSize.height, accuracy: 2)
+    }
+
+    func testSoftHyphenMatchesTextKitWrapping() {
+        let attributedString = makeAttributedString("micro\u{00AD}service")
+        let arithmeticCalc = ArithmeticTextCalculator()
+        let textKitCalc = TextKitCalculator()
+
+        let arithmeticSize = arithmeticCalc.calculateSize(for: attributedString, constrainedToWidth: 60)
+        let textKitSize = textKitCalc.calculateSize(for: attributedString, constrainedToWidth: 60)
+
+        XCTAssertEqual(arithmeticSize.width, textKitSize.width, accuracy: 2)
+        XCTAssertEqual(arithmeticSize.height, textKitSize.height, accuracy: 5)
     }
 
     func testRepeatedCalculateSizeRemainsStable() {
