@@ -205,6 +205,16 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         XCTAssertEqual(prepared.lineEndFitAdvances[1], prepared.lineEndPaintAdvances[1], accuracy: 0.001)
     }
 
+    func testPrepareUsesLocalizedWordBoundariesForThai() {
+        let calculator = ArithmeticTextCalculator()
+        let prepared = calculator.prepare(
+            attributedString: makeAttributedString("ไทยภาษา")
+        )
+
+        XCTAssertEqual(prepared.kinds, [.text, .text])
+        XCTAssertEqual(prepared.segmentTexts, ["ไทย", "ภาษา"])
+    }
+
     func testExplicitHardBreakUsesTrimmedLineEndWidth() {
         let attributedString = makeAttributedString("Longest line   \nshort")
         let arithmeticCalc = ArithmeticTextCalculator()

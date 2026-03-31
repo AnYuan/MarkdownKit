@@ -414,6 +414,80 @@ public final class ArithmeticTextCalculator {
                     preparedText.append(width: 0, kind: .hardBreak, height: lineHeight)
                 }
             }
+
+            func isGlueCharacter(_ char: unichar) -> Bool {
+                char == 0x00A0 || char == 0x202F || char == 0x2060
+            }
+
+            func measureLocalizedTextRange(from start: Int, to end: Int) {
+                let textRange = NSRange(location: start, length: end - start)
+                guard textRange.length > 0 else { return }
+
+                var wordRanges: [NSRange] = []
+                fullNSString.enumerateSubstrings(
+                    in: textRange,
+                    options: [.byWords, .substringNotRequired, .localized]
+                ) { _, substringRange, _, _ in
+                    let clampedRange = NSIntersectionRange(textRange, substringRange)
+                    if clampedRange.length > 0 {
+                        wordRanges.append(clampedRange)
+                    }
+                }
+
+                guard !wordRanges.isEmpty else {
+                    measureSegment(from: start, to: end, kind: .text, terminatesWithHardBreak: false)
+                    return
+                }
+
+                func isGlueOnlyRange(from start: Int, to end: Int) -> Bool {
+                    guard start < end else { return false }
+                    for index in start..<end where !isGlueCharacter(utf16Chars[index]) {
+                        return false
+                    }
+                    return true
+                }
+
+                var tokenRanges: [NSRange] = []
+                var currentTokenRange = wordRanges[0]
+
+                for wordRange in wordRanges.dropFirst() {
+                    let gapStart = NSMaxRange(currentTokenRange)
+                    let gapEnd = wordRange.location
+
+                    if isGlueOnlyRange(from: gapStart, to: gapEnd) {
+                        currentTokenRange = NSRange(
+                            location: currentTokenRange.location,
+                            length: NSMaxRange(wordRange) - currentTokenRange.location
+                        )
+                        continue
+                    }
+
+                    tokenRanges.append(currentTokenRange)
+                    if gapStart < gapEnd {
+                        tokenRanges.append(NSRange(location: gapStart, length: gapEnd - gapStart))
+                    }
+                    currentTokenRange = wordRange
+                }
+                tokenRanges.append(currentTokenRange)
+
+                var cursor = start
+                for tokenRange in tokenRanges {
+                    if cursor < tokenRange.location {
+                        measureSegment(from: cursor, to: tokenRange.location, kind: .text, terminatesWithHardBreak: false)
+                    }
+                    measureSegment(
+                        from: tokenRange.location,
+                        to: NSMaxRange(tokenRange),
+                        kind: .text,
+                        terminatesWithHardBreak: false
+                    )
+                    cursor = NSMaxRange(tokenRange)
+                }
+
+                if cursor < end {
+                    measureSegment(from: cursor, to: end, kind: .text, terminatesWithHardBreak: false)
+                }
+            }
             
             // Scan through UTF-16 code units directly
             for i in range.location ..< (range.location + range.length) {
@@ -431,12 +505,16 @@ public final class ArithmeticTextCalculator {
                 
                 if isSoftHyphenChar {
                     if i > segmentStartIndex {
-                        measureSegment(
-                            from: segmentStartIndex,
-                            to: i,
-                            kind: isCurrentSpace ? .space : .text,
-                            terminatesWithHardBreak: false
-                        )
+                        if isCurrentSpace {
+                            measureSegment(
+                                from: segmentStartIndex,
+                                to: i,
+                                kind: .space,
+                                terminatesWithHardBreak: false
+                            )
+                        } else {
+                            measureLocalizedTextRange(from: segmentStartIndex, to: i)
+                        }
                     }
                     preparedText.append(
                         width: 0,
@@ -448,22 +526,31 @@ public final class ArithmeticTextCalculator {
                     segmentStartIndex = i + 1
                     isCurrentSpace = false
                 } else if isNewlineChar {
-                    measureSegment(
-                        from: segmentStartIndex,
-                        to: i,
-                        kind: isCurrentSpace ? .space : .text,
-                        terminatesWithHardBreak: true
-                    )
+                    if isCurrentSpace {
+                        measureSegment(
+                            from: segmentStartIndex,
+                            to: i,
+                            kind: .space,
+                            terminatesWithHardBreak: true
+                        )
+                    } else {
+                        measureLocalizedTextRange(from: segmentStartIndex, to: i)
+                        preparedText.append(width: 0, kind: .hardBreak, height: lineHeight)
+                    }
                     segmentStartIndex = i + 1
                     isCurrentSpace = false // Reset after newline
                 } else if isSpaceChar != isCurrentSpace {
                     if i > segmentStartIndex {
-                        measureSegment(
-                            from: segmentStartIndex,
-                            to: i,
-                            kind: isCurrentSpace ? .space : .text,
-                            terminatesWithHardBreak: false
-                        )
+                        if isCurrentSpace {
+                            measureSegment(
+                                from: segmentStartIndex,
+                                to: i,
+                                kind: .space,
+                                terminatesWithHardBreak: false
+                            )
+                        } else {
+                            measureLocalizedTextRange(from: segmentStartIndex, to: i)
+                        }
                     }
                     segmentStartIndex = i
                     isCurrentSpace = isSpaceChar
@@ -472,12 +559,16 @@ public final class ArithmeticTextCalculator {
             
             // Final segment in range
             if segmentStartIndex < range.location + range.length {
-                measureSegment(
-                    from: segmentStartIndex,
-                    to: range.location + range.length,
-                    kind: isCurrentSpace ? .space : .text,
-                    terminatesWithHardBreak: false
-                )
+                if isCurrentSpace {
+                    measureSegment(
+                        from: segmentStartIndex,
+                        to: range.location + range.length,
+                        kind: .space,
+                        terminatesWithHardBreak: false
+                    )
+                } else {
+                    measureLocalizedTextRange(from: segmentStartIndex, to: range.location + range.length)
+                }
             }
         }
         
