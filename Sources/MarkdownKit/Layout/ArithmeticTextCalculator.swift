@@ -470,22 +470,90 @@ public final class ArithmeticTextCalculator {
                 }
                 tokenRanges.append(currentTokenRange)
 
-                var cursor = start
-                for tokenRange in tokenRanges {
-                    if cursor < tokenRange.location {
-                        measureSegment(from: cursor, to: tokenRange.location, kind: .text, terminatesWithHardBreak: false)
+                if let firstTokenRange = tokenRanges.first, start < firstTokenRange.location {
+                    tokenRanges.insert(
+                        NSRange(location: start, length: firstTokenRange.location - start),
+                        at: 0
+                    )
+                }
+
+                if let lastTokenRange = tokenRanges.last {
+                    let lastTokenEnd = NSMaxRange(lastTokenRange)
+                    if lastTokenEnd < end {
+                        tokenRanges.append(
+                            NSRange(location: lastTokenEnd, length: end - lastTokenEnd)
+                        )
                     }
+                }
+
+                let alphanumerics = CharacterSet.alphanumerics
+                let urlPunctuation = CharacterSet(charactersIn: "-._~:/?#[]@!$&'()*+,;=%")
+                let closingPunctuation = CharacterSet(charactersIn: ".,;:!?%)]}'\"”’")
+
+                func tokenText(for range: NSRange) -> String {
+                    fullNSString.substring(with: range)
+                }
+
+                func isURLSafeToken(_ text: String) -> Bool {
+                    !text.isEmpty && text.unicodeScalars.allSatisfy { scalar in
+                        alphanumerics.contains(scalar) || urlPunctuation.contains(scalar)
+                    }
+                }
+
+                func isURLLikeToken(_ text: String) -> Bool {
+                    guard isURLSafeToken(text) else { return false }
+                    return text.contains("://") || text.contains(".") || text.contains("@") || text.contains("/") || text.contains("?") || text.contains("#")
+                }
+
+                func isClosingPunctuationToken(_ text: String) -> Bool {
+                    !text.isEmpty && text.unicodeScalars.allSatisfy(closingPunctuation.contains)
+                }
+
+                func shouldMergeAdjacentTextTokens(left leftRange: NSRange, right rightRange: NSRange) -> Bool {
+                    let leftText = tokenText(for: leftRange)
+                    let rightText = tokenText(for: rightRange)
+
+                    if isClosingPunctuationToken(rightText) {
+                        return true
+                    }
+
+                    if isURLLikeToken(leftText) && isURLSafeToken(rightText) {
+                        return true
+                    }
+
+                    let combinedText = leftText + rightText
+                    if isURLSafeToken(leftText) && isURLLikeToken(combinedText) {
+                        return true
+                    }
+
+                    return false
+                }
+
+                var mergedTokenRanges: [NSRange] = []
+                for tokenRange in tokenRanges {
+                    guard let lastRange = mergedTokenRanges.last else {
+                        mergedTokenRanges.append(tokenRange)
+                        continue
+                    }
+
+                    if NSMaxRange(lastRange) == tokenRange.location,
+                       shouldMergeAdjacentTextTokens(left: lastRange, right: tokenRange) {
+                        mergedTokenRanges[mergedTokenRanges.count - 1] = NSRange(
+                            location: lastRange.location,
+                            length: NSMaxRange(tokenRange) - lastRange.location
+                        )
+                    } else {
+                        mergedTokenRanges.append(tokenRange)
+                    }
+                }
+
+                for tokenRange in mergedTokenRanges {
                     measureSegment(
                         from: tokenRange.location,
                         to: NSMaxRange(tokenRange),
                         kind: .text,
                         terminatesWithHardBreak: false
                     )
-                    cursor = NSMaxRange(tokenRange)
-                }
-
-                if cursor < end {
-                    measureSegment(from: cursor, to: end, kind: .text, terminatesWithHardBreak: false)
                 }
             }
             
