@@ -150,6 +150,28 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         XCTAssertEqual(viaPreparedLayout.height, viaWrapper.height)
     }
 
+    func testProfileAllowsLatinButRejectsUnsupportedScripts() {
+        let calculator = ArithmeticTextCalculator()
+
+        let latinProfile = calculator.profile(
+            for: makeAttributedString("Simple latin paragraph.")
+        )
+        XCTAssertTrue(latinProfile.supportsArithmeticLayout)
+        XCTAssertFalse(latinProfile.containsUnsupportedScript)
+
+        let cjkProfile = calculator.profile(
+            for: makeAttributedString("这是一个中文段落。")
+        )
+        XCTAssertFalse(cjkProfile.supportsArithmeticLayout)
+        XCTAssertTrue(cjkProfile.containsUnsupportedScript)
+
+        let thaiProfile = calculator.profile(
+            for: makeAttributedString("ไทยภาษา")
+        )
+        XCTAssertFalse(thaiProfile.supportsArithmeticLayout)
+        XCTAssertTrue(thaiProfile.containsUnsupportedScript)
+    }
+
     func testPrepareCapturesSegmentKinds() {
         let attributedString = makeAttributedString("Alpha  beta\nGamma")
         let calculator = ArithmeticTextCalculator()

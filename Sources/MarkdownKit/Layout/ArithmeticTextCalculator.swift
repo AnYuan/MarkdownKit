@@ -24,6 +24,15 @@ import AppKit
 ///   complex text shaping requirements (e.g. Arabic, Thai ligatures).
 public final class ArithmeticTextCalculator {
 
+    struct PreparedTextProfile {
+        var containsUnsupportedScript = false
+        var containsAttachment = false
+
+        var supportsArithmeticLayout: Bool {
+            !containsUnsupportedScript && !containsAttachment
+        }
+    }
+
     private struct FontCacheKey: Hashable {
         let fontName: String
         let pointSizeMilli: Int
@@ -118,6 +127,31 @@ public final class ArithmeticTextCalculator {
 
     public init() {}
 
+    func profile(for attributedString: NSAttributedString) -> PreparedTextProfile {
+        guard attributedString.length > 0 else { return PreparedTextProfile() }
+
+        var profile = PreparedTextProfile()
+        let fullRange = NSRange(location: 0, length: attributedString.length)
+
+        attributedString.enumerateAttribute(.attachment, in: fullRange, options: []) { value, _, stop in
+            if value != nil {
+                profile.containsAttachment = true
+                stop.pointee = true
+            }
+        }
+
+        if profile.containsAttachment {
+            return profile
+        }
+
+        for scalar in attributedString.string.unicodeScalars where Self.requiresTextKitFallback(for: scalar) {
+            profile.containsUnsupportedScript = true
+            break
+        }
+
+        return profile
+    }
+
     private static func cachedWidth(for text: String, fontKey: FontCacheKey) -> CGFloat? {
         widthCacheLock.lock()
         defer { widthCacheLock.unlock() }
@@ -144,6 +178,18 @@ public final class ArithmeticTextCalculator {
         let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
         storeCachedWidth(width, for: text, fontKey: fontKey)
         return width
+    }
+
+    private static func requiresTextKitFallback(for scalar: UnicodeScalar) -> Bool {
+        switch scalar.value {
+        case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0x3040...0x30FF, 0xAC00...0xD7AF,
+             0x0600...0x06FF, 0x0750...0x077F, 0x08A0...0x08FF,
+             0x0900...0x0D7F, 0x0E00...0x0E7F, 0x1000...0x109F,
+             0x1780...0x17FF:
+            return true
+        default:
+            return false
+        }
     }
 
     /// Calculates the exact bounding size for a given attributed string constrained to a width.

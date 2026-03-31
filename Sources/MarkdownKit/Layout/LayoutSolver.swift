@@ -112,7 +112,7 @@ public final class LayoutSolver: @unchecked Sendable {
         } else {
             styledString = await builder.buildString(for: node, constrainedToWidth: maxWidth)
             
-            if isPureTextBlock(node) {
+            if shouldUseArithmeticLayout(for: node, styledString: styledString) {
                 size = arithmeticCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
             } else {
                 size = textCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
@@ -182,7 +182,7 @@ public final class LayoutSolver: @unchecked Sendable {
         } else {
             styledString = builder.buildStringSync(for: node, constrainedToWidth: maxWidth)
             
-            if isPureTextBlock(node) {
+            if shouldUseArithmeticLayout(for: node, styledString: styledString) {
                 size = arithmeticCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
             } else {
                 size = textCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
@@ -275,6 +275,10 @@ public final class LayoutSolver: @unchecked Sendable {
 
     /// Determines if a node is a simple text block that can be safely routed
     /// to the lock-free `ArithmeticTextCalculator`.
+    private func shouldUseArithmeticLayout(for node: MarkdownNode, styledString: NSAttributedString) -> Bool {
+        isPureTextBlock(node) && arithmeticCalculator.profile(for: styledString).supportsArithmeticLayout
+    }
+
     private func isPureTextBlock(_ node: MarkdownNode) -> Bool {
         // Only route paragraph and header nodes for now
         guard node is ParagraphNode || node is HeaderNode else {

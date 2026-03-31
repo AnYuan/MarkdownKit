@@ -83,6 +83,30 @@ final class LayoutTests: XCTestCase {
         
         XCTAssertGreaterThan(attributesCount, 1, "Expected Splash to generate multiple syntax-highlighted attributes for Swift code. Got only \(attributesCount).")
     }
+
+    func testUnsupportedScriptParagraphFallsBackToTextKit() async throws {
+        let parser = MarkdownParser()
+        let markdownString = "这是一个用于测试换行和宽度计算的中文段落，没有任何附件。"
+        let docNode = parser.parse(markdownString)
+        let solver = LayoutSolver()
+
+        let layoutRoot = await solver.solve(node: docNode, constrainedToWidth: 160)
+        XCTAssertEqual(layoutRoot.children.count, 1)
+
+        let paragraphLayout = layoutRoot.children[0]
+        guard let attributedString = paragraphLayout.attributedString else {
+            XCTFail("Paragraph layout missing attributed string")
+            return
+        }
+
+        let textKitSize = TextKitCalculator().calculateSize(
+            for: attributedString,
+            constrainedToWidth: 160
+        )
+
+        XCTAssertEqual(paragraphLayout.size.width, textKitSize.width)
+        XCTAssertEqual(paragraphLayout.size.height, textKitSize.height)
+    }
     
     #if canImport(UIKit)
     func testMathJaxBackgroundRendering() async throws {
