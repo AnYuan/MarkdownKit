@@ -235,6 +235,26 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         XCTAssertEqual(prepared.segmentTexts, ["Hello."])
     }
 
+    func testPrepareMergesNumericStickyRuns() {
+        let calculator = ArithmeticTextCalculator()
+        let prepared = calculator.prepare(
+            attributedString: makeAttributedString("2025-03-31 10:30")
+        )
+
+        XCTAssertEqual(prepared.kinds, [.text, .space, .text])
+        XCTAssertEqual(prepared.segmentTexts, ["2025-03-31", "", "10:30"])
+    }
+
+    func testPrepareMergesCJKStickyRuns() {
+        let calculator = ArithmeticTextCalculator()
+        let prepared = calculator.prepare(
+            attributedString: makeAttributedString("你好，世界 第1章")
+        )
+
+        XCTAssertEqual(prepared.kinds, [.text, .space, .text])
+        XCTAssertEqual(prepared.segmentTexts, ["你好，世界", "", "第1章"])
+    }
+
     func testExplicitHardBreakUsesTrimmedLineEndWidth() {
         let attributedString = makeAttributedString("Longest line   \nshort")
         let arithmeticCalc = ArithmeticTextCalculator()

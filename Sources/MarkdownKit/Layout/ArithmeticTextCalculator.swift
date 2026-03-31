@@ -487,11 +487,23 @@ public final class ArithmeticTextCalculator {
                 }
 
                 let alphanumerics = CharacterSet.alphanumerics
+                let decimalDigits = CharacterSet.decimalDigits
                 let urlPunctuation = CharacterSet(charactersIn: "-._~:/?#[]@!$&'()*+,;=%")
+                let numericPunctuation = CharacterSet(charactersIn: "-/:.,+()#")
+                let cjkPunctuation = CharacterSet(charactersIn: "，。！？：；、（）《》「」『』【】〈〉〔〕［］｛｝—…·・")
                 let closingPunctuation = CharacterSet(charactersIn: ".,;:!?%)]}'\"”’")
 
                 func tokenText(for range: NSRange) -> String {
                     fullNSString.substring(with: range)
+                }
+
+                func isCJKScalar(_ scalar: UnicodeScalar) -> Bool {
+                    switch scalar.value {
+                    case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0x3040...0x309F, 0x30A0...0x30FF, 0xAC00...0xD7AF:
+                        return true
+                    default:
+                        return false
+                    }
                 }
 
                 func isURLSafeToken(_ text: String) -> Bool {
@@ -509,6 +521,22 @@ public final class ArithmeticTextCalculator {
                     !text.isEmpty && text.unicodeScalars.allSatisfy(closingPunctuation.contains)
                 }
 
+                func isNumericStickyToken(_ text: String) -> Bool {
+                    !text.isEmpty
+                        && text.unicodeScalars.contains(where: decimalDigits.contains)
+                        && text.unicodeScalars.allSatisfy { scalar in
+                            decimalDigits.contains(scalar) || numericPunctuation.contains(scalar)
+                        }
+                }
+
+                func isCJKStickyToken(_ text: String) -> Bool {
+                    !text.isEmpty
+                        && text.unicodeScalars.contains(where: isCJKScalar)
+                        && text.unicodeScalars.allSatisfy { scalar in
+                            isCJKScalar(scalar) || decimalDigits.contains(scalar) || cjkPunctuation.contains(scalar)
+                        }
+                }
+
                 func shouldMergeAdjacentTextTokens(left leftRange: NSRange, right rightRange: NSRange) -> Bool {
                     let leftText = tokenText(for: leftRange)
                     let rightText = tokenText(for: rightRange)
@@ -523,6 +551,14 @@ public final class ArithmeticTextCalculator {
 
                     let combinedText = leftText + rightText
                     if isURLSafeToken(leftText) && isURLLikeToken(combinedText) {
+                        return true
+                    }
+
+                    if isNumericStickyToken(combinedText) {
+                        return true
+                    }
+
+                    if isCJKStickyToken(combinedText) {
                         return true
                     }
 
