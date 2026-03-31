@@ -190,6 +190,18 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         XCTAssertEqual(arithmeticSize.height, textKitSize.height, accuracy: 1)
     }
 
+    func testOversizedTextTokenFallsBackToGraphemeWrapping() {
+        let attributedString = makeAttributedString("Supercalifragilisticexpialidocious")
+        let arithmeticCalc = ArithmeticTextCalculator()
+        let textKitCalc = TextKitCalculator()
+
+        let arithmeticSize = arithmeticCalc.calculateSize(for: attributedString, constrainedToWidth: 60)
+        let textKitSize = textKitCalc.calculateSize(for: attributedString, constrainedToWidth: 60)
+
+        XCTAssertEqual(arithmeticSize.width, textKitSize.width, accuracy: 2)
+        XCTAssertEqual(arithmeticSize.height, textKitSize.height, accuracy: 5)
+    }
+
     func testRepeatedCalculateSizeRemainsStable() {
         let attributedString = makeAttributedString(
             String(repeating: "Repeated words repeated words repeated words. ", count: 40)

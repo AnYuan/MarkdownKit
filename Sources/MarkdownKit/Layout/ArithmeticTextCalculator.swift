@@ -80,16 +80,29 @@ public final class ArithmeticTextCalculator {
         var kinds: [SegmentKind] = []
         var lineEndFitAdvances: [CGFloat] = []
         var lineEndPaintAdvances: [CGFloat] = []
+        var segmentTexts: [String] = []
+        var fontNames: [String] = []
+        var pointSizes: [CGFloat] = []
         var heights: [CGFloat] = []
         var chunks: [Chunk] = []
         var headIndent: CGFloat = 0
         var firstLineHeadIndent: CGFloat = 0
         
-        mutating func append(width: CGFloat, kind: SegmentKind, height: CGFloat) {
+        mutating func append(
+            width: CGFloat,
+            kind: SegmentKind,
+            height: CGFloat,
+            text: String = "",
+            fontName: String = "",
+            pointSize: CGFloat = 0
+        ) {
             self.widths.append(width)
             self.kinds.append(kind)
             self.lineEndFitAdvances.append(kind.lineEndFitAdvance(for: width))
             self.lineEndPaintAdvances.append(kind.lineEndPaintAdvance(for: width))
+            self.segmentTexts.append(text)
+            self.fontNames.append(fontName)
+            self.pointSizes.append(pointSize)
             self.heights.append(height)
             self.chunks.append(
                 Chunk(
@@ -146,11 +159,56 @@ public final class ArithmeticTextCalculator {
         var maxComputedWidth: CGFloat = 0
         var lineCount = 0
 
+        func appendOversizedTextSegment(
+            text: String,
+            fontName: String,
+            pointSize: CGFloat,
+            height: CGFloat
+        ) {
+            let attributes: [NSAttributedString.Key: Any] = [
+                NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName(fontName as CFString, pointSize, nil)
+            ]
+            let attributedText = NSAttributedString(string: text, attributes: attributes)
+            let typesetter = CTTypesetterCreateWithAttributedString(attributedText)
+            let nsText = text as NSString
+            var start = 0
+
+            while start < nsText.length {
+                let currentIndent = (lineCount == 0) ? preparedText.firstLineHeadIndent : preparedText.headIndent
+                let availableWidth = max(maxWidth - currentIndent, 0)
+                var count = CTTypesetterSuggestClusterBreak(typesetter, start, Double(availableWidth))
+
+                if count <= 0 {
+                    count = nsText.rangeOfComposedCharacterSequence(at: start).length
+                }
+
+                let line = CTTypesetterCreateLine(typesetter, CFRange(location: start, length: count))
+                let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+
+                currentLineAdvance = lineWidth
+                currentLinePaintWidth = lineWidth
+                currentLineHeight = max(currentLineHeight, height)
+                start += count
+
+                if start < nsText.length {
+                    totalHeight += currentLineHeight
+                    maxComputedWidth = max(maxComputedWidth, currentLinePaintWidth + currentIndent)
+                    lineCount += 1
+                    currentLineAdvance = 0
+                    currentLinePaintWidth = 0
+                    currentLineHeight = 0
+                }
+            }
+        }
+
         for chunk in preparedText.chunks {
             let index = chunk.segmentIndex
             let width = preparedText.widths[index]
             let lineEndFitAdvance = preparedText.lineEndFitAdvances[index]
             let lineEndPaintAdvance = preparedText.lineEndPaintAdvances[index]
+            let segmentText = preparedText.segmentTexts[index]
+            let fontName = preparedText.fontNames[index]
+            let pointSize = preparedText.pointSizes[index]
             let kind = preparedText.kinds[index]
             let height = preparedText.heights[index]
             let currentIndent = (lineCount == 0) ? preparedText.firstLineHeadIndent : preparedText.headIndent
@@ -182,10 +240,31 @@ public final class ArithmeticTextCalculator {
                     currentLinePaintWidth = 0
                     currentLineHeight = 0
                 } else {
-                    currentLineAdvance = width
-                    currentLinePaintWidth = lineEndPaintAdvance
-                    currentLineHeight = height
+                    let nextIndent = (lineCount == 0) ? preparedText.firstLineHeadIndent : preparedText.headIndent
+                    let nextAvailableWidth = maxWidth - nextIndent
+                    if kind == .text && width > nextAvailableWidth && !segmentText.isEmpty {
+                        currentLineAdvance = 0
+                        currentLinePaintWidth = 0
+                        currentLineHeight = 0
+                        appendOversizedTextSegment(
+                            text: segmentText,
+                            fontName: fontName,
+                            pointSize: pointSize,
+                            height: height
+                        )
+                    } else {
+                        currentLineAdvance = width
+                        currentLinePaintWidth = lineEndPaintAdvance
+                        currentLineHeight = height
+                    }
                 }
+            } else if nextLineFitWidth > availableWidth && kind == .text && !segmentText.isEmpty {
+                appendOversizedTextSegment(
+                    text: segmentText,
+                    fontName: fontName,
+                    pointSize: pointSize,
+                    height: height
+                )
             } else {
                 currentLineAdvance = nextLineAdvance
                 currentLinePaintWidth = nextLinePaintWidth
@@ -266,7 +345,14 @@ public final class ArithmeticTextCalculator {
 
                 let segmentText = fullNSString.substring(with: NSRange(location: start, length: count))
                 if let cachedWidth = Self.cachedWidth(for: segmentText, fontKey: fontCacheKey) {
-                    preparedText.append(width: cachedWidth, kind: kind, height: lineHeight)
+                    preparedText.append(
+                        width: cachedWidth,
+                        kind: kind,
+                        height: lineHeight,
+                        text: kind == .text ? segmentText : "",
+                        fontName: kind == .text ? font.fontName : "",
+                        pointSize: kind == .text ? font.pointSize : 0
+                    )
                     if terminatesWithHardBreak {
                         preparedText.append(width: 0, kind: .hardBreak, height: lineHeight)
                     }
@@ -284,10 +370,24 @@ public final class ArithmeticTextCalculator {
                         var width: CGFloat = 0
                         for i in 0..<count { width += advances[i].width }
                         Self.storeCachedWidth(width, for: segmentText, fontKey: fontCacheKey)
-                        preparedText.append(width: width, kind: kind, height: lineHeight)
+                        preparedText.append(
+                            width: width,
+                            kind: kind,
+                            height: lineHeight,
+                            text: kind == .text ? segmentText : "",
+                            fontName: kind == .text ? font.fontName : "",
+                            pointSize: kind == .text ? font.pointSize : 0
+                        )
                     } else {
                         Self.storeCachedWidth(0, for: segmentText, fontKey: fontCacheKey)
-                        preparedText.append(width: 0, kind: kind, height: lineHeight)
+                        preparedText.append(
+                            width: 0,
+                            kind: kind,
+                            height: lineHeight,
+                            text: kind == .text ? segmentText : "",
+                            fontName: kind == .text ? font.fontName : "",
+                            pointSize: kind == .text ? font.pointSize : 0
+                        )
                     }
                 }
                 
