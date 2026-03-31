@@ -160,8 +160,34 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
             prepared.kinds,
             [.text, .space, .text, .hardBreak, .text]
         )
+        XCTAssertEqual(prepared.chunks.map(\.kind), [.content, .content, .content, .hardBreak, .content])
+        XCTAssertGreaterThan(prepared.lineEndFitAdvances[0], 0)
+        XCTAssertEqual(prepared.lineEndFitAdvances[1], 0)
+        XCTAssertGreaterThan(prepared.lineEndFitAdvances[2], 0)
+        XCTAssertEqual(prepared.lineEndFitAdvances[3], 0)
+        XCTAssertGreaterThan(prepared.lineEndFitAdvances[4], 0)
+        XCTAssertGreaterThan(prepared.lineEndPaintAdvances[0], 0)
+        XCTAssertGreaterThan(prepared.lineEndPaintAdvances[1], 0)
+        XCTAssertGreaterThan(prepared.lineEndPaintAdvances[2], 0)
+        XCTAssertEqual(prepared.lineEndPaintAdvances[3], 0)
+        XCTAssertGreaterThan(prepared.lineEndPaintAdvances[4], 0)
         XCTAssertEqual(prepared.widths.count, prepared.kinds.count)
+        XCTAssertEqual(prepared.lineEndFitAdvances.count, prepared.kinds.count)
+        XCTAssertEqual(prepared.lineEndPaintAdvances.count, prepared.kinds.count)
+        XCTAssertEqual(prepared.chunks.count, prepared.kinds.count)
         XCTAssertEqual(prepared.heights.count, prepared.kinds.count)
+    }
+
+    func testExplicitHardBreakUsesTrimmedLineEndWidth() {
+        let attributedString = makeAttributedString("Longest line   \nshort")
+        let arithmeticCalc = ArithmeticTextCalculator()
+        let textKitCalc = TextKitCalculator()
+
+        let arithmeticSize = arithmeticCalc.calculateSize(for: attributedString, constrainedToWidth: 400)
+        let textKitSize = textKitCalc.calculateSize(for: attributedString, constrainedToWidth: 400)
+
+        XCTAssertEqual(arithmeticSize.width, textKitSize.width, accuracy: 1)
+        XCTAssertEqual(arithmeticSize.height, textKitSize.height, accuracy: 1)
     }
 
     func testRepeatedCalculateSizeRemainsStable() {

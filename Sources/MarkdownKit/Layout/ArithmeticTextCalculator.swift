@@ -44,20 +44,59 @@ public final class ArithmeticTextCalculator {
         var isHardBreak: Bool {
             self == .hardBreak
         }
+
+        func lineEndFitAdvance(for width: CGFloat) -> CGFloat {
+            switch self {
+            case .text:
+                return width
+            case .space, .hardBreak:
+                return 0
+            }
+        }
+
+        func lineEndPaintAdvance(for width: CGFloat) -> CGFloat {
+            switch self {
+            case .text, .space:
+                return width
+            case .hardBreak:
+                return 0
+            }
+        }
+    }
+
+    enum ChunkKind {
+        case content
+        case hardBreak
+    }
+
+    struct Chunk {
+        let kind: ChunkKind
+        let segmentIndex: Int
     }
 
     /// Structure of Arrays (SoA) representing the segmented text for extremely fast iteration.
     struct PreparedText {
         var widths: [CGFloat] = []
         var kinds: [SegmentKind] = []
+        var lineEndFitAdvances: [CGFloat] = []
+        var lineEndPaintAdvances: [CGFloat] = []
         var heights: [CGFloat] = []
+        var chunks: [Chunk] = []
         var headIndent: CGFloat = 0
         var firstLineHeadIndent: CGFloat = 0
         
         mutating func append(width: CGFloat, kind: SegmentKind, height: CGFloat) {
             self.widths.append(width)
             self.kinds.append(kind)
+            self.lineEndFitAdvances.append(kind.lineEndFitAdvance(for: width))
+            self.lineEndPaintAdvances.append(kind.lineEndPaintAdvance(for: width))
             self.heights.append(height)
+            self.chunks.append(
+                Chunk(
+                    kind: kind.isHardBreak ? .hardBreak : .content,
+                    segmentIndex: self.widths.count - 1
+                )
+            )
         }
     }
 
@@ -100,52 +139,66 @@ public final class ArithmeticTextCalculator {
     func layout(prepared preparedText: PreparedText, constrainedToWidth maxWidth: CGFloat) -> CGSize {
         guard !preparedText.widths.isEmpty else { return .zero }
 
-        var currentLineWidth: CGFloat = 0
+        var currentLineAdvance: CGFloat = 0
+        var currentLinePaintWidth: CGFloat = 0
         var currentLineHeight: CGFloat = 0
         var totalHeight: CGFloat = 0
         var maxComputedWidth: CGFloat = 0
         var lineCount = 0
 
-        for i in 0..<preparedText.widths.count {
-            let width = preparedText.widths[i]
-            let kind = preparedText.kinds[i]
-            let height = preparedText.heights[i]
+        for chunk in preparedText.chunks {
+            let index = chunk.segmentIndex
+            let width = preparedText.widths[index]
+            let lineEndFitAdvance = preparedText.lineEndFitAdvances[index]
+            let lineEndPaintAdvance = preparedText.lineEndPaintAdvances[index]
+            let kind = preparedText.kinds[index]
+            let height = preparedText.heights[index]
+            let currentIndent = (lineCount == 0) ? preparedText.firstLineHeadIndent : preparedText.headIndent
+            let availableWidth = maxWidth - currentIndent
             
-            if kind.isHardBreak {
+            if chunk.kind == .hardBreak {
                 totalHeight += max(currentLineHeight, height)
-                currentLineWidth = 0
+                let visibleLineWidth = currentLinePaintWidth > 0 ? currentLinePaintWidth + currentIndent : 0
+                maxComputedWidth = max(maxComputedWidth, visibleLineWidth)
+                currentLineAdvance = 0
+                currentLinePaintWidth = 0
                 currentLineHeight = 0
                 lineCount += 1
                 continue
             }
-            
-            let currentIndent = (lineCount == 0) ? preparedText.firstLineHeadIndent : preparedText.headIndent
-            let availableWidth = maxWidth - currentIndent
-            
-            if currentLineWidth + width > availableWidth && currentLineWidth > 0 {
+
+            let nextLineAdvance = currentLineAdvance + width
+            let nextLineFitWidth = currentLineAdvance + lineEndFitAdvance
+            let nextLinePaintWidth = currentLineAdvance + lineEndPaintAdvance
+
+            if nextLineFitWidth > availableWidth && currentLineAdvance > 0 {
                 // Break line
                 totalHeight += currentLineHeight
-                maxComputedWidth = max(maxComputedWidth, currentLineWidth + currentIndent)
+                maxComputedWidth = max(maxComputedWidth, currentLinePaintWidth + currentIndent)
                 
                 lineCount += 1
                 if kind.isSpace {
-                    currentLineWidth = 0
+                    currentLineAdvance = 0
+                    currentLinePaintWidth = 0
                     currentLineHeight = 0
                 } else {
-                    currentLineWidth = width
+                    currentLineAdvance = width
+                    currentLinePaintWidth = lineEndPaintAdvance
                     currentLineHeight = height
                 }
             } else {
-                currentLineWidth += width
+                currentLineAdvance = nextLineAdvance
+                currentLinePaintWidth = nextLinePaintWidth
                 currentLineHeight = max(currentLineHeight, height)
             }
         }
         
         // Add final line height if it wasn't empty
-        if currentLineWidth > 0 || totalHeight == 0 {
+        if currentLineAdvance > 0 || totalHeight == 0 {
             let currentIndent = (lineCount == 0) ? preparedText.firstLineHeadIndent : preparedText.headIndent
             totalHeight += currentLineHeight
-            maxComputedWidth = max(maxComputedWidth, currentLineWidth + currentIndent)
+            let visibleLineWidth = currentLinePaintWidth > 0 ? currentLinePaintWidth + currentIndent : 0
+            maxComputedWidth = max(maxComputedWidth, visibleLineWidth)
         }
         
         return CGSize(width: ceil(maxComputedWidth), height: floor(totalHeight))
