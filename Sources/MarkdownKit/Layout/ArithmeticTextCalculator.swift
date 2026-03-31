@@ -403,8 +403,10 @@ public final class ArithmeticTextCalculator {
                 // Fast basic checks for word boundaries
                 // 0x000A = LF (\n), 0x000D = CR (\r)
                 let isNewlineChar = char == 0x000A || char == 0x000D || char == 0x2028 || char == 0x2029
-                // 0x0020 = Space, 0x0009 = Tab
-                let isSpaceChar = char == 0x0020 || char == 0x0009
+                // 0x0020 = Space, 0x0009 = Tab, 0x200B = Zero Width Space
+                // Non-breaking glue characters such as NBSP and Word Joiner intentionally
+                // stay in text segments so they do not create break opportunities.
+                let isSpaceChar = char == 0x0020 || char == 0x0009 || char == 0x200B
                 
                 if isNewlineChar {
                     measureSegment(

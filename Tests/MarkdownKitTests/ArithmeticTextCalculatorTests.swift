@@ -178,6 +178,21 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         XCTAssertEqual(prepared.heights.count, prepared.kinds.count)
     }
 
+    func testPrepareTreatsZeroWidthSpaceAsBreakOpportunityAndNBSPAsGlue() {
+        let calculator = ArithmeticTextCalculator()
+
+        let zeroWidthPrepared = calculator.prepare(
+            attributedString: makeAttributedString("Alpha\u{200B}Beta")
+        )
+        XCTAssertEqual(zeroWidthPrepared.kinds, [.text, .space, .text])
+        XCTAssertEqual(zeroWidthPrepared.widths[1], 0, accuracy: 0.001)
+
+        let gluePrepared = calculator.prepare(
+            attributedString: makeAttributedString("Alpha\u{00A0}Beta")
+        )
+        XCTAssertEqual(gluePrepared.kinds, [.text])
+    }
+
     func testExplicitHardBreakUsesTrimmedLineEndWidth() {
         let attributedString = makeAttributedString("Longest line   \nshort")
         let arithmeticCalc = ArithmeticTextCalculator()
@@ -200,6 +215,18 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
 
         XCTAssertEqual(arithmeticSize.width, textKitSize.width, accuracy: 2)
         XCTAssertEqual(arithmeticSize.height, textKitSize.height, accuracy: 5)
+    }
+
+    func testZeroWidthSpaceMatchesTextKitWrapping() {
+        let attributedString = makeAttributedString("Alpha\u{200B}Beta")
+        let arithmeticCalc = ArithmeticTextCalculator()
+        let textKitCalc = TextKitCalculator()
+
+        let arithmeticSize = arithmeticCalc.calculateSize(for: attributedString, constrainedToWidth: 60)
+        let textKitSize = textKitCalc.calculateSize(for: attributedString, constrainedToWidth: 60)
+
+        XCTAssertEqual(arithmeticSize.width, textKitSize.width, accuracy: 2)
+        XCTAssertEqual(arithmeticSize.height, textKitSize.height, accuracy: 2)
     }
 
     func testRepeatedCalculateSizeRemainsStable() {
