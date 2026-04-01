@@ -45,6 +45,38 @@ final class LayoutSolverExtendedTests: XCTestCase {
                        "Expected unchecked checkbox symbol in: \(text)")
     }
 
+    func testCheckboxListUsesCompactSpacingBeforeFinalItem() async throws {
+        let markdown = """
+        - [ ] Unfinished Task
+        - [x] Finished Task
+        - Standard Bullet
+        """
+        let layout = await TestHelper.solveLayout(markdown)
+        let listLayout = layout.children[0]
+
+        guard let attrStr = listLayout.attributedString else {
+            XCTFail("List layout missing attributed string")
+            return
+        }
+
+        let nsString = attrStr.string as NSString
+        let secondLineLocation = nsString.range(of: "\n").location + 1
+        let thirdLineLocation = nsString.range(of: "\n", options: [], range: NSRange(location: secondLineLocation, length: nsString.length - secondLineLocation)).location + 1
+
+        guard
+            let firstStyle = attrStr.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle,
+            let secondStyle = attrStr.attribute(.paragraphStyle, at: secondLineLocation, effectiveRange: nil) as? NSParagraphStyle,
+            let thirdStyle = attrStr.attribute(.paragraphStyle, at: thirdLineLocation, effectiveRange: nil) as? NSParagraphStyle
+        else {
+            XCTFail("Expected paragraph styles for all list items")
+            return
+        }
+
+        XCTAssertEqual(firstStyle.paragraphSpacing, 2, accuracy: 0.01)
+        XCTAssertEqual(secondStyle.paragraphSpacing, 2, accuracy: 0.01)
+        XCTAssertEqual(thirdStyle.paragraphSpacing, Theme.default.typography.paragraph.paragraphSpacing, accuracy: 0.01)
+    }
+
     func testTableLayoutProducesAttributedString() async throws {
         let markdown = """
         | A | B |

@@ -75,11 +75,13 @@ struct AttributedStringBuilder {
             
         case let list as ListNode:
             let font = theme.typography.paragraph.font
+            let listItemCount = list.children.filter { $0 is ListItemNode }.count
             var currentListItemIndex = 0
 
             for child in list.children {
                 guard let item = child as? ListItemNode else { continue }
                 currentListItemIndex += 1
+                let isLastItem = currentListItemIndex == listItemCount
 
                 if string.length > 0 {
                     string.append(NSAttributedString(string: "\n"))
@@ -104,8 +106,8 @@ struct AttributedStringBuilder {
 
                 let itemStyle = NSMutableParagraphStyle()
                 itemStyle.lineHeightMultiple = theme.typography.paragraph.lineHeightMultiple
-                // Use tight spacing between list items; full spacing after the last item for inter-block gap
-                itemStyle.paragraphSpacing = theme.typography.paragraph.paragraphSpacing
+                // Keep list items visually compact while preserving the normal block gap after the last item.
+                itemStyle.paragraphSpacing = isLastItem ? theme.typography.paragraph.paragraphSpacing : 2
                 itemStyle.lineBreakMode = .byWordWrapping
                 itemStyle.headIndent = prefixWidth
                 itemStyle.firstLineHeadIndent = 0
@@ -237,10 +239,12 @@ struct AttributedStringBuilder {
 
         case let list as ListNode:
             let font = theme.typography.paragraph.font
+            let listItemCount = list.children.filter { $0 is ListItemNode }.count
             var currentListItemIndex = 0
             for child in list.children {
                 guard let item = child as? ListItemNode else { continue }
                 currentListItemIndex += 1
+                let isLastItem = currentListItemIndex == listItemCount
                 if string.length > 0 { string.append(NSAttributedString(string: "\n")) }
                 var prefix: String
                 switch item.checkbox {
@@ -251,7 +255,7 @@ struct AttributedStringBuilder {
                 let prefixWidth = (prefix as NSString).size(withAttributes: [.font: font]).width
                 let itemStyle = NSMutableParagraphStyle()
                 itemStyle.lineHeightMultiple = theme.typography.paragraph.lineHeightMultiple
-                itemStyle.paragraphSpacing = theme.typography.paragraph.paragraphSpacing
+                itemStyle.paragraphSpacing = isLastItem ? theme.typography.paragraph.paragraphSpacing : 2
                 itemStyle.lineBreakMode = .byWordWrapping
                 itemStyle.headIndent = prefixWidth
                 itemStyle.firstLineHeadIndent = 0
