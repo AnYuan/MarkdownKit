@@ -33,13 +33,31 @@ public final class ArithmeticTextCalculator {
         }
     }
 
+    private struct PreparedTextRunKey: Hashable {
+        let location: Int
+        let length: Int
+        let fontName: String
+        let pointSizeMilli: Int
+        let lineHeightMultipleMilli: Int
+        let headIndentMilli: Int
+        let firstLineHeadIndentMilli: Int
+    }
+
+    private struct PreparedTextCacheKey: Hashable {
+        let string: String
+        let localeIdentifier: String
+        let runs: [PreparedTextRunKey]
+    }
+
     private struct FontCacheKey: Hashable {
         let fontName: String
         let pointSizeMilli: Int
     }
 
     private static let widthCacheLock = NSLock()
+    private static let preparedTextCacheLock = NSLock()
     private static nonisolated(unsafe) var cachedWidths: [FontCacheKey: [String: CGFloat]] = [:]
+    private static nonisolated(unsafe) var cachedPreparedTexts: [PreparedTextCacheKey: PreparedText] = [:]
 
     enum SegmentKind {
         case text
@@ -127,6 +145,18 @@ public final class ArithmeticTextCalculator {
 
     public init() {}
 
+    static func preparedTextCacheEntryCountForTesting() -> Int {
+        preparedTextCacheLock.lock()
+        defer { preparedTextCacheLock.unlock() }
+        return cachedPreparedTexts.count
+    }
+
+    static func resetPreparedTextCacheForTesting() {
+        preparedTextCacheLock.lock()
+        defer { preparedTextCacheLock.unlock() }
+        cachedPreparedTexts.removeAll()
+    }
+
     func profile(for attributedString: NSAttributedString) -> PreparedTextProfile {
         guard attributedString.length > 0 else { return PreparedTextProfile() }
 
@@ -158,12 +188,24 @@ public final class ArithmeticTextCalculator {
         return cachedWidths[fontKey]?[text]
     }
 
+    private static func cachedPreparedText(for key: PreparedTextCacheKey) -> PreparedText? {
+        preparedTextCacheLock.lock()
+        defer { preparedTextCacheLock.unlock() }
+        return cachedPreparedTexts[key]
+    }
+
     private static func storeCachedWidth(_ width: CGFloat, for text: String, fontKey: FontCacheKey) {
         widthCacheLock.lock()
         defer { widthCacheLock.unlock() }
         var fontWidths = cachedWidths[fontKey] ?? [:]
         fontWidths[text] = width
         cachedWidths[fontKey] = fontWidths
+    }
+
+    private static func storePreparedText(_ preparedText: PreparedText, for key: PreparedTextCacheKey) {
+        preparedTextCacheLock.lock()
+        defer { preparedTextCacheLock.unlock() }
+        cachedPreparedTexts[key] = preparedText
     }
 
     private static func measureTextWidth(_ text: String, ctFont: CTFont, fontKey: FontCacheKey) -> CGFloat {
@@ -208,7 +250,14 @@ public final class ArithmeticTextCalculator {
     /// Prepares a pure-text attributed string into a width-independent structure-of-arrays payload.
     func prepare(attributedString: NSAttributedString) -> PreparedText {
         guard attributedString.length > 0 else { return PreparedText() }
-        return buildPreparedText(from: attributedString)
+        let cacheKey = preparedTextCacheKey(for: attributedString)
+        if let cachedPreparedText = Self.cachedPreparedText(for: cacheKey) {
+            return cachedPreparedText
+        }
+
+        let preparedText = buildPreparedText(from: attributedString)
+        Self.storePreparedText(preparedText, for: cacheKey)
+        return preparedText
     }
 
     /// Lays out a previously prepared payload at a specific width using pure arithmetic.
@@ -723,5 +772,37 @@ public final class ArithmeticTextCalculator {
         }
         
         return preparedText
+    }
+
+    private func preparedTextCacheKey(for attributedString: NSAttributedString) -> PreparedTextCacheKey {
+        var runs: [PreparedTextRunKey] = []
+        let fullRange = NSRange(location: 0, length: attributedString.length)
+
+        attributedString.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
+            let font = attributes[.font] as? Font
+            let paragraphStyle = attributes[.paragraphStyle] as? NSParagraphStyle
+
+            runs.append(
+                PreparedTextRunKey(
+                    location: range.location,
+                    length: range.length,
+                    fontName: font?.fontName ?? "",
+                    pointSizeMilli: Self.milliUnits(for: font?.pointSize ?? 0),
+                    lineHeightMultipleMilli: Self.milliUnits(for: paragraphStyle?.lineHeightMultiple ?? 0),
+                    headIndentMilli: Self.milliUnits(for: paragraphStyle?.headIndent ?? 0),
+                    firstLineHeadIndentMilli: Self.milliUnits(for: paragraphStyle?.firstLineHeadIndent ?? 0)
+                )
+            )
+        }
+
+        return PreparedTextCacheKey(
+            string: attributedString.string,
+            localeIdentifier: Locale.current.identifier,
+            runs: runs
+        )
+    }
+
+    private static func milliUnits(for value: CGFloat) -> Int {
+        Int((value * 1000).rounded())
     }
 }

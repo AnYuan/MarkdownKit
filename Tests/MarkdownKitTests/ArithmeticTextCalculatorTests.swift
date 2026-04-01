@@ -172,6 +172,37 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         XCTAssertTrue(thaiProfile.containsUnsupportedScript)
     }
 
+    func testPreparedTextCacheReusesEntriesAcrossWidthChanges() {
+        ArithmeticTextCalculator.resetPreparedTextCacheForTesting()
+
+        let calculator = ArithmeticTextCalculator()
+        let attributedString = makeAttributedString(
+            "Prepared cache should be reused while width changes across repeated layouts."
+        )
+
+        _ = calculator.calculateSize(for: attributedString, constrainedToWidth: 160)
+        XCTAssertEqual(ArithmeticTextCalculator.preparedTextCacheEntryCountForTesting(), 1)
+
+        _ = calculator.calculateSize(for: attributedString, constrainedToWidth: 240)
+        XCTAssertEqual(ArithmeticTextCalculator.preparedTextCacheEntryCountForTesting(), 1)
+    }
+
+    func testPreparedTextCacheSeparatesParagraphStyleFingerprints() {
+        ArithmeticTextCalculator.resetPreparedTextCacheForTesting()
+
+        let calculator = ArithmeticTextCalculator()
+        let plain = makeAttributedString("Same text, different indent.")
+        let indented = makeAttributedString("Same text, different indent.") { style in
+            style.firstLineHeadIndent = 24
+            style.headIndent = 12
+        }
+
+        _ = calculator.calculateSize(for: plain, constrainedToWidth: 220)
+        _ = calculator.calculateSize(for: indented, constrainedToWidth: 220)
+
+        XCTAssertEqual(ArithmeticTextCalculator.preparedTextCacheEntryCountForTesting(), 2)
+    }
+
     func testPrepareCapturesSegmentKinds() {
         let attributedString = makeAttributedString("Alpha  beta\nGamma")
         let calculator = ArithmeticTextCalculator()
