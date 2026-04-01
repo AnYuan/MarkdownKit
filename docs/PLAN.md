@@ -164,11 +164,9 @@ bash scripts/verify_all.sh --full
 
 ## Phase 11: High-Performance Pure Arithmetic Layout Engine (Pretext-inspired)
 **Goal**: Bypass TextKit overhead and locks for pure text nodes using Structure of Arrays (SoA) and direct CoreText width measurements.
-*Execution Strategy: strictly atomic commits matching the steps below.*
-1. **Baseline**: Capture current performance metrics using the existing `TextKitCalculator` on text-heavy benchmark fixtures.
-2. **Skeleton**: Create `ArithmeticTextCalculator` stub and prove correct integration points before complex optimizations.
-3. **SoA Segmentation**: Implement `pretext`-inspired Structure of Arrays text segmentation and word-width caching using CoreText.
-4. **Math Breaking**: Implement the pure-arithmetic fast-path line breaking loop.
-5. **Parity Testing**: Write Unit Tests confirming 100% layout `CGSize` parity with `TextKitCalculator` for pure text nodes.
-6. **Routing**: Update `LayoutSolver` to selectively route pure text nodes to the arithmetic engine, with graceful fallback to TextKit for inline attachments (images, math) or complex text shaping.
-7. **Performance Validation**: Run benchmark comparisons (`ArithmeticTextCalculator` vs `TextKitCalculator`) and document throughput and tail-latency improvements.
+*Execution Strategy: strictly atomic commits. The detailed commit-by-commit checklist now lives in `tasks/todo.md` and remains the execution source of truth for this phase.*
+1. Arithmetic text layout now has explicit `prepare(...)` and `layout(...)` phases, plus prepared-paragraph reuse for width relayout.
+2. Segment semantics now cover glue, zero-width breaks, soft hyphen, hard breaks, grapheme fallback, locale-aware tokenization, URL merges, numeric chains, and basic CJK sticky boundaries.
+3. `LayoutSolver` gates arithmetic routing through a prepared-text profile so unsupported scripts and attachment-heavy content continue to use `TextKitCalculator`.
+4. Oracle coverage now exists for both arithmetic-parity text cases and complex-script fallback cases against `TextKitCalculator`.
+5. The refreshed arithmetic benchmark snapshot is published in `docs/BENCHMARK_BASELINE.md`; remaining snapshot-size drift for tables and task lists is tracked as follow-up work outside this phase.

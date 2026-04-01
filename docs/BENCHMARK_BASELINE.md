@@ -1,9 +1,11 @@
 # MarkdownKit Benchmark Baseline
 
-**Date**: 2026-02-27  
+**Initial Baseline Date**: 2026-02-27  
+**Latest Phase 2 Refresh**: 2026-04-01  
 **Platform**: macOS · arm64 (Apple Silicon)  
 **Harness**: `BenchmarkHarness` (warmup=3, iterations=20, `mach_absolute_time`)  
-**Commit**: `123c77b+local`
+**Initial Baseline Commit**: `123c77b+local`  
+**Phase 2 Refresh Command**: `swift test --filter "MarkdownKitBenchmarkTests/testPhase2_Layout"`
 
 ## Phase 1: Parse
 
@@ -23,15 +25,37 @@
 
 | Operation | Avg | P50 | P95 | Mem |
 |-----------|-----|-----|-----|-----|
-| solve(small) | 0.786ms | 0.770ms | 0.928ms | 16KB |
-| solve(medium) | 231.5ms | 231.0ms | 237.4ms | 144KB |
-| solve(large) | 34.60ms | 34.30ms | 36.77ms | 32KB |
-| solve(code-heavy) | 16.85ms | 16.77ms | 17.56ms | ~0 |
-| solve(table-heavy) | 18.87ms | 18.88ms | 19.34ms | 16KB |
-| solve(math-heavy) | 72.07ms | 71.24ms | 75.76ms | 688KB |
-| solve(details-heavy) | 1.86ms | 1.82ms | 2.08ms | ~0 |
-| solve(diagram-heavy) | 6.13ms | 6.08ms | 6.57ms | 144KB |
-| solve(tasklist-heavy) | 7.38ms | 7.37ms | 7.59ms | 16KB |
+| solve(small) | 0.457ms | 0.443ms | 0.571ms | 32KB |
+| solve(medium) | 3.25ms | 3.23ms | 3.53ms | 112KB |
+| solve(large) | 23.79ms | 23.61ms | 24.92ms | ~0 |
+| solve(code-heavy) | 3.63ms | 3.62ms | 3.87ms | ~0 |
+| solve(table-heavy) | 19.78ms | 19.80ms | 20.06ms | ~0 |
+| solve(math-heavy) | 1.23ms | 1.21ms | 1.35ms | ~0 |
+| solve(details-heavy) | 2.15ms | 2.11ms | 2.38ms | ~0 |
+| solve(diagram-heavy) | 0.905ms | 0.885ms | 0.984ms | ~0 |
+| solve(tasklist-heavy) | 11.00ms | 11.09ms | 11.37ms | ~0 |
+
+### Arithmetic Text Measurement Refresh
+
+| Operation | Avg | P50 | P95 | Mem |
+|-----------|-----|-----|-----|-----|
+| TextKit.calcSize(short) | 0.013ms | 0.012ms | 0.014ms | ~0 |
+| Arithmetic.prepare(short) | 0.002ms | 0.002ms | 0.002ms | ~0 |
+| Arithmetic.layout(short) | 0.001ms | 0.001ms | 0.001ms | ~0 |
+| TextKit.calcSize(paragraph) | 0.191ms | 0.189ms | 0.203ms | 16KB |
+| Arithmetic.prepare(paragraph) | 0.002ms | 0.002ms | 0.002ms | ~0 |
+| Arithmetic.layout(paragraph) | 0.058ms | 0.058ms | 0.067ms | ~0 |
+| TextKit.calcSize(long) | 1.59ms | 1.56ms | 1.70ms | 32KB |
+| Arithmetic.prepare(long) | 0.003ms | 0.003ms | 0.004ms | ~0 |
+| Arithmetic.layout(long) | 0.358ms | 0.357ms | 0.361ms | ~0 |
+
+### Arithmetic Text Speedup Snapshot
+
+| Sample | TextKit | Arithmetic Total | Relative Speedup |
+|--------|---------|------------------|------------------|
+| short | 0.013ms | 0.003ms | 4.3x |
+| paragraph | 0.191ms | 0.060ms | 3.2x |
+| long | 1.59ms | 0.361ms | 4.4x |
 
 ## Cache Performance
 
@@ -138,7 +162,8 @@ Width impact remains low for this fixture.
 2. Benchmark regression gating is enforced in `BenchmarkRegressionGuard` with:
    - `maxSlowdownFactor = 3.0`
    - `absoluteSlackMs = 5.0`
-3. This baseline was produced from a local working tree (`+local`).
+3. The 2026-04-01 refresh was a targeted Phase 2 rerun, not a full parse/cache/concurrency rebake.
+4. This baseline was produced from a local working tree (`+local`).
 
 ## Reproduction
 

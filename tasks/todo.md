@@ -109,11 +109,60 @@
 - [x] Generate DocC archive and verify documentation coverage
 
 ## Phase 11: High-Performance Pure Arithmetic Layout Engine (Pretext-inspired)
-*Note: Each step below must be implemented as a strictly atomic commit.*
-- [x] Capture baseline performance metrics using the existing TextKit layout engine on text-heavy benchmark fixtures.
-- [x] Create `ArithmeticTextCalculator` skeleton with basic string measurement for atomic validation.
-- [x] Implement Structure of Arrays (SoA) string segmentation and word-width caching using CoreText.
-- [x] Implement fast-path pure-math line breaking loop in `ArithmeticTextCalculator`.
-- [x] Write strict parity Unit Tests comparing `ArithmeticTextCalculator` against `TextKitCalculator` exact `CGSize` outputs.
-- [x] Update `LayoutSolver` to route pure text nodes (no attachments) to `ArithmeticTextCalculator` with graceful fallback.
-- [x] Run benchmark comparisons (`Arithmetic` vs `TextKit`) and document throughput improvements.
+*Note: Execution restarts from the current exploratory implementation. Existing scaffolding remains valuable, but the items below define the production-hardening path and must be executed as strictly atomic commits.*
+
+### Current Groundwork
+- [x] Baseline benchmark infrastructure exists for parse/layout/cache/concurrency reporting.
+- [x] `ArithmeticTextCalculator` exists and is wired into `LayoutSolver` for selected pure-text nodes.
+- [x] Initial SoA-style storage and basic pure-math line breaking exist.
+- [x] Initial benchmark docs mention arithmetic-vs-TextKit direction.
+
+### Commit Discipline
+- [x] Each commit changes exactly one of: tests, benchmarks, internal refactor, or one semantic layout behavior.
+- [x] Each commit includes the minimum tests required for that one behavior and passes the focused suite before the next commit starts.
+- [x] Benchmark baseline docs are updated only in dedicated benchmark commits, never mixed with semantic engine changes.
+- [x] Routing expansion commits must follow, not precede, parity coverage for the newly supported text behavior.
+
+### Atomic Execution Plan
+- [x] `test: add pure-text oracle matrix`
+  Add a focused oracle suite comparing `ArithmeticTextCalculator` against `TextKitCalculator` for Latin, CJK, emoji, explicit newlines, and paragraph indent cases.
+- [x] `bench: split arithmetic prepare/layout baselines`
+  Add benchmark coverage that reports arithmetic prepare cost separately from arithmetic layout cost so future gains are attributable.
+- [x] `refactor: split arithmetic calculator into prepare and layout phases`
+  Keep external behavior stable while introducing internal `prepare(...)` and `layout(...)` boundaries.
+- [x] `perf: cache measured segment widths`
+  Add font-aware segment width caching only; do not change line-breaking semantics in this commit.
+- [x] `refactor: replace boolean arrays with explicit segment kinds`
+  Replace `isSpace` / `isNewline` storage with a stable internal `SegmentKind` model.
+- [x] `feat: add line-fit metadata`
+  Introduce `lineEndFitAdvance`, `lineEndPaintAdvance`, and hard-break chunk metadata for correct fit vs paint behavior.
+- [x] `feat: add grapheme fallback for oversized tokens`
+  Support grapheme-level breaking for tokens wider than the available line width.
+- [x] `feat: support glue and zero-width break semantics`
+  Add `NBSP`, narrow no-break space, word joiner, and zero-width space handling.
+- [x] `feat: support discretionary soft hyphen`
+  Add soft-hyphen measurement and rendering semantics only when a break is taken.
+- [x] `feat: add locale-aware word segmentation`
+  Replace the current whitespace-only segmentation with locale-aware word boundary detection.
+- [x] `feat: merge url and punctuation runs`
+  Add URL-like, query-string, and closing-punctuation merge heuristics for more stable token measurement.
+- [x] `feat: merge numeric and cjk sticky runs`
+  Add numeric-chain and basic CJK sticky-boundary heuristics without expanding into complex-script shaping.
+- [x] `feat: gate arithmetic routing by prepared-text profile`
+  Route only text profiles proven by parity tests; keep unsupported scripts and attachment-heavy content on TextKit.
+- [x] `perf: reuse prepared paragraphs across width changes`
+  Add prepared-text reuse so repeated width relayout avoids repeated preparation work.
+- [x] `test: add complex-script oracle corpus`
+  Add Arabic, Thai, Myanmar, Hindi, and mixed-bidi oracle coverage before any routing expansion for those cases.
+- [x] `docs: publish arithmetic status and refreshed benchmark snapshot`
+  Update plan/docs/status files in a docs-only commit once the engine and benchmark numbers are current.
+
+### Published Status
+- [x] Arithmetic text layout now uses explicit `prepare(...)` and `layout(...)` phases, plus prepared-paragraph reuse across width changes.
+- [x] Segment semantics cover glue, zero-width breaks, soft hyphen, hard breaks, grapheme fallback, locale-aware segmentation, URL merges, numeric chains, and CJK sticky runs.
+- [x] `LayoutSolver` now gates arithmetic routing through a prepared-text profile so unsupported scripts and attachment-heavy content stay on `TextKitCalculator`.
+- [x] Oracle coverage exists for both supported pure-text arithmetic cases and unsupported complex-script fallback cases.
+- [x] Refreshed Phase 2 benchmark numbers were captured on 2026-04-01 and published in `docs/BENCHMARK_BASELINE.md`.
+
+### Residual Follow-up
+- [ ] Investigate the outstanding snapshot-size drift in `SnapshotTests.testTableRendering` and `SnapshotTests.testTasklistRendering` separately from Phase 11 arithmetic work.
