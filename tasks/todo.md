@@ -165,4 +165,4 @@
 - [x] Refreshed Phase 2 benchmark numbers were captured on 2026-04-01 and published in `docs/BENCHMARK_BASELINE.md`.
 
 ### Residual Follow-up
-- [ ] Investigate the outstanding snapshot-size drift in `SnapshotTests.testTableRendering` and `SnapshotTests.testTasklistRendering` separately from Phase 11 arithmetic work.
+- [x] Resolve the macOS snapshot drift in `SnapshotTests.testTableRendering` and `SnapshotTests.testTasklistRendering` after restoring compact task-list spacing and refreshing the reference images.

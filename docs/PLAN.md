@@ -169,4 +169,4 @@ bash scripts/verify_all.sh --full
 2. Segment semantics now cover glue, zero-width breaks, soft hyphen, hard breaks, grapheme fallback, locale-aware tokenization, URL merges, numeric chains, and basic CJK sticky boundaries.
 3. `LayoutSolver` gates arithmetic routing through a prepared-text profile so unsupported scripts and attachment-heavy content continue to use `TextKitCalculator`.
 4. Oracle coverage now exists for both arithmetic-parity text cases and complex-script fallback cases against `TextKitCalculator`.
-5. The refreshed arithmetic benchmark snapshot is published in `docs/BENCHMARK_BASELINE.md`; remaining snapshot-size drift for tables and task lists is tracked as follow-up work outside this phase.
+5. The refreshed arithmetic benchmark snapshot is published in `docs/BENCHMARK_BASELINE.md`, and the macOS table/task-list snapshot suite is back to green after the follow-up spacing fix and reference refresh.
