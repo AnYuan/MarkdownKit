@@ -6,7 +6,7 @@ import Markdown
 /// This protocol represents any element parsed from a Markdown document.
 /// It acts as the thread-safe, internal representation separate from Apple's `swift-markdown`
 /// which ensures our Layout Engine and Rendering UI can operate asynchronously without locks.
-public protocol MarkdownNode {
+public protocol MarkdownNode: Sendable {
     /// The original source range in the raw markdown string, if available.
     var range: SourceRange? { get }
     

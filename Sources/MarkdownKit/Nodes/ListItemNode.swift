@@ -7,7 +7,7 @@ import Foundation
 import Markdown
 
 /// The state of a task-list checkbox within a list item.
-public enum CheckboxState {
+public enum CheckboxState: Sendable {
     /// A checked checkbox (`- [x]`).
     case checked
     /// An unchecked checkbox (`- [ ]`).

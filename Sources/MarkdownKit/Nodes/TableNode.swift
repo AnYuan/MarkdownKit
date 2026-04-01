@@ -7,7 +7,7 @@ import Foundation
 import Markdown
 
 /// The text alignment of a table column, as specified by the Markdown separator row (e.g. `:---`, `:---:`, `---:`).
-public enum TableAlignment {
+public enum TableAlignment: Sendable {
     case left, right, center
 }
 

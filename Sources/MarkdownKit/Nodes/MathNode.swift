@@ -7,7 +7,7 @@ public struct MathNode: MarkdownNode {
     public let range: SourceRange?
     
     /// The style of the math equation (e.g., block vs inline).
-    public enum Style {
+    public enum Style: Sendable {
         case block // e.g. $$ E = mc^2 $$
         case inline // e.g. $ E = mc^2 $
     }
