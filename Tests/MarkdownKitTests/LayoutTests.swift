@@ -2,6 +2,12 @@ import XCTest
 @testable import MarkdownKit
 
 final class LayoutTests: XCTestCase {
+
+    private struct FallbackCase {
+        let name: String
+        let markdown: String
+        let width: CGFloat
+    }
     
     func testBackgroundLayoutSizingAndCaching() async throws {
         let parser = MarkdownParser()
@@ -106,6 +112,66 @@ final class LayoutTests: XCTestCase {
 
         XCTAssertEqual(paragraphLayout.size.width, textKitSize.width)
         XCTAssertEqual(paragraphLayout.size.height, textKitSize.height)
+    }
+
+    func testUnsupportedScriptOracleMatrixFallsBackToTextKit() async throws {
+        let parser = MarkdownParser()
+        let solver = LayoutSolver()
+        let cases: [FallbackCase] = [
+            FallbackCase(
+                name: "arabic",
+                markdown: "مرحبا بالعالم هذا سطر عربي لاختبار الالتفاف.",
+                width: 180
+            ),
+            FallbackCase(
+                name: "thai",
+                markdown: "ไทยภาษาใช้สำหรับทดสอบการตัดคำและการขึ้นบรรทัดใหม่",
+                width: 180
+            ),
+            FallbackCase(
+                name: "myanmar",
+                markdown: "မြန်မာစာကို စာကြောင်းခွဲခြင်း စမ်းသပ်ရန် အသုံးပြုသည်။",
+                width: 180
+            ),
+            FallbackCase(
+                name: "hindi",
+                markdown: "नमस्ते दुनिया यह पंक्ति हिंदी लेआउट परीक्षण के लिए है।",
+                width: 180
+            ),
+            FallbackCase(
+                name: "mixed-bidi",
+                markdown: "Build status: مرحبا 123 بالعالم",
+                width: 180
+            )
+        ]
+
+        for fallbackCase in cases {
+            let docNode = parser.parse(fallbackCase.markdown)
+            let layoutRoot = await solver.solve(node: docNode, constrainedToWidth: fallbackCase.width)
+            XCTAssertEqual(layoutRoot.children.count, 1, "Unexpected child count for case \(fallbackCase.name)")
+
+            let paragraphLayout = layoutRoot.children[0]
+            guard let attributedString = paragraphLayout.attributedString else {
+                XCTFail("Paragraph layout missing attributed string for case \(fallbackCase.name)")
+                continue
+            }
+
+            let textKitSize = TextKitCalculator().calculateSize(
+                for: attributedString,
+                constrainedToWidth: fallbackCase.width
+            )
+
+            XCTAssertEqual(
+                paragraphLayout.size.width,
+                textKitSize.width,
+                "Width should match TextKit for case \(fallbackCase.name)"
+            )
+            XCTAssertEqual(
+                paragraphLayout.size.height,
+                textKitSize.height,
+                "Height should match TextKit for case \(fallbackCase.name)"
+            )
+        }
     }
     
     #if canImport(UIKit)

@@ -172,6 +172,23 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         XCTAssertTrue(thaiProfile.containsUnsupportedScript)
     }
 
+    func testProfileRejectsComplexScriptMatrix() {
+        let calculator = ArithmeticTextCalculator()
+        let cases = [
+            "مرحبا بالعالم",
+            "ไทยภาษา",
+            "မြန်မာစာစမ်းသပ်",
+            "नमस्ते दुनिया",
+            "Status مرحبا 123"
+        ]
+
+        for text in cases {
+            let profile = calculator.profile(for: makeAttributedString(text))
+            XCTAssertFalse(profile.supportsArithmeticLayout, "Expected TextKit fallback for: \(text)")
+            XCTAssertTrue(profile.containsUnsupportedScript, "Expected unsupported script marker for: \(text)")
+        }
+    }
+
     func testPreparedTextCacheReusesEntriesAcrossWidthChanges() {
         ArithmeticTextCalculator.resetPreparedTextCacheForTesting()
 
