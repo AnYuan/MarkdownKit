@@ -19,6 +19,12 @@ public class MarkdownCollectionView: UIView {
     public var onLinkTap: ((URL) -> Void)?
     public var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
     public var theme: Theme = .default
+    public var imageLoadingPolicy: ImageLoadingPolicy = .default {
+        didSet {
+            guard oldValue != imageLoadingPolicy else { return }
+            collectionView.reloadData()
+        }
+    }
     public var textInteractionMode: MarkdownTextInteractionMode = .asyncReadOnly {
         didSet {
             guard oldValue != textInteractionMode else { return }
@@ -96,6 +102,7 @@ extension MarkdownCollectionView: UICollectionViewDataSource, UICollectionViewDe
         cell.onLinkTap = onLinkTap
         cell.onCheckboxToggle = onCheckboxToggle
         cell.textInteractionMode = textInteractionMode
+        cell.imageLoadingPolicy = imageLoadingPolicy
         cell.onDetailsTap = { [weak self] details in
             self?.onToggleDetails?(indexPath.item, details)
         }

@@ -124,6 +124,7 @@ private class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     private var currentContinuation: CheckedContinuation<NativeImage?, Never>?
     private var activeRenderToken: UUID?
     private var timeoutWorkItem: DispatchWorkItem?
+    private var readinessTimeoutWorkItem: DispatchWorkItem?
     private var isRendering = false
     private var queue: [(source: String, continuation: CheckedContinuation<NativeImage?, Never>)] = []
     private let renderTimeout: TimeInterval = 4.0
@@ -155,12 +156,21 @@ private class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     func takeSnapshot(source: String) async -> NativeImage? {
         return await withCheckedContinuation { continuation in
             queue.append((source, continuation))
-            processNext()
+            if isWebViewReady {
+                processNext()
+            } else {
+                scheduleReadinessTimeoutIfNeeded()
+            }
         }
     }
     
     private func processNext() {
         guard !isRendering, !queue.isEmpty else { return }
+        guard isWebViewReady else {
+            scheduleReadinessTimeoutIfNeeded()
+            return
+        }
+
         isRendering = true
         let (source, continuation) = queue.removeFirst()
         currentContinuation = continuation
@@ -176,13 +186,6 @@ private class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         }
         timeoutWorkItem = timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + renderTimeout, execute: timeout)
-
-        if !isWebViewReady {
-            // Re-queue it, wait for initialization
-            queue.insert((source, continuation), at: 0)
-            isRendering = false
-            return
-        }
 
         let sourceBase64 = Data(source.utf8).base64EncodedString()
         let renderJS = """
@@ -246,7 +249,10 @@ private class MermaidSnapshotter: NSObject, WKNavigationDelegate {
                 guard let self else { return }
                 if let error {
                     MermaidDiagramAdapter.logger.error("Failed to initialize mermaid JS bundle: \(error)")
+                    self.failQueuedRenders()
                 } else {
+                    self.readinessTimeoutWorkItem?.cancel()
+                    self.readinessTimeoutWorkItem = nil
                     self.isWebViewReady = true
                     // Process any queued items
                     let pending = self.queue
@@ -260,6 +266,7 @@ private class MermaidSnapshotter: NSObject, WKNavigationDelegate {
             }
         } else {
             MermaidDiagramAdapter.logger.error("Could not load Mermaid script source")
+            failQueuedRenders()
         }
     }
 
@@ -282,7 +289,44 @@ private class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        if !isWebViewReady {
+            failQueuedRenders()
+            return
+        }
         completeCurrentRender(image: nil)
+    }
+
+    private func scheduleReadinessTimeoutIfNeeded() {
+        guard !isWebViewReady, readinessTimeoutWorkItem == nil, !queue.isEmpty else { return }
+
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, !self.isWebViewReady else { return }
+            MermaidDiagramAdapter.logger.error("Mermaid WebView initialization timed out")
+            self.failQueuedRenders()
+        }
+        readinessTimeoutWorkItem = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + renderTimeout, execute: timeout)
+    }
+
+    private func failQueuedRenders() {
+        readinessTimeoutWorkItem?.cancel()
+        readinessTimeoutWorkItem = nil
+
+        timeoutWorkItem?.cancel()
+        timeoutWorkItem = nil
+
+        let pending = queue
+        queue.removeAll()
+
+        let active = currentContinuation
+        currentContinuation = nil
+        activeRenderToken = nil
+        isRendering = false
+
+        active?.resume(returning: nil)
+        for item in pending {
+            item.continuation.resume(returning: nil)
+        }
     }
 
     private func snapshotRenderedSVG(from webView: WKWebView) {

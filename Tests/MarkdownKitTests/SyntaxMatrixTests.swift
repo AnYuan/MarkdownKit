@@ -43,7 +43,7 @@ final class SyntaxMatrixTests: XCTestCase {
             assertASTSemantics(for: fixture, document: document)
 
             var baselineTopLevelCount: Int?
-            let solver = LayoutSolver()
+            let solver = LayoutSolver(imageLoadingPolicy: .trusted)
 
             for width in widths {
                 let layout = await solver.solve(node: document, constrainedToWidth: width)

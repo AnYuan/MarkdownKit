@@ -21,4 +21,14 @@ public struct DiagramAdapterRegistry: Sendable {
     public func adapter(for language: DiagramLanguage) -> (any DiagramRenderingAdapter)? {
         adapters[language]
     }
+
+    var cacheFingerprint: Int {
+        var hasher = Hasher()
+        for language in DiagramLanguage.allCases {
+            guard let adapter = adapters[language] else { continue }
+            hasher.combine(language.rawValue)
+            hasher.combine(String(reflecting: type(of: adapter)))
+        }
+        return hasher.finalize()
+    }
 }

@@ -102,9 +102,11 @@ public final class LayoutCache {
     private class CacheKey: NSObject {
         let contentHash: Int
         let width: Int
+        let variantHash: Int
 
-        init(contentHash: Int, width: CGFloat) {
+        init(contentHash: Int, width: CGFloat, variantHash: Int) {
             self.contentHash = contentHash
+            self.variantHash = variantHash
             // Hash and compare exact integer widths since floating point jitter
             // inside scroll views often breaks fuzzy hit rates.
             self.width = Int(width.rounded())
@@ -114,12 +116,15 @@ public final class LayoutCache {
             var hasher = Hasher()
             hasher.combine(contentHash)
             hasher.combine(width)
+            hasher.combine(variantHash)
             return hasher.finalize()
         }
 
         override func isEqual(_ object: Any?) -> Bool {
             guard let other = object as? CacheKey else { return false }
-            return self.contentHash == other.contentHash && self.width == other.width
+            return self.contentHash == other.contentHash
+                && self.width == other.width
+                && self.variantHash == other.variantHash
         }
     }
 
@@ -144,14 +149,30 @@ public final class LayoutCache {
     // MARK: - Public API
 
     /// Retrieve a pre-calculated layout if it exists for the given node and container width.
-    public func getLayout(for node: MarkdownNode, constrainedToWidth width: CGFloat) -> LayoutResult? {
-        let key = CacheKey(contentHash: Self.contentFingerprint(of: node), width: width)
+    public func getLayout(
+        for node: MarkdownNode,
+        constrainedToWidth width: CGFloat,
+        variantHash: Int = 0
+    ) -> LayoutResult? {
+        let key = CacheKey(
+            contentHash: Self.contentFingerprint(of: node),
+            width: width,
+            variantHash: variantHash
+        )
         return cache.object(forKey: key)?.result
     }
 
     /// Store a freshly computed layout frame.
-    public func setLayout(_ result: LayoutResult, constrainedToWidth width: CGFloat) {
-        let key = CacheKey(contentHash: Self.contentFingerprint(of: result.node), width: width)
+    public func setLayout(
+        _ result: LayoutResult,
+        constrainedToWidth width: CGFloat,
+        variantHash: Int = 0
+    ) {
+        let key = CacheKey(
+            contentHash: Self.contentFingerprint(of: result.node),
+            width: width,
+            variantHash: variantHash
+        )
         let wrapper = LayoutResultWrapper(result)
         cache.setObject(wrapper, forKey: key)
     }

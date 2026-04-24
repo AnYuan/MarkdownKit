@@ -22,6 +22,7 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
     public var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
     public var onDetailsTap: ((DetailsNode) -> Void)?
     public var theme: Theme = .default
+    public var imageLoadingPolicy: ImageLoadingPolicy = .default
     public var textInteractionMode: MarkdownTextInteractionMode = .asyncReadOnly
 
     public override func prepareForReuse() {
@@ -45,13 +46,13 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
         case is ImageNode:
             if let imageView = hostedView as? AsyncImageView {
                 imageView.frame = CGRect(origin: .zero, size: layout.size)
-                imageView.configure(with: layout)
+                imageView.configure(with: layout, imageLoadingPolicy: imageLoadingPolicy)
             } else {
                 hostedView?.removeFromSuperview()
                 let imageView = AsyncImageView(frame: CGRect(origin: .zero, size: layout.size))
                 self.contentView.addSubview(imageView)
                 self.hostedView = imageView
-                imageView.configure(with: layout)
+                imageView.configure(with: layout, imageLoadingPolicy: imageLoadingPolicy)
             }
 
         case is CodeBlockNode, is DiagramNode:

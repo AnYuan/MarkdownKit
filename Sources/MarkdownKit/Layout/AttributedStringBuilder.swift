@@ -17,12 +17,20 @@ struct AttributedStringBuilder {
     private let highlighter: SplashHighlighter
     private let diagramRegistry: DiagramAdapterRegistry
     private let mathAdapter: any MathRenderingAdapter
+    private let imageLoadingPolicy: ImageLoadingPolicy
 
-    init(theme: Theme, highlighter: SplashHighlighter, diagramRegistry: DiagramAdapterRegistry, mathAdapter: any MathRenderingAdapter = DefaultMathRenderingAdapter()) {
+    init(
+        theme: Theme,
+        highlighter: SplashHighlighter,
+        diagramRegistry: DiagramAdapterRegistry,
+        mathAdapter: any MathRenderingAdapter = DefaultMathRenderingAdapter(),
+        imageLoadingPolicy: ImageLoadingPolicy = .default
+    ) {
         self.theme = theme
         self.highlighter = highlighter
         self.diagramRegistry = diagramRegistry
         self.mathAdapter = mathAdapter
+        self.imageLoadingPolicy = imageLoadingPolicy
     }
     func buildString(for node: MarkdownNode, constrainedToWidth maxWidth: CGFloat) async -> NSAttributedString {
         let string = NSMutableAttributedString()
@@ -583,7 +591,11 @@ struct AttributedStringBuilder {
                 result.append(linkText)
 
             case let image as ImageNode:
-                if let attachment = await ImageAttachmentBuilder.build(from: image, constrainedToWidth: maxWidth) {
+                if let attachment = await ImageAttachmentBuilder.build(
+                    from: image,
+                    constrainedToWidth: maxWidth,
+                    imageLoadingPolicy: imageLoadingPolicy
+                ) {
                     result.append(attachment)
                 } else {
                     var imgAttrs = baseAttributes

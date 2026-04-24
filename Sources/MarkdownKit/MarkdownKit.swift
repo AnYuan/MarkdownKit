@@ -52,12 +52,14 @@ public enum MarkdownKitEngine {
     public static func makeLayoutSolver(
         theme: Theme = .default,
         cache: LayoutCache = LayoutCache(),
-        diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry()
+        diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry(),
+        imageLoadingPolicy: ImageLoadingPolicy = .default
     ) -> LayoutSolver {
         LayoutSolver(
             theme: theme,
             cache: cache,
-            diagramRegistry: diagramRegistry
+            diagramRegistry: diagramRegistry,
+            imageLoadingPolicy: imageLoadingPolicy
         )
     }
 
