@@ -21,6 +21,8 @@ public class AsyncImageView: UIView {
     /// snapshot testing). Network URLs still use async loading regardless of this flag.
     public var displaysAsynchronously: Bool = true
 
+    public var imageLoadingPolicy: ImageLoadingPolicy = .default
+
     private var currentImageTask: Task<Void, Never>?
     private let urlSession: URLSession
     
@@ -45,7 +47,12 @@ public class AsyncImageView: UIView {
     }
     
     /// Binds the `LayoutResult` constraint to the view, launching an asynchronous download and decoding operation.
-    public func configure(with layout: LayoutResult) {
+    public func configure(
+        with layout: LayoutResult,
+        imageLoadingPolicy: ImageLoadingPolicy = .default
+    ) {
+        self.imageLoadingPolicy = imageLoadingPolicy
+
         // Cancel pending background operations if this cell was aggressively recycled
         currentImageTask?.cancel()
         
@@ -54,15 +61,23 @@ public class AsyncImageView: UIView {
         
         guard let imageNode = layout.node as? ImageNode,
               let source = imageNode.source,
-              let url = resolvedImageURL(from: source) else {
+              let resolved = ImageSourceResolver.resolve(source),
+              imageLoadingPolicy.allows(resolved) else {
             return
         }
         
         let targetSize = layout.size
+        let policy = imageLoadingPolicy
 
         // Synchronous path: load + decode on main thread for file URLs
-        if !displaysAsynchronously && url.isFileURL {
-            guard let data = try? Data(contentsOf: url), !data.isEmpty,
+        if !displaysAsynchronously && resolved.url.isFileURL {
+            if let fileSize = try? resolved.url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+               !policy.allowsDataCount(fileSize) {
+                return
+            }
+            guard let data = try? Data(contentsOf: resolved.url),
+                  !data.isEmpty,
+                  policy.allowsDataCount(data.count),
                   let sourceImage = UIImage(data: data) else { return }
             let scale = UIScreen.main.scale
             let format = UIGraphicsImageRendererFormat()
@@ -86,17 +101,25 @@ public class AsyncImageView: UIView {
             // 2. Fetch the Data (Network or Local File)
             let data: Data
             do {
-                if url.isFileURL {
-                    data = try Data(contentsOf: url)
+                if resolved.url.isFileURL {
+                    if let fileSize = try? resolved.url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+                       !policy.allowsDataCount(fileSize) {
+                        return
+                    }
+                    data = try Data(contentsOf: resolved.url)
                 } else {
                     let request = URLRequest(
-                        url: url,
+                        url: resolved.url,
                         cachePolicy: .returnCacheDataElseLoad,
                         timeoutInterval: 12.0
                     )
                     let (networkData, response) = try await self.urlSession.data(for: request)
                     if let http = response as? HTTPURLResponse,
                        !(200...299).contains(http.statusCode) {
+                        return
+                    }
+                    if response.expectedContentLength >= 0,
+                       !policy.allowsByteCount(response.expectedContentLength) {
                         return
                     }
                     if let mimeType = response.mimeType?.lowercased(),
@@ -106,11 +129,11 @@ public class AsyncImageView: UIView {
                     data = networkData
                 }
             } catch {
-                Self.logger.error("Failed to load image data for \(url): \(error)")
+                Self.logger.error("Failed to load image data for \(resolved.url): \(error)")
                 return
             }
 
-            guard !data.isEmpty else { return }
+            guard !data.isEmpty, policy.allowsDataCount(data.count) else { return }
             
             if Task.isCancelled { return }
             
@@ -139,31 +162,6 @@ public class AsyncImageView: UIView {
                 self.layer.contents = decodedImage.cgImage
             }
         }
-    }
-
-    private func resolvedImageURL(from source: String) -> URL? {
-        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        if let url = URL(string: trimmed), let scheme = url.scheme, !scheme.isEmpty {
-            return url
-        }
-
-        if trimmed.contains("://") {
-            return nil
-        }
-
-        if trimmed.hasPrefix("~/") {
-            let expandedPath = (trimmed as NSString).expandingTildeInPath
-            return URL(fileURLWithPath: expandedPath)
-        }
-
-        if trimmed.hasPrefix("/") {
-            return URL(fileURLWithPath: trimmed)
-        }
-
-        let cwd = FileManager.default.currentDirectoryPath
-        return URL(fileURLWithPath: cwd).appendingPathComponent(trimmed)
     }
 }
 #endif

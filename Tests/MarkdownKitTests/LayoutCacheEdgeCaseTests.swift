@@ -6,14 +6,15 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
     func testCacheMissForDifferentWidth() async throws {
         let doc = TestHelper.parse("# Hello")
         let cache = LayoutCache()
-        let solver = LayoutSolver(cache: cache)
+        let narrow = LayoutResult(node: doc, size: CGSize(width: 300, height: 42))
+        let wide = LayoutResult(node: doc, size: CGSize(width: 500, height: 24))
 
-        _ = await solver.solve(node: doc, constrainedToWidth: 300)
-        _ = await solver.solve(node: doc, constrainedToWidth: 500)
+        cache.setLayout(narrow, constrainedToWidth: 300)
+        cache.setLayout(wide, constrainedToWidth: 500)
 
         // Different widths should produce independent cache entries
-        XCTAssertNotNil(cache.getLayout(for: doc, constrainedToWidth: 300))
-        XCTAssertNotNil(cache.getLayout(for: doc, constrainedToWidth: 500))
+        XCTAssertEqual(cache.getLayout(for: doc, constrainedToWidth: 300)?.size.width, 300)
+        XCTAssertEqual(cache.getLayout(for: doc, constrainedToWidth: 500)?.size.width, 500)
     }
 
     func testCacheExactWidthHit() {
@@ -125,6 +126,28 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
         }
     }
 
+    func testSharedCacheDoesNotReuseLayoutAcrossThemes() async throws {
+        let cache = LayoutCache()
+        let doc = TestHelper.parse("A paragraph that wraps and measures with the active font.")
+
+        let smallTheme = makeTheme(paragraphFontSize: 12)
+        let largeTheme = makeTheme(paragraphFontSize: 28)
+
+        let smallLayout = await LayoutSolver(theme: smallTheme, cache: cache)
+            .solve(node: doc, constrainedToWidth: 220)
+        let largeLayout = await LayoutSolver(theme: largeTheme, cache: cache)
+            .solve(node: doc, constrainedToWidth: 220)
+
+        let smallParagraph = try XCTUnwrap(smallLayout.children.first)
+        let largeParagraph = try XCTUnwrap(largeLayout.children.first)
+
+        XCTAssertNotEqual(
+            smallParagraph.size.height,
+            largeParagraph.size.height,
+            "Theme-specific font metrics must not reuse a stale cached layout"
+        )
+    }
+
     func testCacheEvictionAtCountLimit() {
         let cache = LayoutCache(countLimit: 2)
 
@@ -145,5 +168,28 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
         // The most recent entry should definitely be there
         XCTAssertNotNil(cache.getLayout(for: nodes[2], constrainedToWidth: 400),
             "Most recently inserted entry should be retrievable")
+    }
+
+    private func makeTheme(paragraphFontSize: CGFloat) -> Theme {
+        let base = Theme.default
+        let typography = Theme.Typography(
+            header1: base.typography.header1,
+            header2: base.typography.header2,
+            header3: base.typography.header3,
+            paragraph: TypographyToken(font: Font.systemFont(ofSize: paragraphFontSize)),
+            codeBlock: base.typography.codeBlock
+        )
+        return Theme(
+            typography: typography,
+            colors: base.colors,
+            codeBlock: base.codeBlock,
+            blockQuote: base.blockQuote,
+            list: base.list,
+            details: base.details,
+            table: base.table,
+            syntaxColors: base.syntaxColors,
+            highlight: base.highlight,
+            thematicBreak: base.thematicBreak
+        )
     }
 }

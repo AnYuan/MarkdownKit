@@ -363,7 +363,10 @@ final class InlineFormattingLayoutTests: XCTestCase {
         let fixture = try makeRelativeFixtureImagePath()
         defer { try? FileManager.default.removeItem(at: fixture.absoluteURL) }
 
-        let layout = await TestHelper.solveLayout("![local image](\(fixture.relativePath))")
+        let layout = await TestHelper.solveLayout(
+            "![local image](\(fixture.relativePath))",
+            imageLoadingPolicy: .trusted
+        )
         let paraLayout = layout.children[0]
 
         guard let attrStr = paraLayout.attributedString else {
@@ -375,6 +378,25 @@ final class InlineFormattingLayoutTests: XCTestCase {
             attrStr.string.contains("\u{FFFC}"),
             "Relative local image path should render an attachment"
         )
+    }
+
+    func testDefaultImagePolicyBlocksRelativeLocalPath() async throws {
+        let fixture = try makeRelativeFixtureImagePath()
+        defer { try? FileManager.default.removeItem(at: fixture.absoluteURL) }
+
+        let layout = await TestHelper.solveLayout("![local image](\(fixture.relativePath))")
+        let paraLayout = layout.children[0]
+
+        guard let attrStr = paraLayout.attributedString else {
+            XCTFail("Expected attributed string")
+            return
+        }
+
+        XCTAssertFalse(
+            attrStr.string.contains("\u{FFFC}"),
+            "Default image policy should not render relative local files"
+        )
+        XCTAssertTrue(attrStr.string.contains("[local image]"))
     }
 
     func testMathLayoutProducesOutput() async throws {

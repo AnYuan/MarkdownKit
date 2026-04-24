@@ -21,28 +21,184 @@ public final class LayoutSolver: @unchecked Sendable {
     private let arithmeticCalculator: ArithmeticTextCalculator
     private let cache: LayoutCache
     private let builder: AttributedStringBuilder
+    private let cacheVariantHash: Int
     
     public init(
         theme: Theme = .default,
         cache: LayoutCache = LayoutCache(),
         diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry(),
-        mathAdapter: (any MathRenderingAdapter)? = nil
+        mathAdapter: (any MathRenderingAdapter)? = nil,
+        imageLoadingPolicy: ImageLoadingPolicy = .default
     ) {
         self.textCalculator = TextKitCalculator()
         self.arithmeticCalculator = ArithmeticTextCalculator()
         self.cache = cache
+        self.cacheVariantHash = Self.makeCacheVariantHash(
+            theme: theme,
+            diagramRegistry: diagramRegistry,
+            mathAdapter: mathAdapter ?? DefaultMathRenderingAdapter(),
+            imageLoadingPolicy: imageLoadingPolicy
+        )
         let highlighter = SplashHighlighter(theme: theme)
         self.builder = AttributedStringBuilder(
             theme: theme,
             highlighter: highlighter,
             diagramRegistry: diagramRegistry,
-            mathAdapter: mathAdapter ?? DefaultMathRenderingAdapter()
+            mathAdapter: mathAdapter ?? DefaultMathRenderingAdapter(),
+            imageLoadingPolicy: imageLoadingPolicy
         )
     }
     
     private final class SendableBox<T>: @unchecked Sendable {
         var value: T?
         init(_ value: T? = nil) { self.value = value }
+    }
+
+    private static func makeCacheVariantHash(
+        theme: Theme,
+        diagramRegistry: DiagramAdapterRegistry,
+        mathAdapter: any MathRenderingAdapter,
+        imageLoadingPolicy: ImageLoadingPolicy
+    ) -> Int {
+        var hasher = Hasher()
+        combineTheme(theme, into: &hasher)
+        hasher.combine(diagramRegistry.cacheFingerprint)
+        hasher.combine(String(reflecting: type(of: mathAdapter)))
+        hasher.combine(imageLoadingPolicy.cacheFingerprint)
+        return hasher.finalize()
+    }
+
+    private static func combineTheme(_ theme: Theme, into hasher: inout Hasher) {
+        combineTypography(theme.typography.header1, into: &hasher)
+        combineTypography(theme.typography.header2, into: &hasher)
+        combineTypography(theme.typography.header3, into: &hasher)
+        combineTypography(theme.typography.paragraph, into: &hasher)
+        combineTypography(theme.typography.codeBlock, into: &hasher)
+
+        combineColorToken(theme.colors.textColor, into: &hasher)
+        combineColorToken(theme.colors.codeColor, into: &hasher)
+        combineColorToken(theme.colors.inlineCodeColor, into: &hasher)
+        combineColorToken(theme.colors.tableColor, into: &hasher)
+        combineColorToken(theme.colors.linkColor, into: &hasher)
+        combineColorToken(theme.colors.blockQuoteColor, into: &hasher)
+        combineColorToken(theme.colors.thematicBreakColor, into: &hasher)
+
+        combineCodeBlockStyle(theme.codeBlock, into: &hasher)
+        hasher.combine(Double(theme.blockQuote.indent))
+        hasher.combine(theme.blockQuote.barCharacter)
+        hasher.combine(theme.list.bulletCharacter)
+        hasher.combine(theme.list.checkedCharacter)
+        hasher.combine(theme.list.uncheckedCharacter)
+        hasher.combine(Double(theme.list.nestedIndentDelta))
+        hasher.combine(theme.details.openDisclosure)
+        hasher.combine(theme.details.closedDisclosure)
+        combineTableStyle(theme.table, into: &hasher)
+        combineSyntaxColors(theme.syntaxColors, into: &hasher)
+        hasher.combine(Double(theme.highlight.cornerRadius))
+        hasher.combine(Double(theme.highlight.darkModeAlpha))
+        hasher.combine(Double(theme.highlight.lightModeAlpha))
+        hasher.combine(Double(theme.highlight.insetDX))
+        hasher.combine(Double(theme.highlight.insetDY))
+        hasher.combine(Double(theme.highlight.fadeInDuration))
+        hasher.combine(Double(theme.highlight.fadeOutDuration))
+        hasher.combine(Double(theme.thematicBreak.paddingTop))
+        hasher.combine(Double(theme.thematicBreak.paddingBottom))
+        hasher.combine(Double(theme.thematicBreak.dividerHeight))
+    }
+
+    private static func combineTypography(_ token: TypographyToken, into hasher: inout Hasher) {
+        combineFont(token.font, into: &hasher)
+        hasher.combine(Double(token.lineHeightMultiple))
+        hasher.combine(Double(token.paragraphSpacing))
+    }
+
+    private static func combineColorToken(_ token: ColorToken, into hasher: inout Hasher) {
+        combineColor(token.foreground, into: &hasher)
+        combineColor(token.background, into: &hasher)
+    }
+
+    private static func combineCodeBlockStyle(_ style: Theme.CodeBlockStyle, into hasher: inout Hasher) {
+        hasher.combine(Double(style.cornerRadius))
+        hasher.combine(Double(style.layoutTotalInset))
+        hasher.combine(Double(style.viewPadding))
+        combineFont(style.labelFont, into: &hasher)
+        hasher.combine(Double(style.labelParagraphSpacing))
+        hasher.combine(Double(style.inlineCodeFontSizeRatio))
+        hasher.combine(Double(style.inlineCodeMinFontSize))
+        hasher.combine(Double(style.copyButtonSize))
+        hasher.combine(Double(style.copyButtonCornerRadius))
+        hasher.combine(Double(style.copyButtonMargin))
+        hasher.combine(Double(style.copyButtonIconSize))
+        hasher.combine(Double(style.macOSCornerRadius))
+        hasher.combine(Double(style.macOSTextContainerInset.width))
+        hasher.combine(Double(style.macOSTextContainerInset.height))
+    }
+
+    private static func combineTableStyle(_ style: Theme.TableStyle, into hasher: inout Hasher) {
+        hasher.combine(Double(style.cornerRadius))
+        hasher.combine(Double(style.borderWidth))
+        hasher.combine(Double(style.cellPaddingH))
+        hasher.combine(Double(style.cellPaddingV))
+        hasher.combine(Double(style.dividerHeight))
+        hasher.combine(Double(style.fontSize))
+        hasher.combine(Double(style.uiKitHorizontalInset))
+        hasher.combine(Double(style.appKitHorizontalPadding))
+        hasher.combine(Double(style.appKitBorderAllowance))
+        hasher.combine(Double(style.minimumReadableColumnWidth))
+        hasher.combine(Double(style.cellParagraphSpacing))
+        hasher.combine(style.narrowFallbackMaxChars)
+        hasher.combine(Double(style.alternatingRowAlpha))
+        hasher.combine(Double(style.separatorAlpha))
+    }
+
+    private static func combineSyntaxColors(_ colors: Theme.SyntaxColors, into hasher: inout Hasher) {
+        combineColor(colors.keyword, into: &hasher)
+        combineColor(colors.string, into: &hasher)
+        combineColor(colors.type, into: &hasher)
+        combineColor(colors.call, into: &hasher)
+        combineColor(colors.number, into: &hasher)
+        combineColor(colors.comment, into: &hasher)
+        combineColor(colors.property, into: &hasher)
+        combineColor(colors.dotAccess, into: &hasher)
+        combineColor(colors.preprocessing, into: &hasher)
+    }
+
+    private static func combineFont(_ font: Font, into hasher: inout Hasher) {
+        hasher.combine(font.fontName)
+        hasher.combine(Double(font.pointSize))
+        #if canImport(UIKit)
+        hasher.combine(font.fontDescriptor.symbolicTraits.rawValue)
+        #elseif canImport(AppKit)
+        hasher.combine(font.fontDescriptor.symbolicTraits.rawValue)
+        #endif
+    }
+
+    private static func combineColor(_ color: Color, into hasher: inout Hasher) {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        #if canImport(UIKit)
+        if color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
+            hasher.combine(Double(red))
+            hasher.combine(Double(green))
+            hasher.combine(Double(blue))
+            hasher.combine(Double(alpha))
+        } else {
+            hasher.combine(String(describing: color))
+        }
+        #elseif canImport(AppKit)
+        if let rgb = color.usingColorSpace(.sRGB) {
+            rgb.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            hasher.combine(Double(red))
+            hasher.combine(Double(green))
+            hasher.combine(Double(blue))
+            hasher.combine(Double(alpha))
+        } else {
+            hasher.combine(String(describing: color))
+        }
+        #endif
     }
 
     /// Recursively calculates the layout for a node and all its children.
@@ -57,7 +213,7 @@ public final class LayoutSolver: @unchecked Sendable {
         await Task.yield()
 
         // Return instantly if we already calculated this specific layout at this width
-        if let cached = cache.getLayout(for: node, constrainedToWidth: maxWidth) {
+        if let cached = cache.getLayout(for: node, constrainedToWidth: maxWidth, variantHash: cacheVariantHash) {
             return cached
         }
 
@@ -65,14 +221,14 @@ public final class LayoutSolver: @unchecked Sendable {
         // Card-style table rendering on iOS: bypass TextKit, draw directly via CGContext
         if let table = node as? TableNode {
             let result = solveTableCard(table: table, constrainedToWidth: maxWidth)
-            cache.setLayout(result, constrainedToWidth: maxWidth)
+            cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
             return result
         }
 
         // Thematic break: draw a hairline matching legacy DividerAttachment
         if node is ThematicBreakNode {
             let result = solveThematicBreak(node: node, constrainedToWidth: maxWidth)
-            cache.setLayout(result, constrainedToWidth: maxWidth)
+            cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
             return result
         }
         #endif
@@ -139,7 +295,7 @@ public final class LayoutSolver: @unchecked Sendable {
         )
 
         // Memoize the result
-        cache.setLayout(result, constrainedToWidth: maxWidth)
+        cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
 
         return result
     }
@@ -148,20 +304,20 @@ public final class LayoutSolver: @unchecked Sendable {
     /// Uses `buildStringSync` (cached math / fallback text, no async rendering).
     /// Safe to call from the main thread without RunLoop polling.
     public func solveSync(node: MarkdownNode, constrainedToWidth maxWidth: CGFloat) -> LayoutResult {
-        if let cached = cache.getLayout(for: node, constrainedToWidth: maxWidth) {
+        if let cached = cache.getLayout(for: node, constrainedToWidth: maxWidth, variantHash: cacheVariantHash) {
             return cached
         }
 
         #if canImport(UIKit) && !os(watchOS)
         if let table = node as? TableNode {
             let result = solveTableCard(table: table, constrainedToWidth: maxWidth)
-            cache.setLayout(result, constrainedToWidth: maxWidth)
+            cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
             return result
         }
 
         if node is ThematicBreakNode {
             let result = solveThematicBreak(node: node, constrainedToWidth: maxWidth)
-            cache.setLayout(result, constrainedToWidth: maxWidth)
+            cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
             return result
         }
         #endif
@@ -202,7 +358,7 @@ public final class LayoutSolver: @unchecked Sendable {
             attributedString: styledString,
             children: childLayouts
         )
-        cache.setLayout(result, constrainedToWidth: maxWidth)
+        cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
         return result
     }
 
