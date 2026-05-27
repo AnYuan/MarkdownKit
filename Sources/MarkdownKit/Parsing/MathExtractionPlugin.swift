@@ -146,18 +146,35 @@ public struct MathExtractionPlugin: ASTPlugin {
         // so `AST.transform` can preserve UUID + fingerprint and skip rebuild.
         guard textNode.text.contains("$") else { return [textNode] }
 
-        let text = Array(textNode.text)
-        guard !text.isEmpty else { return [] }
+        // Scanning happens at the `Unicode.Scalar` level — every meaningful
+        // delimiter (`$`, `\`) is a single ASCII scalar, so we never split
+        // inside a grapheme cluster. The previous `Array(text)` (Character)
+        // materialized an entire grapheme array per text node; iterating the
+        // `UnicodeScalarView` directly is allocation-free.
+        let text = textNode.text
+        let scalars = text.unicodeScalars
+        guard !scalars.isEmpty else { return [] }
+
+        let dollar: Unicode.Scalar = "$"
 
         var result: [MarkdownNode] = []
         var buffer = ""
-        var idx = 0
+        var idx = scalars.startIndex
 
-        while idx < text.count {
+        while idx < scalars.endIndex {
+            let scalar = scalars[idx]
+            let next = scalars.index(after: idx)
+
             // Block math: $$...$$ within a paragraph (e.g. inside list items)
-            if idx + 1 < text.count, text[idx] == "$", text[idx + 1] == "$", !isEscaped(text, at: idx),
-               let close = findClosingDoubleDollar(in: text, startingAt: idx + 2) {
-                let equation = String(text[(idx + 2)..<close])
+            if scalar == dollar,
+               next < scalars.endIndex,
+               scalars[next] == dollar,
+               !isEscaped(scalars: scalars, at: idx),
+               let close = findClosingDoubleDollar(
+                   scalars: scalars,
+                   startingAt: scalars.index(after: next)
+               ) {
+                let equation = String(text[scalars.index(after: next)..<close])
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if !equation.isEmpty {
                     if !buffer.isEmpty {
@@ -165,34 +182,36 @@ public struct MathExtractionPlugin: ASTPlugin {
                         buffer.removeAll(keepingCapacity: true)
                     }
                     result.append(MathNode(range: nil, style: .block, equation: equation))
-                    idx = close + 2
+                    idx = scalars.index(close, offsetBy: 2)
                     continue
                 }
             }
 
             // Inline math: $...$
-            if text[idx] == "$", !isEscaped(text, at: idx), !isDoubleDollar(text, at: idx),
-               let close = findClosingDollar(in: text, startingAt: idx + 1) {
-                let equation = String(text[(idx + 1)..<close])
+            if scalar == dollar,
+               !isEscaped(scalars: scalars, at: idx),
+               !isDoubleDollar(scalars: scalars, at: idx),
+               let close = findClosingDollar(scalars: scalars, startingAt: next) {
+                let equation = String(text[next..<close])
                 if isValidInlineEquation(equation) {
                     if !buffer.isEmpty {
                         result.append(TextNode(range: nil, text: buffer))
                         buffer.removeAll(keepingCapacity: true)
                     }
                     result.append(MathNode(range: nil, style: .inline, equation: equation))
-                    idx = close + 1
+                    idx = scalars.index(after: close)
                     continue
                 }
 
                 // If we found a matching pair but it doesn't look like a valid
                 // equation, keep the whole segment literal to avoid re-parsing
                 // the closing `$` as a new opener.
-                buffer.append(contentsOf: String(text[idx...close]))
-                idx = close + 1
+                buffer.append(contentsOf: text[idx...close])
+                idx = scalars.index(after: close)
                 continue
             }
-            buffer.append(text[idx])
-            idx += 1
+            buffer.unicodeScalars.append(scalar)
+            idx = next
         }
 
         if !buffer.isEmpty {
@@ -201,14 +220,22 @@ public struct MathExtractionPlugin: ASTPlugin {
         return result
     }
 
-    private func findClosingDoubleDollar(in text: [Character], startingAt start: Int) -> Int? {
-        guard start < text.count else { return nil }
+    private func findClosingDoubleDollar(
+        scalars: String.UnicodeScalarView,
+        startingAt start: String.UnicodeScalarView.Index
+    ) -> String.UnicodeScalarView.Index? {
+        guard start < scalars.endIndex else { return nil }
+        let dollar: Unicode.Scalar = "$"
         var idx = start
-        while idx + 1 < text.count {
-            if text[idx] == "$", text[idx + 1] == "$", !isEscaped(text, at: idx) {
+        while idx < scalars.endIndex {
+            let next = scalars.index(after: idx)
+            if scalars[idx] == dollar,
+               next < scalars.endIndex,
+               scalars[next] == dollar,
+               !isEscaped(scalars: scalars, at: idx) {
                 return idx
             }
-            idx += 1
+            idx = next
         }
         return nil
     }
@@ -223,34 +250,57 @@ public struct MathExtractionPlugin: ASTPlugin {
         }
     }
 
-    private func findClosingDollar(in text: [Character], startingAt start: Int) -> Int? {
-        guard start < text.count else { return nil }
+    private func findClosingDollar(
+        scalars: String.UnicodeScalarView,
+        startingAt start: String.UnicodeScalarView.Index
+    ) -> String.UnicodeScalarView.Index? {
+        guard start < scalars.endIndex else { return nil }
+        let dollar: Unicode.Scalar = "$"
         var idx = start
-        while idx < text.count {
-            if text[idx] == "$", !isEscaped(text, at: idx), !isDoubleDollar(text, at: idx) {
+        while idx < scalars.endIndex {
+            if scalars[idx] == dollar,
+               !isEscaped(scalars: scalars, at: idx),
+               !isDoubleDollar(scalars: scalars, at: idx) {
                 return idx
             }
-            idx += 1
+            idx = scalars.index(after: idx)
         }
         return nil
     }
 
-    private func isEscaped(_ text: [Character], at index: Int) -> Bool {
-        guard index > 0 else { return false }
+    private func isEscaped(
+        scalars: String.UnicodeScalarView,
+        at index: String.UnicodeScalarView.Index
+    ) -> Bool {
+        guard index > scalars.startIndex else { return false }
+        let backslash: Unicode.Scalar = "\\"
         var slashCount = 0
-        var idx = index - 1
-        while idx >= 0, text[idx] == "\\" {
+        var idx = scalars.index(before: index)
+        while scalars[idx] == backslash {
             slashCount += 1
-            if idx == 0 { break }
-            idx -= 1
+            if idx == scalars.startIndex { break }
+            idx = scalars.index(before: idx)
         }
         return slashCount % 2 == 1
     }
 
-    private func isDoubleDollar(_ text: [Character], at index: Int) -> Bool {
-        let hasPrev = index > 0 && text[index - 1] == "$" && !isEscaped(text, at: index - 1)
-        let hasNext = (index + 1) < text.count && text[index + 1] == "$" && !isEscaped(text, at: index + 1)
-        return hasPrev || hasNext
+    private func isDoubleDollar(
+        scalars: String.UnicodeScalarView,
+        at index: String.UnicodeScalarView.Index
+    ) -> Bool {
+        let dollar: Unicode.Scalar = "$"
+        let prevHasDollar: Bool
+        if index > scalars.startIndex {
+            let prev = scalars.index(before: index)
+            prevHasDollar = scalars[prev] == dollar && !isEscaped(scalars: scalars, at: prev)
+        } else {
+            prevHasDollar = false
+        }
+        let next = scalars.index(after: index)
+        let nextHasDollar = next < scalars.endIndex
+            && scalars[next] == dollar
+            && !isEscaped(scalars: scalars, at: next)
+        return prevHasDollar || nextHasDollar
     }
 
     private func isValidInlineEquation(_ equation: String) -> Bool {

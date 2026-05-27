@@ -76,6 +76,52 @@ final class MathExtractionPluginTests: XCTestCase {
         XCTAssertEqual(fullText, "Price: $x + y")
     }
 
+    // MARK: - Unicode-correctness regression tests
+    //
+    // `extractInlineMath` previously materialized the input as
+    // `[Character]` (grapheme array). Switching to `String.UnicodeScalarView`
+    // is allocation-cheaper but slicing now happens at scalar boundaries.
+    // These cases make sure emoji + ZWJ sequences in surrounding text don't
+    // get mis-sliced — `$` and `\` are ASCII single-scalars so any cut
+    // boundary stays inside ASCII and preserves graphemes on either side.
+
+    func testEmojiSurroundingInlineMathSurvivesSlicing() throws {
+        // Single-scalar emoji + ZWJ family emoji on both sides of the math.
+        let markdown = "Hello 👋 $x$ 👨‍👩‍👧‍👦 done"
+        let doc = TestHelper.parse(markdown, plugins: [MathExtractionPlugin()])
+
+        guard let paragraph = doc.children.first as? ParagraphNode else {
+            XCTFail("Expected ParagraphNode")
+            return
+        }
+        XCTAssertEqual(paragraph.children.count, 3)
+
+        let leading = paragraph.children[0] as? TextNode
+        let math = paragraph.children[1] as? MathNode
+        let trailing = paragraph.children[2] as? TextNode
+
+        XCTAssertEqual(leading?.text, "Hello 👋 ")
+        XCTAssertEqual(math?.equation, "x")
+        XCTAssertEqual(trailing?.text, " 👨‍👩‍👧‍👦 done")
+    }
+
+    func testBidiBoundaryAroundInlineMath() throws {
+        // RTL Arabic before, LTR after — boundary semantics must hold.
+        let markdown = "مرحبا $E=mc^2$ world"
+        let doc = TestHelper.parse(markdown, plugins: [MathExtractionPlugin()])
+
+        guard let paragraph = doc.children.first as? ParagraphNode else {
+            XCTFail("Expected ParagraphNode")
+            return
+        }
+
+        let math = paragraph.children.compactMap { $0 as? MathNode }.first
+        XCTAssertEqual(math?.equation, "E=mc^2")
+
+        let recovered = paragraph.children.compactMap { ($0 as? TextNode)?.text }.joined()
+        XCTAssertEqual(recovered, "مرحبا  world")
+    }
+
     func testBlockMathAcrossParagraphsConvertsToSingleMathNode() throws {
         let markdown = """
         $$
