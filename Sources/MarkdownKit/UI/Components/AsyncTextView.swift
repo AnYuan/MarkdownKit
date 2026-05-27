@@ -63,6 +63,12 @@ public class AsyncTextView: UIView {
         return hl
     }()
 
+    /// Cached display scale, refreshed whenever the view moves between windows
+    /// (e.g. external display, iPad split-view). Replaces deprecated
+    /// `UIScreen.main.scale`, which returns the wrong value in multi-screen
+    /// setups since iOS 16.
+    private var currentDisplayScale: CGFloat = 1
+
     // MARK: - Init
 
     public override init(frame: CGRect) {
@@ -80,7 +86,8 @@ public class AsyncTextView: UIView {
         // Pin old content at top-left during frame resizes so it doesn't stretch/distort
         // while the new async draw is in-flight. Prevents visual flicker during streaming.
         self.layer.contentsGravity = .topLeft
-        self.layer.contentsScale = UIScreen.main.scale
+        self.currentDisplayScale = resolveDisplayScale()
+        self.layer.contentsScale = currentDisplayScale
 
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         addGestureRecognizer(tapGesture)
@@ -89,6 +96,29 @@ public class AsyncTextView: UIView {
         pressGesture.minimumPressDuration = 0.05
         pressGesture.cancelsTouchesInView = false
         addGestureRecognizer(pressGesture)
+    }
+
+    public override func didMoveToWindow() {
+        super.didMoveToWindow()
+        // When the view enters a new window (e.g. moved to an external
+        // display) the display scale may change. Refresh to keep rasterized
+        // text crisp.
+        let newScale = resolveDisplayScale()
+        if newScale != currentDisplayScale {
+            currentDisplayScale = newScale
+            layer.contentsScale = newScale
+        }
+    }
+
+    private func resolveDisplayScale() -> CGFloat {
+        // Prefer the window's screen so external displays return the correct
+        // value. `traitCollection.displayScale` is the canonical fallback once
+        // the view is attached but before the window's scene resolves.
+        if let scale = window?.windowScene?.screen.scale, scale > 0 {
+            return scale
+        }
+        let trait = traitCollection.displayScale
+        return trait > 0 ? trait : 2
     }
 
     // MARK: - Reuse
@@ -127,7 +157,7 @@ public class AsyncTextView: UIView {
         if let customDraw = layout.customDraw {
             self.currentAttributedString = layout.attributedString
             let size = layout.size
-            let scale = UIScreen.main.scale
+            let scale = currentDisplayScale
 
             if displaysAsynchronously {
                 currentDrawTask = Task {
@@ -159,7 +189,7 @@ public class AsyncTextView: UIView {
         self.currentAttributedString = string
 
         let size = layout.size
-        let scale = UIScreen.main.scale
+        let scale = currentDisplayScale
 
         if displaysAsynchronously {
             nonisolated(unsafe) let drawString = NSAttributedString(attributedString: string)

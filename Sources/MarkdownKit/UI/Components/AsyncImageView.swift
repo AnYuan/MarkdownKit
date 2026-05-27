@@ -16,6 +16,28 @@ public class AsyncImageView: UIView {
 
     private nonisolated(unsafe) static let logger = Logger(subsystem: "com.markdownkit", category: "AsyncImageView")
 
+    /// Shared cache of decoded, downsampled images keyed by `(url, target size,
+    /// scale)`. Distinct from `ImageAttachmentBuilder.cache`, which holds the
+    /// raw `UIImage` used by inline text attachments. Block-display images
+    /// (rendered via this view) are decoded at the block's target size and
+    /// can't be reused at the inline size.
+    /// `countLimit` is a soft cap.
+    nonisolated(unsafe) private static let imageCache: NSCache<NSString, UIImage> = {
+        let c = NSCache<NSString, UIImage>()
+        c.countLimit = 64
+        return c
+    }()
+
+    /// Drops all decoded block-display images. Hosts can call this from
+    /// memory-warning handlers.
+    public static func clearImageCache() {
+        imageCache.removeAllObjects()
+    }
+
+    private static func cacheKey(url: URL, size: CGSize, scale: CGFloat) -> NSString {
+        "\(url.absoluteString)|\(Int(size.width.rounded()))x\(Int(size.height.rounded()))@\(scale)" as NSString
+    }
+
     /// When `true` (the default), images are fetched and decoded on a background queue.
     /// Set to `false` to load file-URL images synchronously on the main thread (useful for
     /// snapshot testing). Network URLs still use async loading regardless of this flag.
@@ -25,25 +47,44 @@ public class AsyncImageView: UIView {
 
     private var currentImageTask: Task<Void, Never>?
     private let urlSession: URLSession
-    
+
+    /// Cached display scale, refreshed in `didMoveToWindow` so external
+    /// displays / iPad split-view get the correct value. Replaces the
+    /// deprecated `UIScreen.main.scale`.
+    private var currentDisplayScale: CGFloat = 1
+
     public override init(frame: CGRect) {
         // High-level shared session for prototype
-        self.urlSession = URLSession.shared 
+        self.urlSession = URLSession.shared
         super.init(frame: frame)
         setup()
     }
-    
+
     required init?(coder: NSCoder) {
         self.urlSession = URLSession.shared
         super.init(coder: coder)
         setup()
     }
-    
+
     private func setup() {
         self.backgroundColor = .clear
-        
+
         // Essential: CoreAnimation will automatically scale our CGImage bytes into the bounding box
         self.layer.contentsGravity = .resizeAspect
+        self.currentDisplayScale = resolveDisplayScale()
+    }
+
+    public override func didMoveToWindow() {
+        super.didMoveToWindow()
+        currentDisplayScale = resolveDisplayScale()
+    }
+
+    private func resolveDisplayScale() -> CGFloat {
+        if let scale = window?.windowScene?.screen.scale, scale > 0 {
+            return scale
+        }
+        let trait = traitCollection.displayScale
+        return trait > 0 ? trait : 2
     }
     
     /// Resets internal state so the view can be reused by a recycling cell.
@@ -65,16 +106,24 @@ public class AsyncImageView: UIView {
         
         self.frame.size = layout.size
         self.layer.contents = nil // Clear previous image immediately
-        
+
         guard let imageNode = layout.node as? ImageNode,
               let source = imageNode.source,
               let resolved = ImageSourceResolver.resolve(source),
               imageLoadingPolicy.allows(resolved) else {
             return
         }
-        
+
         let targetSize = layout.size
         let policy = imageLoadingPolicy
+
+        // Fast path: another cell already decoded this URL at this exact size.
+        // Mounts synchronously, avoids re-download and re-decode on scroll-back.
+        let cacheKey = Self.cacheKey(url: resolved.url, size: targetSize, scale: currentDisplayScale)
+        if let cached = Self.imageCache.object(forKey: cacheKey) {
+            layer.contents = cached.cgImage
+            return
+        }
 
         // Synchronous path: load + decode on main thread for file URLs
         if !displaysAsynchronously && resolved.url.isFileURL {
@@ -86,16 +135,22 @@ public class AsyncImageView: UIView {
                   !data.isEmpty,
                   policy.allowsDataCount(data.count),
                   let sourceImage = UIImage(data: data) else { return }
-            let scale = UIScreen.main.scale
+            let scale = currentDisplayScale
             let format = UIGraphicsImageRendererFormat()
             format.scale = scale
             let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
             let decoded = renderer.image { _ in
                 sourceImage.draw(in: CGRect(origin: .zero, size: targetSize))
             }
+            Self.imageCache.setObject(decoded, forKey: cacheKey)
             self.layer.contents = decoded.cgImage
             return
         }
+
+        // Capture the display scale on the main actor before we drop off it,
+        // so the background decoder doesn't have to hop back to MainActor
+        // just to read `UIScreen.main`.
+        let resolvedScale = currentDisplayScale
 
         // Asynchronous path: Texture's exact Display State process
         currentImageTask = Task.detached(priority: .userInitiated) { [weak self] in
@@ -151,9 +206,8 @@ public class AsyncImageView: UIView {
             guard let sourceImage = UIImage(data: data) else { return }
             
             // 4. Background Downsampling (Memory Optimization)
-            let scale = await UIScreen.main.scale
             let format = UIGraphicsImageRendererFormat()
-            format.scale = scale
+            format.scale = resolvedScale
             
             // Calculate a resizing constraint that preserves aspect ratio but shrinks the huge photo
             // into the small bounding box LayoutSolver determined.
@@ -163,7 +217,11 @@ public class AsyncImageView: UIView {
             }
             
             if Task.isCancelled { return }
-            
+
+            // Populate the shared cache before the main-actor hop. NSCache is
+            // documented as thread-safe, so this is safe off-main.
+            Self.imageCache.setObject(decodedImage, forKey: cacheKey)
+
             // 5. Mount the uncompressed GPU-ready buffer to the layer (Instantaneous)
             await MainActor.run {
                 self.layer.contents = decodedImage.cgImage

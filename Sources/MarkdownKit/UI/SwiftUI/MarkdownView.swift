@@ -80,6 +80,8 @@ public struct MarkdownView: View {
                 imageLoadingPolicy: imageLoadingPolicy
             )
             .task {
+                // First paint is immediate — debouncing here would add latency
+                // before any text appears.
                 engine.renderForCurrentPlatform(
                     markdown: text,
                     plugins: plugins,
@@ -89,22 +91,15 @@ public struct MarkdownView: View {
                     imageLoadingPolicy: imageLoadingPolicy
                 )
             }
-            .onChange(of: text) { _, newText in
-                engine.renderForCurrentPlatform(
-                    markdown: newText,
+            // Single `.onChange` over a combined input so a simultaneous
+            // text+width change only triggers one render (the previous code
+            // could race two cancellations).
+            .onChange(of: RenderInput(text: text, width: geometry.size.width)) { _, newInput in
+                engine.scheduleDebouncedTextRender(
+                    markdown: newInput.text,
                     plugins: plugins,
                     theme: theme,
-                    fallbackWidth: geometry.size.width,
-                    diagramRegistry: diagramRegistry,
-                    imageLoadingPolicy: imageLoadingPolicy
-                )
-            }
-            .onChange(of: geometry.size.width) { _, newWidth in
-                engine.renderOnGeometryChange(
-                    markdown: text,
-                    plugins: plugins,
-                    theme: theme,
-                    newWidth: newWidth,
+                    fallbackWidth: newInput.width,
                     diagramRegistry: diagramRegistry,
                     imageLoadingPolicy: imageLoadingPolicy
                 )
@@ -134,6 +129,14 @@ public struct MarkdownView: View {
         copy.textInteractionMode = mode
         return copy
     }
+}
+
+/// Combined input for the single `.onChange` so simultaneous text + width
+/// changes coalesce into one render task.
+@available(iOS 14.0, macOS 11.0, *)
+private struct RenderInput: Equatable {
+    let text: String
+    let width: CGFloat
 }
 
 // MARK: - Async Rendering Engine
@@ -299,6 +302,33 @@ private final class MarkdownEngine: ObservableObject {
             imageLoadingPolicy: imageLoadingPolicy
         )
         #endif
+    }
+
+    /// Debounced wrapper for text/width changes. Sleeps for `debounceDelay`
+    /// before kicking off the actual parse + layout work. Each new call
+    /// supersedes any pending one, so a fast typist sees a single render
+    /// after they pause instead of one per keystroke.
+    func scheduleDebouncedTextRender(
+        markdown: String,
+        plugins: [ASTPlugin],
+        theme: Theme,
+        fallbackWidth: CGFloat,
+        diagramRegistry: DiagramAdapterRegistry,
+        imageLoadingPolicy: ImageLoadingPolicy
+    ) {
+        renderTask?.cancel()
+        renderTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+            guard !Task.isCancelled, let self else { return }
+            self.renderForCurrentPlatform(
+                markdown: markdown,
+                plugins: plugins,
+                theme: theme,
+                fallbackWidth: fallbackWidth,
+                diagramRegistry: diagramRegistry,
+                imageLoadingPolicy: imageLoadingPolicy
+            )
+        }
     }
 
     func renderOnGeometryChange(
