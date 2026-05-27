@@ -37,17 +37,41 @@ public struct LayoutResult {
     /// calls this instead of the default `NSLayoutManager` draw path.
     public let customDraw: (@Sendable (CGContext, CGSize) -> Void)?
 
+    /// Stable cross-render identity used by diffable data sources to detect
+    /// insert / delete / reuse across re-parses. Computed by `LayoutSolver` as
+    /// it walks the document and assigns each layout its index path.
+    public let stableIdentity: StableNodeIdentity
+
     public init(
         node: MarkdownNode,
         size: CGSize,
         attributedString: NSAttributedString? = nil,
         children: [LayoutResult] = [],
-        customDraw: (@Sendable (CGContext, CGSize) -> Void)? = nil
+        customDraw: (@Sendable (CGContext, CGSize) -> Void)? = nil,
+        stableIdentity: StableNodeIdentity? = nil
     ) {
         self.node = node
         self.size = size
         self.attributedString = attributedString
         self.children = children
         self.customDraw = customDraw
+        // Default to a top-level (empty-path) identity. `LayoutSolver` overrides
+        // this with the actual index path when recursing the document tree.
+        self.stableIdentity = stableIdentity
+            ?? StableNodeIdentity(contentFingerprint: node.contentFingerprint, pathHash: 0)
+    }
+
+    /// Returns a copy of this result with its `stableIdentity` replaced. Used
+    /// by `LayoutSolver` to stamp the correct document-position hash onto
+    /// otherwise-cached results.
+    public func withStableIdentity(_ identity: StableNodeIdentity) -> LayoutResult {
+        LayoutResult(
+            node: node,
+            size: size,
+            attributedString: attributedString,
+            children: children,
+            customDraw: customDraw,
+            stableIdentity: identity
+        )
     }
 }

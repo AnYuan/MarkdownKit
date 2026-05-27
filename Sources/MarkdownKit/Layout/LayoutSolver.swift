@@ -147,8 +147,9 @@ public final class LayoutSolver: @unchecked Sendable {
         var childLayouts: [LayoutResult] = []
 
         if let doc = node as? DocumentNode {
-            for child in doc.children {
-                childLayouts.append(await solve(node: child, constrainedToWidth: maxWidth))
+            for (index, child) in doc.children.enumerated() {
+                let childResult = await solve(node: child, constrainedToWidth: maxWidth)
+                childLayouts.append(Self.applyTopLevelIdentity(childResult, index: index))
             }
         }
 
@@ -213,8 +214,9 @@ public final class LayoutSolver: @unchecked Sendable {
 
         var childLayouts: [LayoutResult] = []
         if let doc = node as? DocumentNode {
-            for child in doc.children {
-                childLayouts.append(solveSync(node: child, constrainedToWidth: maxWidth))
+            for (index, child) in doc.children.enumerated() {
+                let childResult = solveSync(node: child, constrainedToWidth: maxWidth)
+                childLayouts.append(Self.applyTopLevelIdentity(childResult, index: index))
             }
         }
 
@@ -226,6 +228,19 @@ public final class LayoutSolver: @unchecked Sendable {
         )
         cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
         return result
+    }
+
+    /// Stamps a top-level document-position identity onto the layout. Used by
+    /// both `solve` and `solveSync` so the returned `LayoutResult` carries the
+    /// `(contentFingerprint, pathHash)` pair the diffable data source needs.
+    /// Cache returns are also re-stamped: a cached entry for a paragraph
+    /// previously at index 0 must be re-identified when it appears at index 5.
+    private static func applyTopLevelIdentity(_ layout: LayoutResult, index: Int) -> LayoutResult {
+        let identity = StableNodeIdentity(
+            contentFingerprint: layout.node.contentFingerprint,
+            pathHash: StableNodeIdentity.pathHash(for: [index])
+        )
+        return layout.withStableIdentity(identity)
     }
 
     // MARK: - Thematic Break Layout (iOS only)
