@@ -405,9 +405,6 @@ struct AttributedStringBuilder {
         ]
     }
     
-    // MARK: - Async Math Helper
-
-    
     // MARK: - Font Trait Helper
 
     private func fontWithTrait(_ font: Font, trait: FontTrait) -> Font {
@@ -656,10 +653,4 @@ struct AttributedStringBuilder {
         }
         return result
     }
-
-
-
-
-
-
 }

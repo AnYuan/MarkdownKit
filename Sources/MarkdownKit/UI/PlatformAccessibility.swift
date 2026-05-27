@@ -6,88 +6,51 @@ import UIKit
 import AppKit
 #endif
 
-/// A cross-platform helper struct to easily extract standard accessibility 
+/// A cross-platform helper struct to easily extract standard accessibility
 /// roles and string representations from a given `LayoutResult`.
+///
+/// The expensive work — checkbox enumeration, role-hint derivation — happens
+/// once on the background layout thread in `LayoutResult.accessibility`.
+/// This struct just maps those cached values into platform-specific traits.
 public struct PlatformAccessibility {
-    
-    /// Returns the descriptive text value (the spoken text) for a given layout node.
+
     public static func accessibilityLabel(for layout: LayoutResult) -> String? {
-        if let details = layout.node as? DetailsNode {
-            return "Collapsible Section: \((details.summary?.children.first as? TextNode)?.text ?? "Details")"
-        }
-        
-        if let math = layout.node as? MathNode {
-            return "Math Equation: \(math.equation)"
-        }
-        
-        if let image = layout.node as? ImageNode {
-            return "Image: \(image.altText ?? image.source ?? "Attachment")"
-        }
-        
-        // General text fallback
-        return layout.attributedString?.string
+        layout.accessibility.label
     }
-    
-    /// Returns a generic value string for states like "Expanded" or "Collapsed".
+
     public static func accessibilityValue(for layout: LayoutResult) -> String? {
-        if let details = layout.node as? DetailsNode {
-            return details.isOpen ? "Expanded" : "Collapsed"
-        }
-        if let checkbox = layout.node as? ListItemNode, checkbox.checkbox != .none {
-            return checkbox.checkbox == .checked ? "Checked" : "Unchecked"
-        }
-        // General text might contain checkbox interactivity as attributes
-        if let attrString = layout.attributedString {
-            var isTask = false
-            var isChecked = false
-            attrString.enumerateAttribute(.markdownCheckbox, in: NSRange(location: 0, length: attrString.length), options: []) { value, range, stop in
-                if let data = value as? CheckboxInteractionData {
-                    isTask = true
-                    isChecked = data.isChecked
-                    stop.pointee = true
-                }
-            }
-            if isTask {
-                return isChecked ? "Checked" : "Unchecked"
-            }
-        }
-        
-        return nil
+        layout.accessibility.value
     }
-    
-    /// Returns a VoiceOver hint describing the available interaction for a given layout node.
+
     public static func accessibilityHint(for layout: LayoutResult) -> String? {
-        if layout.node is DetailsNode {
-            return "Double-tap to expand or collapse"
-        }
-        if layout.node is LinkNode {
-            return "Double-tap to open link"
-        }
-        return nil
+        layout.accessibility.hint
     }
 
     #if canImport(UIKit)
-    /// Returns the corresponding UIAccessibilityTraits for iOS.
     public static func accessibilityTraits(for layout: LayoutResult) -> UIAccessibilityTraits {
         var traits: UIAccessibilityTraits = .staticText
-
-        if layout.node is DetailsNode || layout.node is LinkNode {
+        switch layout.accessibility.nodeRoleHint {
+        case .details, .link:
             traits.insert(.button)
-        } else if layout.node is ImageNode {
+        case .image:
             traits.insert(.image)
+        case .staticText, .codeBlock, .table, .math:
+            break
         }
-
         return traits
     }
     #endif
-    
+
     #if canImport(AppKit)
-    /// Returns the corresponding NSAccessibility.Role for macOS.
     public static func accessibilityRole(for layout: LayoutResult) -> NSAccessibility.Role {
-        if layout.node is DetailsNode { return .button }
-        if layout.node is CodeBlockNode || layout.node is DiagramNode { return .group }
-        if layout.node is TableNode { return .group }
-        return .staticText // default
+        switch layout.accessibility.nodeRoleHint {
+        case .details:
+            return .button
+        case .codeBlock, .table:
+            return .group
+        case .staticText, .link, .image, .math:
+            return .staticText
+        }
     }
     #endif
 }

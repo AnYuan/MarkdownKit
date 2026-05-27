@@ -281,73 +281,19 @@ struct TableCardRenderer {
         }
     }
 
-    // MARK: - Table Parsing Helpers (shared with TableAttributedStringBuilder)
+    // Table-parsing helpers live in `TableLayoutShared`. These wrappers
+    // preserve the call-site shape without copying logic.
 
     private static func normalizedTableRows(from table: TableNode) -> [(cells: [String], isHead: Bool)] {
-        var rows: [(cells: [String], isHead: Bool)] = []
-
-        for section in table.children {
-            let isHead = section is TableHeadNode
-            let sectionChildren = (section as? TableHeadNode)?.children
-                ?? (section as? TableBodyNode)?.children
-                ?? []
-
-            var directCells: [TableCellNode] = []
-            for child in sectionChildren {
-                if let row = child as? TableRowNode {
-                    let rowCells = row.children.compactMap { $0 as? TableCellNode }
-                    let texts = rowCells.map { tableCellText(from: $0) }
-                    if !texts.isEmpty {
-                        rows.append((cells: texts, isHead: isHead))
-                    }
-                } else if let cell = child as? TableCellNode {
-                    directCells.append(cell)
-                }
-            }
-
-            if !directCells.isEmpty {
-                let texts = directCells.map { tableCellText(from: $0) }
-                rows.append((cells: texts, isHead: isHead))
-            }
-        }
-
-        return rows
+        TableLayoutShared.normalizedTableRows(from: table)
     }
 
     private static func normalizedCells(for cells: [String], columnCount: Int) -> [String] {
-        if cells.count >= columnCount {
-            return Array(cells.prefix(columnCount))
-        }
-        return cells + Array(repeating: "", count: columnCount - cells.count)
-    }
-
-    private static func tableCellText(from cell: TableCellNode) -> String {
-        flattenInlineText(from: cell)
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func flattenInlineText(from node: MarkdownNode) -> String {
-        switch node {
-        case let text as TextNode:
-            return text.text
-        case let inlineCode as InlineCodeNode:
-            return inlineCode.code
-        case let math as MathNode:
-            return math.equation
-        default:
-            return node.children.map { flattenInlineText(from: $0) }.joined()
-        }
+        TableLayoutShared.normalizedCells(for: cells, columnCount: columnCount)
     }
 
     private static func tableTextAlignment(for table: TableNode, column: Int) -> NSTextAlignment {
-        guard column < table.columnAlignments.count else { return .left }
-        switch table.columnAlignments[column] {
-        case .left: return .left
-        case .center: return .center
-        case .right: return .right
-        case .none: return .left
-        }
+        TableLayoutShared.tableTextAlignment(for: table, column: column)
     }
 }
 #endif

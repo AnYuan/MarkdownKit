@@ -42,13 +42,20 @@ public struct LayoutResult {
     /// it walks the document and assigns each layout its index path.
     public let stableIdentity: StableNodeIdentity
 
+    /// Pre-computed accessibility metadata for `PlatformAccessibility`.
+    /// Built once on the background layout thread so cell reconfigure on the
+    /// main thread doesn't repeat `attributedString.enumerateAttribute(...)`
+    /// for checkbox detection.
+    public let accessibility: AccessibilityMetadata
+
     public init(
         node: MarkdownNode,
         size: CGSize,
         attributedString: NSAttributedString? = nil,
         children: [LayoutResult] = [],
         customDraw: (@Sendable (CGContext, CGSize) -> Void)? = nil,
-        stableIdentity: StableNodeIdentity? = nil
+        stableIdentity: StableNodeIdentity? = nil,
+        accessibility: AccessibilityMetadata? = nil
     ) {
         self.node = node
         self.size = size
@@ -59,6 +66,8 @@ public struct LayoutResult {
         // this with the actual index path when recursing the document tree.
         self.stableIdentity = stableIdentity
             ?? StableNodeIdentity(contentFingerprint: node.contentFingerprint, pathHash: 0)
+        self.accessibility = accessibility
+            ?? AccessibilityMetadata.make(for: node, attributedString: attributedString)
     }
 
     /// Returns a copy of this result with its `stableIdentity` replaced. Used
@@ -71,7 +80,8 @@ public struct LayoutResult {
             attributedString: attributedString,
             children: children,
             customDraw: customDraw,
-            stableIdentity: identity
+            stableIdentity: identity,
+            accessibility: accessibility
         )
     }
 }
