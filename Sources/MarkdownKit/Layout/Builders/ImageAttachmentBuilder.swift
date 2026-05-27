@@ -15,8 +15,20 @@ import AppKit
 /// and measured `NSTextAttachment` strings for layout inline embedding.
 struct ImageAttachmentBuilder {
     
-    // An NSCache instance for thread-safe cross-layout image reuse
-    nonisolated(unsafe) private static let cache = NSCache<NSString, NativeImage>()
+    // An NSCache instance for thread-safe cross-layout image reuse.
+    // `countLimit` is a soft cap so long-running apps with many distinct image
+    // URLs don't accumulate decoded bitmaps without bound.
+    nonisolated(unsafe) private static let cache: NSCache<NSString, NativeImage> = {
+        let c = NSCache<NSString, NativeImage>()
+        c.countLimit = 256
+        return c
+    }()
+
+    /// Drops all cached attachment images. Hosts can call this from memory
+    /// warnings or when switching image-loading policies.
+    public static func clearCache() {
+        cache.removeAllObjects()
+    }
 
     static func build(
         from imageNode: ImageNode,

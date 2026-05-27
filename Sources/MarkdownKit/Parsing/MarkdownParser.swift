@@ -9,6 +9,8 @@ public struct MarkdownParser {
     private static let logger = Logger(subsystem: "com.markdownkit", category: "Parser")
 
     /// Maximum input size in bytes. Documents exceeding this are rejected with an empty result.
+    /// Intentionally `var` so `ConcurrencyStressTests.testConcurrentMaxInputBytesAccess` can
+    /// exercise the global-state read/write path; production callers shouldn't mutate it.
     public static nonisolated(unsafe) var maxInputBytes: Int = 1_048_576 // 1 MB
 
     /// The plugins that will be executed sequentially on the tree after the initial parse.

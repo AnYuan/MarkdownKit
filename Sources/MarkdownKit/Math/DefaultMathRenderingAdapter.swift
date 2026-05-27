@@ -130,10 +130,26 @@ public struct DefaultMathRenderingAdapter: MathRenderingAdapter {
     // MARK: - Caching
 
     /// SVG string cache: keyed by (latex, display). Color-independent since MathJax SVGs use `currentColor`.
-    private nonisolated(unsafe) static let svgCache = NSCache<NSString, NSString>()
+    /// `countLimit` is a soft cap (NSCache may evict earlier under memory pressure).
+    private nonisolated(unsafe) static let svgCache: NSCache<NSString, NSString> = {
+        let cache = NSCache<NSString, NSString>()
+        cache.countLimit = 512
+        return cache
+    }()
 
     /// Rendered image cache: keyed by (latex, display, textColor). Color-dependent.
-    private nonisolated(unsafe) static let imageCache = NSCache<NSString, NativeImage>()
+    private nonisolated(unsafe) static let imageCache: NSCache<NSString, NativeImage> = {
+        let cache = NSCache<NSString, NativeImage>()
+        cache.countLimit = 512
+        return cache
+    }()
+
+    /// Drops all cached SVGs and rasterized images. Hosts can call this from
+    /// memory-warning handlers or when switching color schemes wholesale.
+    public static func clearCaches() {
+        svgCache.removeAllObjects()
+        imageCache.removeAllObjects()
+    }
 
     private static func svgCacheKey(latex: String, display: Bool, fontSize: CGFloat) -> String {
         "\(latex)::display=\(display)::fontSize=\(fontSize)"

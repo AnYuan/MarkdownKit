@@ -49,156 +49,22 @@ public final class LayoutSolver: @unchecked Sendable {
         )
     }
     
-    private final class SendableBox<T>: @unchecked Sendable {
-        var value: T?
-        init(_ value: T? = nil) { self.value = value }
-    }
-
     private static func makeCacheVariantHash(
         theme: Theme,
         diagramRegistry: DiagramAdapterRegistry,
         mathAdapter: any MathRenderingAdapter,
         imageLoadingPolicy: ImageLoadingPolicy
     ) -> Int {
+        // Delegates to `cacheFingerprint(into:)` defined per type in
+        // `Layout/CacheFingerprinting.swift`. This file previously held 146
+        // lines of hand-rolled hashing; it now stays focused on layout
+        // dispatch and is ~190 lines shorter.
         var hasher = Hasher()
-        combineTheme(theme, into: &hasher)
-        hasher.combine(diagramRegistry.cacheFingerprint)
-        hasher.combine(String(reflecting: type(of: mathAdapter)))
-        hasher.combine(imageLoadingPolicy.cacheFingerprint)
+        theme.cacheFingerprint(into: &hasher)
+        diagramRegistry.cacheFingerprint(into: &hasher)
+        mathAdapter.cacheFingerprint(into: &hasher)
+        imageLoadingPolicy.cacheFingerprint(into: &hasher)
         return hasher.finalize()
-    }
-
-    private static func combineTheme(_ theme: Theme, into hasher: inout Hasher) {
-        combineTypography(theme.typography.header1, into: &hasher)
-        combineTypography(theme.typography.header2, into: &hasher)
-        combineTypography(theme.typography.header3, into: &hasher)
-        combineTypography(theme.typography.paragraph, into: &hasher)
-        combineTypography(theme.typography.codeBlock, into: &hasher)
-
-        combineColorToken(theme.colors.textColor, into: &hasher)
-        combineColorToken(theme.colors.codeColor, into: &hasher)
-        combineColorToken(theme.colors.inlineCodeColor, into: &hasher)
-        combineColorToken(theme.colors.tableColor, into: &hasher)
-        combineColorToken(theme.colors.linkColor, into: &hasher)
-        combineColorToken(theme.colors.blockQuoteColor, into: &hasher)
-        combineColorToken(theme.colors.thematicBreakColor, into: &hasher)
-
-        combineCodeBlockStyle(theme.codeBlock, into: &hasher)
-        hasher.combine(Double(theme.blockQuote.indent))
-        hasher.combine(theme.blockQuote.barCharacter)
-        hasher.combine(theme.list.bulletCharacter)
-        hasher.combine(theme.list.checkedCharacter)
-        hasher.combine(theme.list.uncheckedCharacter)
-        hasher.combine(Double(theme.list.nestedIndentDelta))
-        hasher.combine(theme.details.openDisclosure)
-        hasher.combine(theme.details.closedDisclosure)
-        combineTableStyle(theme.table, into: &hasher)
-        combineSyntaxColors(theme.syntaxColors, into: &hasher)
-        hasher.combine(Double(theme.highlight.cornerRadius))
-        hasher.combine(Double(theme.highlight.darkModeAlpha))
-        hasher.combine(Double(theme.highlight.lightModeAlpha))
-        hasher.combine(Double(theme.highlight.insetDX))
-        hasher.combine(Double(theme.highlight.insetDY))
-        hasher.combine(Double(theme.highlight.fadeInDuration))
-        hasher.combine(Double(theme.highlight.fadeOutDuration))
-        hasher.combine(Double(theme.thematicBreak.paddingTop))
-        hasher.combine(Double(theme.thematicBreak.paddingBottom))
-        hasher.combine(Double(theme.thematicBreak.dividerHeight))
-    }
-
-    private static func combineTypography(_ token: TypographyToken, into hasher: inout Hasher) {
-        combineFont(token.font, into: &hasher)
-        hasher.combine(Double(token.lineHeightMultiple))
-        hasher.combine(Double(token.paragraphSpacing))
-    }
-
-    private static func combineColorToken(_ token: ColorToken, into hasher: inout Hasher) {
-        combineColor(token.foreground, into: &hasher)
-        combineColor(token.background, into: &hasher)
-    }
-
-    private static func combineCodeBlockStyle(_ style: Theme.CodeBlockStyle, into hasher: inout Hasher) {
-        hasher.combine(Double(style.cornerRadius))
-        hasher.combine(Double(style.layoutTotalInset))
-        hasher.combine(Double(style.viewPadding))
-        combineFont(style.labelFont, into: &hasher)
-        hasher.combine(Double(style.labelParagraphSpacing))
-        hasher.combine(Double(style.inlineCodeFontSizeRatio))
-        hasher.combine(Double(style.inlineCodeMinFontSize))
-        hasher.combine(Double(style.copyButtonSize))
-        hasher.combine(Double(style.copyButtonCornerRadius))
-        hasher.combine(Double(style.copyButtonMargin))
-        hasher.combine(Double(style.copyButtonIconSize))
-        hasher.combine(Double(style.macOSCornerRadius))
-        hasher.combine(Double(style.macOSTextContainerInset.width))
-        hasher.combine(Double(style.macOSTextContainerInset.height))
-    }
-
-    private static func combineTableStyle(_ style: Theme.TableStyle, into hasher: inout Hasher) {
-        hasher.combine(Double(style.cornerRadius))
-        hasher.combine(Double(style.borderWidth))
-        hasher.combine(Double(style.cellPaddingH))
-        hasher.combine(Double(style.cellPaddingV))
-        hasher.combine(Double(style.dividerHeight))
-        hasher.combine(Double(style.fontSize))
-        hasher.combine(Double(style.uiKitHorizontalInset))
-        hasher.combine(Double(style.appKitHorizontalPadding))
-        hasher.combine(Double(style.appKitBorderAllowance))
-        hasher.combine(Double(style.minimumReadableColumnWidth))
-        hasher.combine(Double(style.cellParagraphSpacing))
-        hasher.combine(style.narrowFallbackMaxChars)
-        hasher.combine(Double(style.alternatingRowAlpha))
-        hasher.combine(Double(style.separatorAlpha))
-    }
-
-    private static func combineSyntaxColors(_ colors: Theme.SyntaxColors, into hasher: inout Hasher) {
-        combineColor(colors.keyword, into: &hasher)
-        combineColor(colors.string, into: &hasher)
-        combineColor(colors.type, into: &hasher)
-        combineColor(colors.call, into: &hasher)
-        combineColor(colors.number, into: &hasher)
-        combineColor(colors.comment, into: &hasher)
-        combineColor(colors.property, into: &hasher)
-        combineColor(colors.dotAccess, into: &hasher)
-        combineColor(colors.preprocessing, into: &hasher)
-    }
-
-    private static func combineFont(_ font: Font, into hasher: inout Hasher) {
-        hasher.combine(font.fontName)
-        hasher.combine(Double(font.pointSize))
-        #if canImport(UIKit)
-        hasher.combine(font.fontDescriptor.symbolicTraits.rawValue)
-        #elseif canImport(AppKit)
-        hasher.combine(font.fontDescriptor.symbolicTraits.rawValue)
-        #endif
-    }
-
-    private static func combineColor(_ color: Color, into hasher: inout Hasher) {
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-
-        #if canImport(UIKit)
-        if color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
-            hasher.combine(Double(red))
-            hasher.combine(Double(green))
-            hasher.combine(Double(blue))
-            hasher.combine(Double(alpha))
-        } else {
-            hasher.combine(String(describing: color))
-        }
-        #elseif canImport(AppKit)
-        if let rgb = color.usingColorSpace(.sRGB) {
-            rgb.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-            hasher.combine(Double(red))
-            hasher.combine(Double(green))
-            hasher.combine(Double(blue))
-            hasher.combine(Double(alpha))
-        } else {
-            hasher.combine(String(describing: color))
-        }
-        #endif
     }
 
     /// Recursively calculates the layout for a node and all its children.
