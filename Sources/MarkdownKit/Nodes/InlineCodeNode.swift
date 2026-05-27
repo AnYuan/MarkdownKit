@@ -5,16 +5,24 @@ import Markdown
 public struct InlineCodeNode: InlineNode {
     public let id = UUID()
     public let range: SourceRange?
-    
+
     /// The raw code content.
     public let code: String
-    
+
+    public let contentFingerprint: Int
+
     public var children: [MarkdownNode] {
         return [] // Inline code blocks are evaluated as raw text leaves
     }
-    
+
     public init(range: SourceRange?, code: String) {
         self.range = range
         self.code = code
+        self.contentFingerprint = _markdownNodeFingerprint(
+            typeName: "InlineCodeNode",
+            children: []
+        ) { hasher in
+            hasher.combine(code)
+        }
     }
 }

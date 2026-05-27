@@ -5,20 +5,30 @@ import Markdown
 public struct LinkNode: InlineNode {
     public let id = UUID()
     public let range: SourceRange?
-    
+
     /// The destination URL.
     public let destination: String?
-    
+
     /// The title of the link, if provided.
     public let title: String?
-    
+
     /// The inner elements forming the text of the link.
     public let children: [MarkdownNode]
-    
+
+    public let contentFingerprint: Int
+
     public init(range: SourceRange?, destination: String?, title: String?, children: [MarkdownNode]) {
+        let sanitizedDestination = URLSanitizer.sanitize(destination)
         self.range = range
-        self.destination = URLSanitizer.sanitize(destination)
+        self.destination = sanitizedDestination
         self.title = title
         self.children = children
+        self.contentFingerprint = _markdownNodeFingerprint(
+            typeName: "LinkNode",
+            children: children
+        ) { hasher in
+            hasher.combine(sanitizedDestination)
+            hasher.combine(title)
+        }
     }
 }

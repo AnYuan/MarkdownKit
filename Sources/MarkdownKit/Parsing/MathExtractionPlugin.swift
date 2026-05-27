@@ -7,11 +7,31 @@ public struct MathExtractionPlugin: ASTPlugin {
     public init() {}
 
     public func visit(_ nodes: [MarkdownNode]) -> [MarkdownNode] {
-        // First pass: merge block math ($$..$$) that spans multiple nodes
+        // First pass: merge block math ($$..$$) that spans multiple top-level
+        // paragraphs. This is a sibling-level operation only applicable at the
+        // document root.
         let merged = mergeBlockMath(nodes)
 
-        // Second pass: convert fenced math code blocks and extract inline math.
-        return merged.map(transform)
+        // Second pass: walk the tree, converting math fences and splitting
+        // TextNodes whose content contains inline `$..$` or `$$..$$` math.
+        // `AST.transform` centralizes the per-container recursion; the visitor
+        // only describes the per-node decisions.
+        return AST.transform(merged) { node in
+            if let code = node as? CodeBlockNode, isMathFence(language: code.language) {
+                let equation = code.code.trimmingCharacters(in: .whitespacesAndNewlines)
+                return .replace(MathNode(range: code.range, style: .block, equation: equation))
+            }
+            if let text = node as? TextNode {
+                let extracted = extractInlineMath(from: text)
+                // Preserve identity (UUID + fingerprint) when no math was found
+                // — `extractInlineMath` returns the original node for that case.
+                if extracted.count == 1, extracted[0].id == text.id {
+                    return .unchanged
+                }
+                return .replaceMany(extracted)
+            }
+            return .unchanged
+        }
     }
 
     /// Scans top-level nodes for $$ patterns that span across paragraphs.
@@ -78,19 +98,11 @@ public struct MathExtractionPlugin: ASTPlugin {
         return nil
     }
 
-    private func processInlineChildren(_ children: [MarkdownNode]) -> [MarkdownNode] {
-        var result: [MarkdownNode] = []
-        for child in children {
-            if let text = child as? TextNode {
-                result.append(contentsOf: extractInlineMath(from: text))
-            } else {
-                result.append(transform(child))
-            }
-        }
-        return result
-    }
-
     private func extractInlineMath(from textNode: TextNode) -> [MarkdownNode] {
+        // Fast path: no `$` ⇒ no math possible. Return the original instance
+        // so `AST.transform` can preserve UUID + fingerprint and skip rebuild.
+        guard textNode.text.contains("$") else { return [textNode] }
+
         let text = Array(textNode.text)
         guard !text.isEmpty else { return [] }
 
@@ -156,85 +168,6 @@ public struct MathExtractionPlugin: ASTPlugin {
             idx += 1
         }
         return nil
-    }
-
-    private func transform(_ node: MarkdownNode) -> MarkdownNode {
-        switch node {
-        case let paragraph as ParagraphNode:
-            return ParagraphNode(range: paragraph.range, children: processInlineChildren(paragraph.children))
-
-        case let header as HeaderNode:
-            return HeaderNode(range: header.range, level: header.level, children: processInlineChildren(header.children))
-
-        case let link as LinkNode:
-            return LinkNode(
-                range: link.range,
-                destination: link.destination,
-                title: link.title,
-                children: processInlineChildren(link.children)
-            )
-
-        case let emphasis as EmphasisNode:
-            return EmphasisNode(range: emphasis.range, children: processInlineChildren(emphasis.children))
-
-        case let strong as StrongNode:
-            return StrongNode(range: strong.range, children: processInlineChildren(strong.children))
-
-        case let strike as StrikethroughNode:
-            return StrikethroughNode(range: strike.range, children: processInlineChildren(strike.children))
-
-        case let quote as BlockQuoteNode:
-            return BlockQuoteNode(range: quote.range, children: quote.children.map(transform))
-
-        case let list as ListNode:
-            return ListNode(range: list.range, isOrdered: list.isOrdered, children: list.children.map(transform))
-
-        case let item as ListItemNode:
-            return ListItemNode(range: item.range, checkbox: item.checkbox, children: item.children.map(transform))
-
-        case let table as TableNode:
-            return TableNode(
-                range: table.range,
-                columnAlignments: table.columnAlignments,
-                children: table.children.map(transform)
-            )
-
-        case let head as TableHeadNode:
-            return TableHeadNode(range: head.range, children: head.children.map(transform))
-
-        case let body as TableBodyNode:
-            return TableBodyNode(range: body.range, children: body.children.map(transform))
-
-        case let row as TableRowNode:
-            return TableRowNode(range: row.range, children: row.children.map(transform))
-
-        case let cell as TableCellNode:
-            return TableCellNode(range: cell.range, children: processInlineChildren(cell.children))
-
-        case let details as DetailsNode:
-            return DetailsNode(
-                range: details.range,
-                isOpen: details.isOpen,
-                summary: details.summary.map { summary in
-                    SummaryNode(
-                        range: summary.range,
-                        children: processInlineChildren(summary.children)
-                    )
-                },
-                children: details.children.map(transform)
-            )
-
-        case let summary as SummaryNode:
-            return SummaryNode(range: summary.range, children: processInlineChildren(summary.children))
-
-        case let code as CodeBlockNode:
-            guard isMathFence(language: code.language) else { return code }
-            let equation = code.code.trimmingCharacters(in: .whitespacesAndNewlines)
-            return MathNode(range: code.range, style: .block, equation: equation)
-
-        default:
-            return node
-        }
     }
 
     private func isMathFence(language: String?) -> Bool {

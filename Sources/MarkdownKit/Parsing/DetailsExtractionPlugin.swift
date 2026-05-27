@@ -12,88 +12,18 @@ public struct DetailsExtractionPlugin: ASTPlugin {
     public init() {}
 
     public func visit(_ nodes: [MarkdownNode]) -> [MarkdownNode] {
-        rewriteSiblings(nodes)
-    }
-
-    private func rewriteSiblings(_ nodes: [MarkdownNode]) -> [MarkdownNode] {
-        let rewritten = nodes.map(rewriteNodeChildren)
-        let expanded = expandDetailsHTMLTagNodes(in: rewritten)
-        return mergeDetails(in: expanded)
-    }
-
-    private func rewriteNodeChildren(_ node: MarkdownNode) -> MarkdownNode {
-        switch node {
-        case let paragraph as ParagraphNode:
-            return ParagraphNode(range: paragraph.range, children: rewriteSiblings(paragraph.children))
-
-        case let header as HeaderNode:
-            return HeaderNode(range: header.range, level: header.level, children: rewriteSiblings(header.children))
-
-        case let link as LinkNode:
-            return LinkNode(
-                range: link.range,
-                destination: link.destination,
-                title: link.title,
-                children: rewriteSiblings(link.children)
-            )
-
-        case let emphasis as EmphasisNode:
-            return EmphasisNode(range: emphasis.range, children: rewriteSiblings(emphasis.children))
-
-        case let strong as StrongNode:
-            return StrongNode(range: strong.range, children: rewriteSiblings(strong.children))
-
-        case let strike as StrikethroughNode:
-            return StrikethroughNode(range: strike.range, children: rewriteSiblings(strike.children))
-
-        case let quote as BlockQuoteNode:
-            return BlockQuoteNode(range: quote.range, children: rewriteSiblings(quote.children))
-
-        case let list as ListNode:
-            return ListNode(range: list.range, isOrdered: list.isOrdered, children: rewriteSiblings(list.children))
-
-        case let item as ListItemNode:
-            return ListItemNode(
-                range: item.range,
-                checkbox: item.checkbox,
-                children: rewriteSiblings(item.children)
-            )
-
-        case let table as TableNode:
-            return TableNode(
-                range: table.range,
-                columnAlignments: table.columnAlignments,
-                children: rewriteSiblings(table.children)
-            )
-
-        case let head as TableHeadNode:
-            return TableHeadNode(range: head.range, children: rewriteSiblings(head.children))
-
-        case let body as TableBodyNode:
-            return TableBodyNode(range: body.range, children: rewriteSiblings(body.children))
-
-        case let row as TableRowNode:
-            return TableRowNode(range: row.range, children: rewriteSiblings(row.children))
-
-        case let cell as TableCellNode:
-            return TableCellNode(range: cell.range, children: rewriteSiblings(cell.children))
-
-        case let details as DetailsNode:
-            return DetailsNode(
-                range: details.range,
-                isOpen: details.isOpen,
-                summary: details.summary.map {
-                    SummaryNode(range: $0.range, children: rewriteSiblings($0.children))
-                },
-                children: rewriteSiblings(details.children)
-            )
-
-        case let summary as SummaryNode:
-            return SummaryNode(range: summary.range, children: rewriteSiblings(summary.children))
-
-        default:
-            return node
-        }
+        // The 24-case per-container `switch` previously here is replaced by
+        // `AST.transform`, which handles recursion and identity preservation.
+        // The Details-specific work — splitting multi-line HTML tags into
+        // separate nodes, then matching opener/closer pairs — runs as
+        // `postProcessSiblings` so it fires at every container level.
+        AST.transform(
+            nodes,
+            postProcessSiblings: { siblings in
+                mergeDetails(in: expandDetailsHTMLTagNodes(in: siblings))
+            },
+            visit: { _ in .unchanged }
+        )
     }
 
     private func mergeDetails(in nodes: [MarkdownNode]) -> [MarkdownNode] {
@@ -160,7 +90,7 @@ public struct DetailsExtractionPlugin: ASTPlugin {
                 children: summaryChildren(from: summaryText)
             )
             let bodyNodes = Array(nodes.dropFirst())
-            return (summary, rewriteSiblings(bodyNodes))
+            return (summary, processBodySiblings(bodyNodes))
         }
 
         if isSummaryOpenTag(first), let closeIndex = findSummaryClose(in: nodes, startAt: 1) {
@@ -171,10 +101,16 @@ public struct DetailsExtractionPlugin: ASTPlugin {
                 range: first.range,
                 children: normalizedSummaryChildren(from: rawSummaryNodes)
             )
-            return (summary, rewriteSiblings(bodyNodes))
+            return (summary, processBodySiblings(bodyNodes))
         }
 
-        return (nil, rewriteSiblings(nodes))
+        return (nil, processBodySiblings(nodes))
+    }
+
+    /// Apply expand + merge to a slice (e.g. the body of a newly-discovered
+    /// `<details>` block) so nested `<details>` markup is also recognized.
+    private func processBodySiblings(_ nodes: [MarkdownNode]) -> [MarkdownNode] {
+        mergeDetails(in: expandDetailsHTMLTagNodes(in: nodes))
     }
 
     private func findSummaryClose(in nodes: [MarkdownNode], startAt start: Int) -> Int? {
@@ -190,9 +126,9 @@ public struct DetailsExtractionPlugin: ASTPlugin {
 
     private func normalizedSummaryChildren(from nodes: [MarkdownNode]) -> [MarkdownNode] {
         if nodes.count == 1, let paragraph = nodes[0] as? ParagraphNode {
-            return rewriteSiblings(paragraph.children)
+            return processBodySiblings(paragraph.children)
         }
-        return rewriteSiblings(nodes)
+        return processBodySiblings(nodes)
     }
 
     private func summaryChildren(from text: String) -> [MarkdownNode] {

@@ -1,7 +1,137 @@
 import XCTest
+import Markdown
 @testable import MarkdownKit
 
 final class LayoutCacheEdgeCaseTests: XCTestCase {
+
+    // MARK: - contentFingerprint property-toggle matrix
+
+    /// Whenever a node carries a non-children property (Header.level, Math.isInline,
+    /// List.isOrdered, Details.isOpen, etc.), toggling that property MUST change
+    /// `contentFingerprint`. Otherwise `LayoutCache` would return a stale layout
+    /// for the new state.
+    func testFingerprintChangesWhenNodePropertiesToggle() {
+        let r: SourceRange? = nil
+
+        // Header level
+        XCTAssertNotEqual(
+            HeaderNode(range: r, level: 1, children: []).contentFingerprint,
+            HeaderNode(range: r, level: 2, children: []).contentFingerprint
+        )
+
+        // TextNode text
+        XCTAssertNotEqual(
+            TextNode(range: r, text: "a").contentFingerprint,
+            TextNode(range: r, text: "b").contentFingerprint
+        )
+
+        // CodeBlock language/code
+        XCTAssertNotEqual(
+            CodeBlockNode(range: r, language: "swift", code: "1").contentFingerprint,
+            CodeBlockNode(range: r, language: "swift", code: "2").contentFingerprint
+        )
+        XCTAssertNotEqual(
+            CodeBlockNode(range: r, language: "swift", code: "1").contentFingerprint,
+            CodeBlockNode(range: r, language: "python", code: "1").contentFingerprint
+        )
+
+        // InlineCode code
+        XCTAssertNotEqual(
+            InlineCodeNode(range: r, code: "a").contentFingerprint,
+            InlineCodeNode(range: r, code: "b").contentFingerprint
+        )
+
+        // Math: inline vs block AND equation
+        XCTAssertNotEqual(
+            MathNode(range: r, style: .inline, equation: "x").contentFingerprint,
+            MathNode(range: r, style: .block, equation: "x").contentFingerprint
+        )
+        XCTAssertNotEqual(
+            MathNode(range: r, style: .inline, equation: "x").contentFingerprint,
+            MathNode(range: r, style: .inline, equation: "y").contentFingerprint
+        )
+
+        // Diagram language and source
+        XCTAssertNotEqual(
+            DiagramNode(range: r, language: .mermaid, source: "a").contentFingerprint,
+            DiagramNode(range: r, language: .mermaid, source: "b").contentFingerprint
+        )
+        XCTAssertNotEqual(
+            DiagramNode(range: r, language: .mermaid, source: "a").contentFingerprint,
+            DiagramNode(range: r, language: .geojson, source: "a").contentFingerprint
+        )
+
+        // List ordered vs unordered
+        XCTAssertNotEqual(
+            ListNode(range: r, isOrdered: true, children: []).contentFingerprint,
+            ListNode(range: r, isOrdered: false, children: []).contentFingerprint
+        )
+
+        // ListItem checkbox state
+        XCTAssertNotEqual(
+            ListItemNode(range: r, checkbox: .checked, children: []).contentFingerprint,
+            ListItemNode(range: r, checkbox: .unchecked, children: []).contentFingerprint
+        )
+        XCTAssertNotEqual(
+            ListItemNode(range: r, checkbox: .none, children: []).contentFingerprint,
+            ListItemNode(range: r, checkbox: .checked, children: []).contentFingerprint
+        )
+
+        // Image source / altText / title
+        XCTAssertNotEqual(
+            ImageNode(range: r, source: "a.png", altText: nil, title: nil).contentFingerprint,
+            ImageNode(range: r, source: "b.png", altText: nil, title: nil).contentFingerprint
+        )
+        XCTAssertNotEqual(
+            ImageNode(range: r, source: "a.png", altText: "x", title: nil).contentFingerprint,
+            ImageNode(range: r, source: "a.png", altText: "y", title: nil).contentFingerprint
+        )
+
+        // Link destination/title
+        XCTAssertNotEqual(
+            LinkNode(range: r, destination: "https://a", title: nil, children: []).contentFingerprint,
+            LinkNode(range: r, destination: "https://b", title: nil, children: []).contentFingerprint
+        )
+
+        // Details isOpen
+        XCTAssertNotEqual(
+            DetailsNode(range: r, isOpen: true, summary: nil, children: []).contentFingerprint,
+            DetailsNode(range: r, isOpen: false, summary: nil, children: []).contentFingerprint
+        )
+
+        // Details summary content
+        XCTAssertNotEqual(
+            DetailsNode(
+                range: r,
+                isOpen: true,
+                summary: SummaryNode(range: r, children: [TextNode(range: r, text: "a")]),
+                children: []
+            ).contentFingerprint,
+            DetailsNode(
+                range: r,
+                isOpen: true,
+                summary: SummaryNode(range: r, children: [TextNode(range: r, text: "b")]),
+                children: []
+            ).contentFingerprint
+        )
+
+        // Table column alignments
+        XCTAssertNotEqual(
+            TableNode(range: r, columnAlignments: [.left], children: []).contentFingerprint,
+            TableNode(range: r, columnAlignments: [.right], children: []).contentFingerprint
+        )
+    }
+
+    /// Equal nodes (same fields, same children) must produce the same
+    /// fingerprint regardless of when they were constructed. This is the
+    /// invariant that lets `MarkdownCache` survive re-parses with fresh UUIDs.
+    func testFingerprintStableAcrossReparseOfIdenticalContent() {
+        let parser = MarkdownParser()
+        let doc1 = parser.parse("# Heading\n\nBody.")
+        let doc2 = parser.parse("# Heading\n\nBody.")
+        XCTAssertEqual(doc1.contentFingerprint, doc2.contentFingerprint)
+        XCTAssertNotEqual(doc1.id, doc2.id, "Sanity: UUIDs do regenerate per parse.")
+    }
 
     func testCacheSharedAcrossSolversHitsOnSecondSolve() async throws {
         // Simulates `MarkdownEngine.solver(for:)` which now reuses one persistent

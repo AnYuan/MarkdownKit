@@ -7,10 +7,17 @@ public struct HeaderNode: BlockNode {
     public let range: SourceRange?
     public let level: Int
     public let children: [MarkdownNode]
-    
+    public let contentFingerprint: Int
+
     public init(range: SourceRange?, level: Int, children: [MarkdownNode]) {
         self.range = range
         self.level = level
         self.children = children
+        self.contentFingerprint = _markdownNodeFingerprint(
+            typeName: "HeaderNode",
+            children: children
+        ) { hasher in
+            hasher.combine(level)
+        }
     }
 }

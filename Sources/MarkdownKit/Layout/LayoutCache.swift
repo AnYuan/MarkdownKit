@@ -20,85 +20,6 @@ import AppKit
 /// the only mutable state (`hitCountStorage` / `missCountStorage`) is guarded by `statsLock`.
 public final class LayoutCache: @unchecked Sendable {
 
-    // MARK: - Content Fingerprinting
-
-    /// Computes a deterministic hash value from a node's semantic content.
-    ///
-    /// The fingerprint incorporates:
-    /// - The concrete node type name (e.g. "ParagraphNode")
-    /// - Leaf-level text content (TextNode.text, CodeBlockNode.code, etc.)
-    /// - Type-specific properties (HeaderNode.level, ListNode.isOrdered, etc.)
-    /// - Recursive children fingerprints
-    ///
-    /// This is intentionally **not** a cryptographic hash; it uses Swift's `Hasher`
-    /// for speed since the only requirement is low collision within a single session.
-    private static func contentFingerprint(of node: MarkdownNode) -> Int {
-        var hasher = Hasher()
-        feedContent(of: node, into: &hasher)
-        return hasher.finalize()
-    }
-
-    /// Recursively feeds a node's semantic content into the provided hasher.
-    private static func feedContent(of node: MarkdownNode, into hasher: inout Hasher) {
-        // 1. Node type discriminator
-        hasher.combine(String(describing: type(of: node)))
-
-        // 2. Type-specific leaf content and properties
-        switch node {
-        case let text as TextNode:
-            hasher.combine(text.text)
-        case let code as CodeBlockNode:
-            hasher.combine(code.language)
-            hasher.combine(code.code)
-        case let inlineCode as InlineCodeNode:
-            hasher.combine(inlineCode.code)
-        case let header as HeaderNode:
-            hasher.combine(header.level)
-        case let math as MathNode:
-            hasher.combine(math.equation)
-            hasher.combine(math.isInline)
-        case let diagram as DiagramNode:
-            hasher.combine(diagram.language.rawValue)
-            hasher.combine(diagram.source)
-        case let image as ImageNode:
-            hasher.combine(image.source)
-            hasher.combine(image.altText)
-            hasher.combine(image.title)
-        case let link as LinkNode:
-            hasher.combine(link.destination)
-            hasher.combine(link.title)
-        case let list as ListNode:
-            hasher.combine(list.isOrdered)
-        case let listItem as ListItemNode:
-            switch listItem.checkbox {
-            case .checked:   hasher.combine("checked")
-            case .unchecked: hasher.combine("unchecked")
-            case .none:      hasher.combine("none")
-            }
-        case let details as DetailsNode:
-            hasher.combine(details.isOpen)
-            if let summary = details.summary {
-                feedContent(of: summary, into: &hasher)
-            }
-        case let table as TableNode:
-            for alignment in table.columnAlignments {
-                hasher.combine(alignment.map { String(describing: $0) })
-            }
-        default:
-            // BlockQuoteNode, ParagraphNode, DocumentNode, StrongNode, EmphasisNode,
-            // StrikethroughNode, SummaryNode, ThematicBreakNode, TableHeadNode,
-            // TableBodyNode, TableRowNode, TableCellNode — fully determined by
-            // type name + children, which are handled below.
-            break
-        }
-
-        // 3. Recurse into children
-        hasher.combine(node.children.count)
-        for child in node.children {
-            feedContent(of: child, into: &hasher)
-        }
-    }
-
     // MARK: - Cache Key
 
     /// The internal key structure for NSCache, based on content fingerprint + width.
@@ -177,13 +98,16 @@ public final class LayoutCache: @unchecked Sendable {
     // MARK: - Public API
 
     /// Retrieve a pre-calculated layout if it exists for the given node and container width.
+    ///
+    /// O(1) with respect to subtree size: `node.contentFingerprint` was computed
+    /// once at parse time, so no recursive tree walk happens here.
     public func getLayout(
         for node: MarkdownNode,
         constrainedToWidth width: CGFloat,
         variantHash: Int = 0
     ) -> LayoutResult? {
         let key = CacheKey(
-            contentHash: Self.contentFingerprint(of: node),
+            contentHash: node.contentFingerprint,
             width: width,
             variantHash: variantHash
         )
@@ -205,7 +129,7 @@ public final class LayoutCache: @unchecked Sendable {
         variantHash: Int = 0
     ) {
         let key = CacheKey(
-            contentHash: Self.contentFingerprint(of: result.node),
+            contentHash: result.node.contentFingerprint,
             width: width,
             variantHash: variantHash
         )

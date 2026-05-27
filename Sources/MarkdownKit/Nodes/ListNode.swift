@@ -14,10 +14,17 @@ public struct ListNode: BlockNode {
     /// `true` for ordered (numbered) lists, `false` for bullet lists.
     public let isOrdered: Bool
     public let children: [MarkdownNode]
-    
+    public let contentFingerprint: Int
+
     public init(range: SourceRange?, isOrdered: Bool, children: [MarkdownNode]) {
         self.range = range
         self.isOrdered = isOrdered
         self.children = children
+        self.contentFingerprint = _markdownNodeFingerprint(
+            typeName: "ListNode",
+            children: children
+        ) { hasher in
+            hasher.combine(isOrdered)
+        }
     }
 }

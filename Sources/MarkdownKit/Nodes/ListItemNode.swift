@@ -23,10 +23,22 @@ public struct ListItemNode: BlockNode {
     /// The checkbox state for task-list items, or `.none` for regular bullets.
     public let checkbox: CheckboxState
     public let children: [MarkdownNode]
+    public let contentFingerprint: Int
 
     public init(range: SourceRange?, checkbox: CheckboxState = .none, children: [MarkdownNode]) {
         self.range = range
         self.checkbox = checkbox
         self.children = children
+        self.contentFingerprint = _markdownNodeFingerprint(
+            typeName: "ListItemNode",
+            children: children
+        ) { hasher in
+            // Discriminator string to mirror LayoutCache.feedContent's prior format.
+            switch checkbox {
+            case .checked:   hasher.combine("checked")
+            case .unchecked: hasher.combine("unchecked")
+            case .none:      hasher.combine("none")
+            }
+        }
     }
 }
