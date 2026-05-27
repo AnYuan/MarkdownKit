@@ -15,7 +15,10 @@ import AppKit
 /// The cache is keyed on a **content fingerprint** of the node rather than its UUID.
 /// This enables cache hits during streaming scenarios where each call to `parser.parse()`
 /// creates fresh AST nodes with new UUIDs, but unchanged paragraphs produce identical content.
-public final class LayoutCache {
+///
+/// `@unchecked Sendable` because the internal storage (`NSCache`) is thread-safe and
+/// the only mutable state (`hitCountStorage` / `missCountStorage`) is guarded by `statsLock`.
+public final class LayoutCache: @unchecked Sendable {
 
     // MARK: - Content Fingerprinting
 
@@ -132,6 +135,31 @@ public final class LayoutCache {
 
     private let cache = NSCache<CacheKey, LayoutResultWrapper>()
 
+    // MARK: - Test diagnostics (do not use in production paths)
+
+    private let statsLock = NSLock()
+    private var hitCountStorage: Int = 0
+    private var missCountStorage: Int = 0
+
+    public var hitCountForTesting: Int {
+        statsLock.lock()
+        defer { statsLock.unlock() }
+        return hitCountStorage
+    }
+
+    public var missCountForTesting: Int {
+        statsLock.lock()
+        defer { statsLock.unlock() }
+        return missCountStorage
+    }
+
+    public func resetStatsForTesting() {
+        statsLock.lock()
+        hitCountStorage = 0
+        missCountStorage = 0
+        statsLock.unlock()
+    }
+
     // NSCache requires class objects, so we wrap the struct LayoutResult
     private class LayoutResultWrapper {
         let result: LayoutResult
@@ -159,7 +187,15 @@ public final class LayoutCache {
             width: width,
             variantHash: variantHash
         )
-        return cache.object(forKey: key)?.result
+        let result = cache.object(forKey: key)?.result
+        statsLock.lock()
+        if result != nil {
+            hitCountStorage += 1
+        } else {
+            missCountStorage += 1
+        }
+        statsLock.unlock()
+        return result
     }
 
     /// Store a freshly computed layout frame.

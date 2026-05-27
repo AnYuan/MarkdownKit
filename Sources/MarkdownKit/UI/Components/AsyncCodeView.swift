@@ -100,6 +100,12 @@ public class AsyncCodeView: UIView {
         )
     }
     
+    /// Resets internal state so the view can be reused by a recycling cell.
+    public func prepareForReuse() {
+        rawCode = ""
+        textView.prepareForReuse()
+    }
+
     /// Binds the `LayoutResult` constraint to the view.
     public func configure(with layout: LayoutResult) {
         self.frame.size = layout.size

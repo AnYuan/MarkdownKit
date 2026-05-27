@@ -52,12 +52,50 @@ public final class ArithmeticTextCalculator {
     private struct FontCacheKey: Hashable {
         let fontName: String
         let pointSizeMilli: Int
+
+        var nsCacheKey: NSString {
+            "\(fontName)|\(pointSizeMilli)" as NSString
+        }
     }
 
-    private static let widthCacheLock = NSLock()
-    private static let preparedTextCacheLock = NSLock()
-    private static nonisolated(unsafe) var cachedWidths: [FontCacheKey: [String: CGFloat]] = [:]
-    private static nonisolated(unsafe) var cachedPreparedTexts: [PreparedTextCacheKey: PreparedText] = [:]
+    /// NSObject wrapper around `PreparedTextCacheKey` so it can be used as `NSCache` key.
+    private final class PreparedTextCacheKeyObject: NSObject {
+        let value: PreparedTextCacheKey
+        init(_ value: PreparedTextCacheKey) { self.value = value }
+
+        override var hash: Int { value.hashValue }
+        override func isEqual(_ object: Any?) -> Bool {
+            (object as? PreparedTextCacheKeyObject)?.value == value
+        }
+    }
+
+    /// Class wrapper because `NSCache` requires class values; `PreparedText` is a struct.
+    private final class PreparedTextWrapper {
+        let value: PreparedText
+        init(_ value: PreparedText) { self.value = value }
+    }
+
+    /// NSCache is internally thread-safe; soft `countLimit` prevents unbounded growth.
+    /// Plain `Dictionary` previously leaked memory in long-running apps that processed
+    /// many distinct font/text combinations.
+    /// `nonisolated(unsafe)` is appropriate: NSCache documents its API as thread-safe,
+    /// but it does not formally conform to `Sendable`.
+    private static nonisolated(unsafe) let cachedWidths: NSCache<NSString, NSNumber> = {
+        let cache = NSCache<NSString, NSNumber>()
+        cache.countLimit = 50_000
+        return cache
+    }()
+
+    private static nonisolated(unsafe) let cachedPreparedTexts: NSCache<PreparedTextCacheKeyObject, PreparedTextWrapper> = {
+        let cache = NSCache<PreparedTextCacheKeyObject, PreparedTextWrapper>()
+        cache.countLimit = 1_024
+        return cache
+    }()
+
+    // MARK: - Test diagnostics (do not use in production paths)
+    private static let testCounterLock = NSLock()
+    private static nonisolated(unsafe) var preparedTextCacheHits: Int = 0
+    private static nonisolated(unsafe) var preparedTextCacheMisses: Int = 0
 
     enum SegmentKind {
         case text
@@ -145,16 +183,24 @@ public final class ArithmeticTextCalculator {
 
     public init() {}
 
-    static func preparedTextCacheEntryCountForTesting() -> Int {
-        preparedTextCacheLock.lock()
-        defer { preparedTextCacheLock.unlock() }
-        return cachedPreparedTexts.count
+    static func preparedTextCacheHitsForTesting() -> Int {
+        testCounterLock.lock()
+        defer { testCounterLock.unlock() }
+        return preparedTextCacheHits
+    }
+
+    static func preparedTextCacheMissesForTesting() -> Int {
+        testCounterLock.lock()
+        defer { testCounterLock.unlock() }
+        return preparedTextCacheMisses
     }
 
     static func resetPreparedTextCacheForTesting() {
-        preparedTextCacheLock.lock()
-        defer { preparedTextCacheLock.unlock() }
-        cachedPreparedTexts.removeAll()
+        cachedPreparedTexts.removeAllObjects()
+        testCounterLock.lock()
+        preparedTextCacheHits = 0
+        preparedTextCacheMisses = 0
+        testCounterLock.unlock()
     }
 
     func profile(for attributedString: NSAttributedString) -> PreparedTextProfile {
@@ -183,29 +229,32 @@ public final class ArithmeticTextCalculator {
     }
 
     private static func cachedWidth(for text: String, fontKey: FontCacheKey) -> CGFloat? {
-        widthCacheLock.lock()
-        defer { widthCacheLock.unlock() }
-        return cachedWidths[fontKey]?[text]
+        let key = "\(fontKey.fontName)|\(fontKey.pointSizeMilli)|\(text)" as NSString
+        return cachedWidths.object(forKey: key).map { CGFloat(truncating: $0) }
     }
 
     private static func cachedPreparedText(for key: PreparedTextCacheKey) -> PreparedText? {
-        preparedTextCacheLock.lock()
-        defer { preparedTextCacheLock.unlock() }
-        return cachedPreparedTexts[key]
+        let keyObject = PreparedTextCacheKeyObject(key)
+        if let wrapper = cachedPreparedTexts.object(forKey: keyObject) {
+            testCounterLock.lock()
+            preparedTextCacheHits += 1
+            testCounterLock.unlock()
+            return wrapper.value
+        }
+        testCounterLock.lock()
+        preparedTextCacheMisses += 1
+        testCounterLock.unlock()
+        return nil
     }
 
     private static func storeCachedWidth(_ width: CGFloat, for text: String, fontKey: FontCacheKey) {
-        widthCacheLock.lock()
-        defer { widthCacheLock.unlock() }
-        var fontWidths = cachedWidths[fontKey] ?? [:]
-        fontWidths[text] = width
-        cachedWidths[fontKey] = fontWidths
+        let key = "\(fontKey.fontName)|\(fontKey.pointSizeMilli)|\(text)" as NSString
+        cachedWidths.setObject(NSNumber(value: Double(width)), forKey: key)
     }
 
     private static func storePreparedText(_ preparedText: PreparedText, for key: PreparedTextCacheKey) {
-        preparedTextCacheLock.lock()
-        defer { preparedTextCacheLock.unlock() }
-        cachedPreparedTexts[key] = preparedText
+        let keyObject = PreparedTextCacheKeyObject(key)
+        cachedPreparedTexts.setObject(PreparedTextWrapper(preparedText), forKey: keyObject)
     }
 
     private static func measureTextWidth(_ text: String, ctFont: CTFont, fontKey: FontCacheKey) -> CGFloat {

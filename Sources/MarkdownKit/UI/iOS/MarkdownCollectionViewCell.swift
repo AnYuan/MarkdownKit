@@ -27,8 +27,22 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
 
     public override func prepareForReuse() {
         super.prepareForReuse()
-        hostedView?.removeFromSuperview()
-        hostedView = nil
+        // Keep `hostedView` alive across recycles so the inner async view can be
+        // reused (same identity, just reset state). The configure-time type check
+        // `if let _ = hostedView as? AsyncXxxView` previously never matched because
+        // hostedView was set to nil here, defeating cell pooling.
+        switch hostedView {
+        case let imageView as AsyncImageView:
+            imageView.prepareForReuse()
+        case let codeView as AsyncCodeView:
+            codeView.prepareForReuse()
+        case let textView as AsyncTextView:
+            textView.prepareForReuse()
+        case let selectableTextView as SelectableTextView:
+            selectableTextView.prepareForReuse()
+        default:
+            break
+        }
         onLinkTap = nil
         onCheckboxToggle = nil
         onDetailsTap = nil

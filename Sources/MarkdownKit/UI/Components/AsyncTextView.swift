@@ -91,6 +91,26 @@ public class AsyncTextView: UIView {
         addGestureRecognizer(pressGesture)
     }
 
+    // MARK: - Reuse
+
+    /// Resets internal state so the view can be reused by a recycling cell.
+    /// Does **not** remove the view from its superview — the caller keeps the
+    /// instance alive across cell recycles to amortize allocation cost.
+    public func prepareForReuse() {
+        currentDrawTask?.cancel()
+        currentDrawTask = nil
+        currentAttributedString = nil
+        currentSize = .zero
+        currentCustomDraw = nil
+        hitTester = nil
+        // Clear the rasterized contents so stale text doesn't briefly flash before the
+        // next async draw lands.
+        layer.contents = nil
+        // Detach the highlight overlay if it was previously laid over a different node.
+        highlightLayer.isHidden = true
+        highlightLayer.opacity = 0
+    }
+
     // MARK: - Configure
 
     /// Binds the `LayoutResult` constraint to the view, launching an asynchronous drawing operation.
@@ -414,6 +434,12 @@ public final class SelectableTextView: UITextView {
         currentAttributedString = attributedString
         attributedText = attributedString
         layoutManager.ensureLayout(for: textContainer)
+    }
+
+    /// Resets selectable state so the view can be reused by a recycling cell.
+    public func prepareForReuse() {
+        currentAttributedString = nil
+        attributedText = nil
     }
 
     @objc private func handleInteractionTap(_ gesture: UITapGestureRecognizer) {

@@ -46,6 +46,13 @@ public class AsyncImageView: UIView {
         self.layer.contentsGravity = .resizeAspect
     }
     
+    /// Resets internal state so the view can be reused by a recycling cell.
+    public func prepareForReuse() {
+        currentImageTask?.cancel()
+        currentImageTask = nil
+        layer.contents = nil
+    }
+
     /// Binds the `LayoutResult` constraint to the view, launching an asynchronous download and decoding operation.
     public func configure(
         with layout: LayoutResult,

@@ -8,40 +8,67 @@ import UIKit
 @MainActor
 final class UIComponentsTests: XCTestCase {
     
-    func testVirtualizationPurging() async throws {
-        // 1. Setup Mock AST
+    func testCellRecyclingPreservesSameTypeHostedView() async throws {
+        // 1. Setup Mock AST with two paragraphs (same node type).
         let parser = MarkdownParser()
         let docNodes = parser.parse("""
-        # Welcome
-        This is text.
+        First paragraph.
+
+        Second paragraph.
+        """)
+
+        let solver = LayoutSolver()
+        let layoutRoot = await solver.solve(node: docNodes, constrainedToWidth: 320)
+        let firstLayout = layoutRoot.children[0]
+        let secondLayout = layoutRoot.children[1]
+
+        // 2. First configure attaches an AsyncTextView.
+        let cell = MarkdownCollectionViewCell(frame: .zero)
+        cell.configure(with: firstLayout)
+        XCTAssertEqual(cell.contentView.subviews.count, 1)
+        guard let firstHostedView = cell.contentView.subviews.first as? AsyncTextView else {
+            XCTFail("Expected AsyncTextView after first configure")
+            return
+        }
+
+        // 3. prepareForReuse must keep the hosted view alive (state reset only).
+        // This is the heart of Texture-style cell pooling: defeating it forces a
+        // fresh AsyncTextView allocation on every visible scroll row.
+        cell.prepareForReuse()
+        XCTAssertEqual(cell.contentView.subviews.count, 1)
+        XCTAssertIdentical(cell.contentView.subviews.first, firstHostedView)
+        XCTAssertNil(firstHostedView.currentAttributedString)
+
+        // 4. Re-configure with the same node type → reuses the same view instance.
+        cell.configure(with: secondLayout)
+        XCTAssertEqual(cell.contentView.subviews.count, 1)
+        XCTAssertIdentical(cell.contentView.subviews.first, firstHostedView)
+        XCTAssertNotNil(firstHostedView.currentAttributedString)
+    }
+
+    func testCellRecyclingReplacesHostedViewOnTypeChange() async throws {
+        // 1. Setup Mock AST with mixed node types.
+        let parser = MarkdownParser()
+        let docNodes = parser.parse("""
+        # Heading
+
         ```swift
         print("Code")
         ```
         """)
-        
+
         let solver = LayoutSolver()
         let layoutRoot = await solver.solve(node: docNodes, constrainedToWidth: 320)
-        
-        // 2. Extrapolate individual blocks
         let headerLayout = layoutRoot.children[0]
-        let paragraphLayout = layoutRoot.children[1]
-        let codeLayout = layoutRoot.children[2]
-        
-        // 3. Test View Mounting
+        let codeLayout = layoutRoot.children[1]
+
+        // 2. First configure attaches an AsyncTextView for the header.
         let cell = MarkdownCollectionViewCell(frame: .zero)
         cell.configure(with: headerLayout)
-        
-        // Verify AsyncTextView was added
-        XCTAssertEqual(cell.contentView.subviews.count, 1)
         XCTAssertTrue(cell.contentView.subviews[0] is AsyncTextView)
-        
-        // 4. Test Cell Recycling (Crucial Texture feature)
-        // When a cell is recycled, it must aggressively clear its subviews 
-        // to free up memory before being configured with a new LayoutResult.
+
+        // 3. Re-configure with a CodeBlock → swap to AsyncCodeView.
         cell.prepareForReuse()
-        XCTAssertEqual(cell.contentView.subviews.count, 0)
-        
-        // 5. Re-configure with a different node type
         cell.configure(with: codeLayout)
         XCTAssertEqual(cell.contentView.subviews.count, 1)
         XCTAssertTrue(cell.contentView.subviews[0] is AsyncCodeView)

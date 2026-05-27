@@ -3,6 +3,44 @@ import XCTest
 
 final class LayoutCacheEdgeCaseTests: XCTestCase {
 
+    func testCacheSharedAcrossSolversHitsOnSecondSolve() async throws {
+        // Simulates `MarkdownEngine.solver(for:)` which now reuses one persistent
+        // `LayoutCache` across solver instances. Each call to `MarkdownParser.parse()`
+        // produces fresh nodes (new UUIDs), so the cache must key on content
+        // fingerprint for streaming/reparse scenarios to hit.
+        let markdown = """
+        # Heading
+
+        Body paragraph that should round-trip through the cache.
+
+        Another paragraph for good measure.
+        """
+
+        let parser = MarkdownParser()
+        let cache = LayoutCache()
+        cache.resetStatsForTesting()
+
+        let solverA = LayoutSolver(theme: .default, cache: cache)
+        let docA = parser.parse(markdown)
+        _ = await solverA.solve(node: docA, constrainedToWidth: 320)
+
+        let missesAfterFirst = cache.missCountForTesting
+        XCTAssertGreaterThan(missesAfterFirst, 0, "First solve should populate the cache")
+
+        // Build a *different* solver instance — the same cache must survive.
+        let solverB = LayoutSolver(theme: .default, cache: cache)
+        let docB = parser.parse(markdown)
+
+        cache.resetStatsForTesting()
+        _ = await solverB.solve(node: docB, constrainedToWidth: 320)
+
+        XCTAssertGreaterThan(
+            cache.hitCountForTesting,
+            0,
+            "Second solve via a fresh solver should hit the persistent cache"
+        )
+    }
+
     func testCacheMissForDifferentWidth() async throws {
         let doc = TestHelper.parse("# Hello")
         let cache = LayoutCache()
