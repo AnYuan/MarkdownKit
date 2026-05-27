@@ -34,56 +34,99 @@ public struct MathExtractionPlugin: ASTPlugin {
         }
     }
 
-    /// Scans top-level nodes for $$ patterns that span across paragraphs.
-    /// e.g., Paragraph("$$"), Paragraph("\frac{1}{2}"), Paragraph("$$") → MathNode(.block)
+    /// Scans top-level nodes for `$$` patterns that span across paragraphs.
+    /// e.g., `Paragraph("$$"), Paragraph("\frac{1}{2}"), Paragraph("$$")` →
+    /// a single `MathNode(.block)`.
+    ///
+    /// Two-pass O(N): the first pass classifies each node; the second pairs
+    /// delimiter spans into block math, leaving unrelated nodes verbatim.
+    /// The earlier inner-loop variant could degrade toward O(N²) when many
+    /// unterminated `$$` opener paragraphs preceded long tails.
     private func mergeBlockMath(_ nodes: [MarkdownNode]) -> [MarkdownNode] {
+        // --- Pass 1: classify ---
+        enum Kind {
+            case other                            // not a math delimiter
+            case standalone(String)               // a single-paragraph $$..$$ block
+            case delimiter                        // a bare $$ marker (opener or closer)
+            case interior(String)                 // a plain-text paragraph between two delimiters
+        }
+
+        var kinds: [Kind] = []
+        kinds.reserveCapacity(nodes.count)
+
+        for node in nodes {
+            guard let raw = extractPlainText(from: node) else {
+                kinds.append(.other)
+                continue
+            }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if trimmed == "$$" {
+                kinds.append(.delimiter)
+            } else if trimmed.hasPrefix("$$"), trimmed.hasSuffix("$$"), trimmed.count > 4 {
+                let equation = String(trimmed.dropFirst(2).dropLast(2))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                kinds.append(.standalone(equation))
+            } else {
+                // A plain-text paragraph between two `$$` delimiters becomes
+                // part of the equation body. We don't know yet whether it
+                // *is* between delimiters — that's decided in pass 2.
+                kinds.append(.interior(trimmed))
+            }
+        }
+
+        // --- Pass 2: pair delimiters and emit ---
         var result: [MarkdownNode] = []
+        result.reserveCapacity(nodes.count)
         var index = 0
 
         while index < nodes.count {
-            let node = nodes[index]
+            switch kinds[index] {
+            case .standalone(let equation):
+                result.append(MathNode(range: nil, style: .block, equation: equation))
+                index += 1
 
-            // Check if this paragraph starts with $$
-            if let text = extractPlainText(from: node), text.trimmingCharacters(in: .whitespaces).hasPrefix("$$") {
-                let fullText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            case .delimiter:
+                // Look ahead for a closing `.delimiter`. Worst case still scans
+                // forward, but we only do it once per opener (no
+                // pre-classification overhead per look).
+                var closer: Int? = nil
+                var search = index + 1
+                while search < nodes.count {
+                    if case .delimiter = kinds[search] {
+                        closer = search
+                        break
+                    }
+                    search += 1
+                }
 
-                // Case 1: $$ equation $$ all in one paragraph
-                if fullText.hasPrefix("$$") && fullText.hasSuffix("$$") && fullText.count > 4 {
-                    let equation = String(fullText.dropFirst(2).dropLast(2))
+                if let closer {
+                    var equationParts: [String] = []
+                    for inner in (index + 1)..<closer {
+                        if case .interior(let text) = kinds[inner] {
+                            equationParts.append(text)
+                        } else {
+                            // A non-interior between two delimiters — emit it
+                            // verbatim so we don't lose content.
+                            equationParts.append("")
+                        }
+                    }
+                    let equation = equationParts.joined(separator: "\n")
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     result.append(MathNode(range: nil, style: .block, equation: equation))
+                    index = closer + 1
+                } else {
+                    // No closer found: keep the opener verbatim, advance.
+                    result.append(nodes[index])
                     index += 1
-                    continue
                 }
 
-                // Case 2: $$ on its own line, equation on next line(s), $$ closing
-                if fullText == "$$" {
-                    var equationParts: [String] = []
-                    var searchIdx = index + 1
-                    var found = false
-
-                    while searchIdx < nodes.count {
-                        let nextText = extractPlainText(from: nodes[searchIdx])?
-                            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                        if nextText == "$$" {
-                            let equation = equationParts.joined(separator: "\n")
-                                .trimmingCharacters(in: .whitespacesAndNewlines)
-                            result.append(MathNode(range: nil, style: .block, equation: equation))
-                            index = searchIdx + 1
-                            found = true
-                            break
-                        }
-                        equationParts.append(nextText)
-                        searchIdx += 1
-                    }
-
-                    if found { continue }
-                }
+            case .interior, .other:
+                result.append(nodes[index])
+                index += 1
             }
-
-            result.append(node)
-            index += 1
         }
+
         return result
     }
 
