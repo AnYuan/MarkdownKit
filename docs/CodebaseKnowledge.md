@@ -111,7 +111,7 @@ Primary files:
 - `Sources/MarkdownKit/Layout/AttributedStringBuilder.swift`
 - `Sources/MarkdownKit/Layout/Builders/TableAttributedStringBuilder.swift`
 - `Sources/MarkdownKit/Layout/Builders/ImageAttachmentBuilder.swift`
-- `Sources/MarkdownKit/Layout/Builders/MathAttachmentBuilder.swift`
+- `Sources/MarkdownKit/Math/DefaultMathRenderingAdapter.swift` (LaTeX → SVG → CGImage)
 - `Sources/MarkdownKit/Layout/TextKitCalculator.swift`
 - `Sources/MarkdownKit/Layout/LayoutCache.swift`
 - `Sources/MarkdownKit/Theme/Theme.swift`
@@ -126,7 +126,7 @@ Key facts:
 ### 4.4 Diagram/math backends
 
 - Mermaid: `MermaidDiagramAdapter` renders via `WKWebView` snapshot flow using bundled `mermaid.min.js` resource.
-- Math: `MathRenderer` uses MathJax -> SVG -> snapshot pipeline.
+- Math: `DefaultMathRenderingAdapter` uses MathJax → SVG → SwiftDraw rasterization (no WebView). `MathSVGPreprocessor` normalizes `ex` units and `currentColor`.
 
 ### 4.5 UI layer
 

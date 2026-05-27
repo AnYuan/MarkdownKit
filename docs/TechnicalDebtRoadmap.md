@@ -21,7 +21,7 @@
 | iOS table cell overflow | Added character-level truncation with ellipsis for both tab-stop and narrow-fallback modes |
 | Verification cost documentation | Added test split strategy docs in README; fast/heavy paths already existed |
 | Documentation drift | Refreshed CodebaseKnowledge.md, FeatureMatrix.md, TestCoverage.md; added `check_doc_freshness.sh` script |
-| Monolithic AttributedStringBuilder | Extracted logic into `TableAttributedStringBuilder`, `ImageAttachmentBuilder`, and `MathAttachmentBuilder` for better modularity and testability. |
+| Monolithic AttributedStringBuilder | Extracted logic into `TableAttributedStringBuilder`, `ImageAttachmentBuilder`, and (historically) `MathAttachmentBuilder` for better modularity and testability. The math attachment helper has since been folded into `DefaultMathRenderingAdapter` (Phase 3 removal of the legacy WKWebView path). |
 | LayoutSolver/TextKit Concurrency Deadlocks | Extracted TextKit instances per calculation pass, removed global states, and protected NSTextStorage C-level cache dictionary evaluations via `os_unfair_lock` under high load. |
 | Slow UI layer view allocation | Implemented asynchronous view recycling (`MarkdownCollectionViewCell/MarkdownItemView`), matching `Texture/AsyncDisplayKit` continuous-allocation optimization best practices. |
 | Test Coverage Gaps | Reached 82.03% line coverage by establishing robust test suites covering utility files (`TableOfContentsBuilder`, `PerformanceProfiler`, and `PlatformAccessibility`). |

@@ -9,9 +9,9 @@ Instead of relying on heavy JavaScript-based libraries (like `highlight.js`) emb
 
 ## 2. LaTeX Math Rendering (MathJax SVG)
 Native Swift doesn't inherently understand `$\frac{1}{2}$`.
-- We use `MathJaxSwift` (JavaScriptCore) via `MathRenderer` to convert LaTeX into SVG without relying on a network CDN.
-- A shared hidden `WKWebView` is used only for SVG rasterization to produce native image attachments.
-- The rasterized result is wrapped into `NSTextAttachment` and inserted into the TextKit 2 layout pipeline.
+- We use `MathJaxSwift` (JavaScriptCore) via `DefaultMathRenderingAdapter` to convert LaTeX into SVG without relying on a network CDN.
+- The SVG is preprocessed (`MathSVGPreprocessor` normalizes `ex` units and `currentColor`) and rasterized in-process via `SwiftDraw` — no `WKWebView`, no async snapshot timing.
+- The rasterized `CGImage` is wrapped into `NSTextAttachment` and inserted into the TextKit 1 layout pipeline.
 - `MathExtractionPlugin` normalizes both `$...$`/`$$...$$` and fenced math blocks (e.g. ````math`) into `MathNode`.
 - Inline extraction includes guardrails for escaped literal-dollar edge cases and unmatched delimiters.
 

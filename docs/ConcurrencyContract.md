@@ -6,8 +6,8 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 
 1. `LayoutSolver.solve(node:constrainedToWidth:)` is async and intended for background execution.
 2. `LayoutSolver.solveSync(...)` blocks the caller and dispatches detached async work; use only when async call sites are impossible.
-3. `AttributedStringBuilder.renderMath(...)` always hops to `MainActor` before calling `MathRenderer.shared.render(...)`.
-4. `MathRenderer` uses internal actors (`Engine`, `MathWarningSuppressor`) for shared-state safety and serializes WebKit usage through a single queue.
+3. Math rendering goes through `DefaultMathRenderingAdapter.render(from:theme:contextFont:)`. The adapter is `Sendable`; its `Engine` actor wraps `MathJaxSwift` for LaTeX → SVG conversion and `SwiftDraw` rasterization runs synchronously in the calling task.
+4. `MathWarningSuppressor` is an actor that deduplicates noisy MathJax errors across concurrent renders.
 5. `MermaidSnapshotter` is `@MainActor` and serializes all `WKWebView` rendering via an internal FIFO queue.
 6. `AsyncImageView` performs data loading and decode in `Task.detached`, then mounts `layer.contents` on `MainActor`.
 7. `AsyncTextView` may rasterize text off-main; callers must still invoke `configure(with:)` from UI context.
@@ -31,4 +31,4 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 ## 4. Known Limits
 
 1. `LayoutSolver` and helper types still rely on `@unchecked Sendable` boundaries and require disciplined call-site usage.
-2. Multi-actor stress tests now cover LayoutSolver, LayoutCache, and parser interleaving. Further coverage of MathRenderer and MermaidSnapshotter concurrent usage is deferred.
+2. Multi-actor stress tests now cover LayoutSolver, LayoutCache, and parser interleaving. Further coverage of `DefaultMathRenderingAdapter` and `MermaidSnapshotter` concurrent usage is deferred.

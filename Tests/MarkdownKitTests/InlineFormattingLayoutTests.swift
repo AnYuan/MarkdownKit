@@ -400,7 +400,7 @@ final class InlineFormattingLayoutTests: XCTestCase {
     }
 
     func testMathLayoutProducesOutput() async throws {
-        // MathRenderer may succeed (image attachment) or fall back to raw equation text
+        // `DefaultMathRenderingAdapter` may succeed (image attachment) or fall back to raw equation text
         let markdown = "$E=mc^2$"
         let doc = TestHelper.parse(markdown, plugins: [MathExtractionPlugin()])
         let solver = LayoutSolver()

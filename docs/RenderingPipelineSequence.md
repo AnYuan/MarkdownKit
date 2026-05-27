@@ -13,7 +13,7 @@ sequenceDiagram
     participant Solver as "LayoutSolver"
     participant Cache as "LayoutCache"
     participant Highlight as "SplashHighlighter"
-    participant Math as "MathRenderer (WKWebView)"
+    participant Math as "DefaultMathRenderingAdapter (MathJax → SwiftDraw)"
     participant Measure as "TextKitCalculator"
     participant CV as "MarkdownCollectionView"
     participant Cell as "MarkdownCollectionViewCell"
