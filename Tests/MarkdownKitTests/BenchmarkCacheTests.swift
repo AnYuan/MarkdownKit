@@ -41,8 +41,16 @@ final class BenchmarkCacheTests: XCTestCase {
             }
         )
 
-        // setLayout cost
-        let layout = cache.getLayout(for: doc, constrainedToWidth: defaultWidth)!
+        // setLayout cost. Synthesize a LayoutResult directly: the previous
+        // `cache.getLayout(...)!` force-unwrap blew up because `solver.solve`
+        // stores entries under `solver.cacheVariantHash` (non-zero) while the
+        // direct `cache.getLayout(...)` call here defaults to `variantHash: 0`.
+        // A bare LayoutResult is enough to measure the raw store cost.
+        let layout = LayoutResult(
+            node: doc,
+            size: CGSize(width: defaultWidth, height: 100),
+            attributedString: nil
+        )
         results.append(
             harness.measure(label: "setLayout()", fixture: "medium") {
                 cache.setLayout(layout, constrainedToWidth: 12345)

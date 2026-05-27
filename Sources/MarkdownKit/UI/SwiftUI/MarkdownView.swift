@@ -331,31 +331,10 @@ private final class MarkdownEngine: ObservableObject {
         }
     }
 
-    func renderOnGeometryChange(
-        markdown: String,
-        plugins: [ASTPlugin],
-        theme: Theme,
-        newWidth: CGFloat,
-        diagramRegistry: DiagramAdapterRegistry,
-        imageLoadingPolicy: ImageLoadingPolicy
-    ) {
-        guard newWidth > 50 else { return }
-
-        #if canImport(AppKit) && !targetEnvironment(macCatalyst)
-        // AppKit re-reports the true scroll-content width from the NSView bridge.
-        // Rendering here causes a transient first-pass mismatch on startup and resize.
-        return
-        #else
-        render(
-            markdown: markdown,
-            plugins: plugins,
-            theme: theme,
-            width: newWidth,
-            diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy
-        )
-        #endif
-    }
+    // `renderOnGeometryChange` lived here until Phase 4.6 collapsed the two
+    // separate `.onChange` handlers (text + width) into one debounced
+    // `scheduleDebouncedTextRender` call. The remaining `updateEffectiveContent-
+    // Width` below still serves the macOS NSScrollView feedback path.
 
     func updateEffectiveContentWidth(
         _ width: CGFloat,
