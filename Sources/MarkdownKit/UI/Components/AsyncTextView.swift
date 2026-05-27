@@ -69,6 +69,87 @@ public class AsyncTextView: UIView {
     /// setups since iOS 16.
     private var currentDisplayScale: CGFloat = 1
 
+    /// Shared cache of rasterized text bitmaps. Key is content-based
+    /// (`contentFingerprint + size + scale`), NOT identity-based — using
+    /// `NSAttributedString.hash` would miss because `NSObject` hashes by
+    /// pointer, and two equal attributed strings have different pointers.
+    /// Cross-cell scroll-back and prefetch both benefit from this cache.
+    /// `countLimit` is a soft cap.
+    nonisolated(unsafe) private static let imageCache: NSCache<NSString, CGImageWrapper> = {
+        let c = NSCache<NSString, CGImageWrapper>()
+        c.countLimit = 128
+        return c
+    }()
+
+    /// `CGImage` is a CoreFoundation type that bridges to AnyObject but cannot
+    /// be stored directly in `NSCache<NSString, CGImage>` (the generic bound
+    /// requires `AnyObject`-conforming Swift class). A thin wrapper avoids
+    /// `Unmanaged` gymnastics.
+    private final class CGImageWrapper {
+        let image: CGImage
+        init(_ image: CGImage) { self.image = image }
+    }
+
+    /// Drops all cached rasterized bitmaps. Hosts can call this from
+    /// memory-warning handlers; the cache also auto-evicts under pressure.
+    public static func clearImageCache() {
+        imageCache.removeAllObjects()
+    }
+
+    private static func imageCacheKey(
+        fingerprint: Int,
+        size: CGSize,
+        scale: CGFloat
+    ) -> NSString {
+        "\(fingerprint)|\(Int(size.width.rounded()))x\(Int(size.height.rounded()))@\(scale)" as NSString
+    }
+
+    /// Pre-rasterizes a layout's bitmap on a background task so it's ready in
+    /// the cache by the time the cell scrolls into view. No-op if the bitmap
+    /// is already cached. Used by
+    /// `UICollectionViewDataSourcePrefetching.prefetchItemsAt`.
+    ///
+    /// Caller is responsible for retaining the returned `Task` so it can be
+    /// cancelled in `cancelPrefetchingForItemsAt` when scrolling reverses.
+    public static func preheat(_ layout: LayoutResult, scale: CGFloat = 2) -> Task<Void, Never> {
+        let size = layout.size
+        let cacheKey = imageCacheKey(
+            fingerprint: layout.node.contentFingerprint,
+            size: size,
+            scale: scale
+        )
+
+        // Already cached? Return an instantly-finished no-op task.
+        if imageCache.object(forKey: cacheKey) != nil {
+            return Task {}
+        }
+
+        if let customDraw = layout.customDraw {
+            return Task.detached(priority: .utility) {
+                let cgImage = await renderImageCustom(customDraw: customDraw, size: size, scale: scale)
+                if Task.isCancelled { return }
+                if let cgImage {
+                    imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey)
+                }
+            }
+        }
+
+        guard let attributedString = layout.attributedString, attributedString.length > 0 else {
+            return Task {}
+        }
+
+        // Bridge `NSAttributedString` (not formally Sendable) into the detached
+        // task by copying. The cell-driven render path uses the same pattern.
+        nonisolated(unsafe) let drawString = NSAttributedString(attributedString: attributedString)
+        return Task.detached(priority: .utility) {
+            let cgImage = await renderImage(drawString: drawString, size: size, scale: scale)
+            if Task.isCancelled { return }
+            if let cgImage {
+                imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey)
+            }
+        }
+    }
+
     // MARK: - Init
 
     public override init(frame: CGRect) {
@@ -158,6 +239,17 @@ public class AsyncTextView: UIView {
             self.currentAttributedString = layout.attributedString
             let size = layout.size
             let scale = currentDisplayScale
+            let cacheKey = Self.imageCacheKey(
+                fingerprint: layout.node.contentFingerprint,
+                size: size,
+                scale: scale
+            )
+
+            // Cache hit: mount synchronously, skip the rasterization Task.
+            if let cached = Self.imageCache.object(forKey: cacheKey) {
+                layer.contents = cached.image
+                return
+            }
 
             if displaysAsynchronously {
                 currentDrawTask = Task {
@@ -166,16 +258,22 @@ public class AsyncTextView: UIView {
                         size: size,
                         scale: scale
                     )
-                    if !Task.isCancelled {
-                        self.layer.contents = cgImage
+                    if Task.isCancelled { return }
+                    if let cgImage {
+                        Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey)
                     }
+                    self.layer.contents = cgImage
                 }
             } else {
-                self.layer.contents = Self.renderImageSyncCustom(
+                let cgImage = Self.renderImageSyncCustom(
                     customDraw: customDraw,
                     size: size,
                     scale: scale
                 )
+                if let cgImage {
+                    Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey)
+                }
+                self.layer.contents = cgImage
             }
             return
         }
@@ -190,6 +288,17 @@ public class AsyncTextView: UIView {
 
         let size = layout.size
         let scale = currentDisplayScale
+        let cacheKey = Self.imageCacheKey(
+            fingerprint: layout.node.contentFingerprint,
+            size: size,
+            scale: scale
+        )
+
+        // Cache hit: scroll-back or prefetch warmup landed here first.
+        if let cached = Self.imageCache.object(forKey: cacheKey) {
+            layer.contents = cached.image
+            return
+        }
 
         if displaysAsynchronously {
             nonisolated(unsafe) let drawString = NSAttributedString(attributedString: string)
@@ -199,16 +308,22 @@ public class AsyncTextView: UIView {
                     size: size,
                     scale: scale
                 )
-                if !Task.isCancelled {
-                    self.layer.contents = cgImage
+                if Task.isCancelled { return }
+                if let cgImage {
+                    Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey)
                 }
+                self.layer.contents = cgImage
             }
         } else {
-            self.layer.contents = Self.renderImageSync(
+            let cgImage = Self.renderImageSync(
                 drawString: string,
                 size: size,
                 scale: scale
             )
+            if let cgImage {
+                Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey)
+            }
+            self.layer.contents = cgImage
         }
     }
 
@@ -368,6 +483,11 @@ public class AsyncTextView: UIView {
         textStorage.addLayoutManager(layoutManager)
 
         let glyphRange = layoutManager.glyphRange(for: textContainer)
+        // Cancellation checkpoint: glyphRange computation is the heaviest
+        // step. Skip the actual paint if the cell was reused / view moved on.
+        // `Task.isCancelled` is `false` outside a Task, so the sync path is
+        // unaffected.
+        if Task.isCancelled { return }
         layoutManager.drawBackground(forGlyphRange: glyphRange, at: drawRect.origin)
         layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: drawRect.origin)
     }
