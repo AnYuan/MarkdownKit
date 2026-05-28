@@ -1,5 +1,11 @@
 # MarkdownKit Benchmark Baseline
 
+> **Latest run**: 2026-05-28 post Phase 0-6 refresh — see
+> [`BENCHMARK_POST_PHASE_6.md`](BENCHMARK_POST_PHASE_6.md) for the current
+> numbers, the side-by-side delta vs this baseline, and the per-phase win
+> attribution. Headline: cross-render cache reuse 100× faster
+> (228 ms → 3.56 ms), math block layout 150× faster, parse path ~30 % faster.
+
 **Initial Baseline Date**: 2026-02-27  
 **Latest Phase 2 Refresh**: 2026-04-01  
 **Platform**: macOS · arm64 (Apple Silicon)  
