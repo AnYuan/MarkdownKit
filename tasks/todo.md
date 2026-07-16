@@ -166,3 +166,55 @@
 
 ### Residual Follow-up
 - [x] Resolve the macOS snapshot drift in `SnapshotTests.testTableRendering` and `SnapshotTests.testTasklistRendering` after restoring compact task-list spacing and refreshing the reference images.
+
+## Phase 12: Code Quality Roadmap
+
+Each stage is intentionally atomic: implement one concern, run its focused checks,
+review the complete diff, then commit and push before starting the next stage.
+
+- [ ] `fix: restore arithmetic width invariant`
+  Ensure reported arithmetic layout width never exceeds the supplied constraint
+  because of trailing separator paint width.
+- [ ] `fix: derive system-font traits safely`
+  Remove private `.SFNS-*` descriptor round-tripping and the resulting CoreText
+  fallback diagnostics.
+- [ ] `ci: run the complete macOS correctness suite`
+  Replace the suite allow-list with an exclusion-based non-benchmark gate.
+- [ ] `ci: execute UIKit tests on an iOS simulator`
+  Repair stale platform tests first, then add an iOS CI lane.
+- [ ] `bench: make the regression baseline authoritative`
+  Use one machine-readable benchmark baseline for tests and documentation.
+- [ ] `test: separate snapshot determinism from visual regression`
+  Give snapshot and documentation freshness checks explicit, honest CI roles.
+- [ ] `feat: make parser resource limits explicit`
+  Replace global input/depth limits and silent truncation with per-parser policy
+  and diagnosable outcomes.
+- [ ] `fix: reject numeric commit-autolink false positives`
+  Preserve issue references while leaving ordinary long numeric identifiers as text.
+- [ ] `fix: transform nested block math uniformly`
+  Run sibling block-math merging at every AST nesting level through shared recursion.
+- [ ] `fix: make rendering appearance-aware`
+  Thread appearance through render input, layout environment, and cache identity.
+- [ ] `refactor: split host resolver and interaction contracts`
+  Separate background `Sendable` autolink resolution from main-actor UI callbacks.
+- [ ] `perf: coalesce render jobs and reuse parsed ASTs`
+  Bound in-flight parsing and skip reparsing for width-only layout changes.
+- [ ] `refactor: establish one image-loading pipeline`
+  Decide the supported image surfaces, centralize fetch validation, and downsample
+  live inline images before caching.
+- [ ] `perf: reuse accessibility metadata on macOS`
+  Remove repeated main-thread attributed-string scans during item configuration.
+- [ ] `refactor: share sync and async layout dispatch`
+  Eliminate duplicated node dispatch while preserving synchronous and asynchronous APIs.
+- [ ] `refactor: share table geometry across renderers`
+  Keep platform renderers thin over one normalization and sizing model.
+- [ ] `refactor: decompose arithmetic text preparation`
+  Separate scanning, segment classification/merging, measurement, and line breaking.
+- [ ] `perf: cache repeated highlighter and diagram work`
+  Cache generic regex compilation and width-independent Mermaid source renders.
+- [ ] `refactor: curate the pre-1.0 public API`
+  Internalize implementation details, remove unnecessary re-exports, and document
+  the remaining supported surface.
+- [ ] `chore: establish release and repository hygiene`
+  Pin moving dependencies, add license/notices/changelog, adopt valid SemVer tags,
+  record vendored resource provenance, and remove orphan generated artifacts.
