@@ -2,39 +2,13 @@ import Foundation
 import XCTest
 
 /// Regression guardrails for benchmark tests.
-/// Baseline source: docs/BENCHMARK_BASELINE.md (2026-02-27, commit 123c77b+local).
+///
+/// Baseline source: `Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json`, the
+/// single machine-readable baseline shared with `scripts/render_benchmark_baseline.py`
+/// (which renders it into `docs/BENCHMARK_BASELINE.md`). No timing value, policy
+/// value, or guarded key list is duplicated in this file — everything is decoded
+/// through `BenchmarkBaselineLoader`.
 enum BenchmarkRegressionGuard {
-
-    static let baselineVersion = "2026-02-27@123c77b+local"
-    static let maxSlowdownFactor: Double = 3.0
-    static let absoluteSlackMs: Double = 5.0
-
-    private static let avgMsBaseline: [String: Double] = [
-        "parse(small)": 0.244,
-        "parse(medium)": 1.61,
-        "parse(large)": 13.17,
-        "parse(code-heavy)": 0.266,
-        "parse(table-heavy)": 13.24,
-        "parse(math-heavy)": 0.565,
-        "parse(details-heavy)": 2.19,
-        "parse(diagram-heavy)": 0.308,
-        "parse(tasklist-heavy)": 7.01,
-        "solve(small)": 0.786,
-        "solve(medium)": 231.5,
-        "solve(large)": 34.60,
-        "solve(code-heavy)": 16.85,
-        "solve(table-heavy)": 18.87,
-        "solve(math-heavy)": 72.07,
-        "solve(details-heavy)": 1.86,
-        "solve(diagram-heavy)": 6.13,
-        "solve(tasklist-heavy)": 7.38,
-        "solve(cold)(medium)": 228.1,
-        "solve(warm)(medium)": 0.006,
-        "sequential-4x(medium)": 943.0,
-        "concurrent-4x(medium)": 237.5,
-        "sequential-8x(large)": 333.8,
-        "concurrent-8x(large)": 105.7
-    ]
 
     static func assertCoreReport(
         parseResults: [BenchmarkResult],
@@ -43,34 +17,34 @@ enum BenchmarkRegressionGuard {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        assertAgainstBaselines(parseResults, keys: [
-            "parse(small)",
-            "parse(medium)",
-            "parse(large)",
-            "parse(code-heavy)",
-            "parse(table-heavy)",
-            "parse(math-heavy)",
-            "parse(details-heavy)",
-            "parse(diagram-heavy)",
-            "parse(tasklist-heavy)"
-        ], file: file, line: line)
+        guard let baseline = BenchmarkBaselineLoader.load(file: file, line: line) else { return }
 
-        assertAgainstBaselines(layoutResults, keys: [
-            "solve(small)",
-            "solve(medium)",
-            "solve(large)",
-            "solve(code-heavy)",
-            "solve(table-heavy)",
-            "solve(math-heavy)",
-            "solve(details-heavy)",
-            "solve(diagram-heavy)",
-            "solve(tasklist-heavy)"
-        ], file: file, line: line)
+        assertGroup(
+            parseResults,
+            group: .coreParse,
+            baseline: baseline,
+            isGuardedFamily: { $0.label == "parse" },
+            file: file,
+            line: line
+        )
 
-        assertAgainstBaselines(cacheResults, keys: [
-            "solve(cold)(medium)",
-            "solve(warm)(medium)"
-        ], file: file, line: line)
+        assertGroup(
+            layoutResults,
+            group: .coreLayout,
+            baseline: baseline,
+            isGuardedFamily: { $0.label == "solve" },
+            file: file,
+            line: line
+        )
+
+        assertGroup(
+            cacheResults,
+            group: .coreCache,
+            baseline: baseline,
+            isGuardedFamily: { $0.label.hasPrefix("solve(") },
+            file: file,
+            line: line
+        )
 
         assertWarmCacheDominatesCold(cacheResults, file: file, line: line)
     }
@@ -80,12 +54,17 @@ enum BenchmarkRegressionGuard {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        assertAgainstBaselines(concurrencyResults, keys: [
-            "sequential-4x(medium)",
-            "concurrent-4x(medium)",
-            "sequential-8x(large)",
-            "concurrent-8x(large)"
-        ], file: file, line: line)
+        guard let baseline = BenchmarkBaselineLoader.load(file: file, line: line) else { return }
+
+        assertGroup(
+            concurrencyResults,
+            group: .deepConcurrency,
+            baseline: baseline,
+            isGuardedFamily: { _ in true },
+            file: file,
+            line: line
+        )
+
         assertConcurrencyIsNotSlower(concurrencyResults, file: file, line: line)
     }
 
@@ -102,6 +81,16 @@ enum BenchmarkRegressionGuard {
         else {
             XCTFail("Missing cache mode entries for benchmark regression checks", file: file, line: line)
             return
+        }
+
+        if let baseline = BenchmarkBaselineLoader.load(file: file, line: line) {
+            for (keyName, measured) in [
+                ("solve(cold-large)(medium)", cold),
+                ("solve(warm-large)(medium)", warm),
+                ("solve(tiny-thrash)(medium)", thrash)
+            ] {
+                assertHarnessMatches(measured, key: keyName, baseline: baseline, file: file, line: line)
+            }
         }
 
         XCTAssertLessThan(
@@ -121,27 +110,51 @@ enum BenchmarkRegressionGuard {
         )
     }
 
-    private static func assertAgainstBaselines(
+    /// Asserts that every guarded baseline key in `group` was measured, that no
+    /// measured result belonging to the group's label family is missing a baseline
+    /// entry, and that measured results within budget for the ones that match on
+    /// both sides. Measured results outside the guarded label family (e.g. isolated
+    /// arithmetic/TextKit measurements mixed into `layoutResults`) are intentionally
+    /// left alone.
+    private static func assertGroup(
         _ results: [BenchmarkResult],
-        keys: [String],
+        group: BenchmarkBaselineGroup,
+        baseline: BenchmarkBaseline,
+        isGuardedFamily: (BenchmarkResult) -> Bool,
         file: StaticString,
         line: UInt
     ) {
-        let lookup = Dictionary(uniqueKeysWithValues: results.map { (key(for: $0), $0) })
+        let expected = Dictionary(
+            uniqueKeysWithValues: baseline.measurements(in: group).map { ($0.key, $0.averageMilliseconds) }
+        )
+        let measuredByKey = Dictionary(uniqueKeysWithValues: results.map { (key(for: $0), $0) })
+        let guardedMeasuredKeys = Set(results.filter(isGuardedFamily).map(key(for:)))
+        let expectedKeys = Set(expected.keys)
 
-        for keyName in keys {
-            guard let baseline = avgMsBaseline[keyName] else {
-                XCTFail("Missing baseline for \(keyName) [\(baselineVersion)]", file: file, line: line)
-                continue
-            }
-            guard let measured = lookup[keyName] else {
-                XCTFail("Missing measured benchmark result for \(keyName)", file: file, line: line)
-                continue
-            }
+        for missingKey in expectedKeys.subtracting(guardedMeasuredKeys).sorted() {
+            XCTFail(
+                "Missing measured benchmark result for \(missingKey) [group \(group.rawValue), baseline \(baseline.version)]",
+                file: file,
+                line: line
+            )
+        }
+
+        for unexpectedKey in guardedMeasuredKeys.subtracting(expectedKeys).sorted() {
+            XCTFail(
+                "Measured guarded result \(unexpectedKey) has no baseline entry in group \(group.rawValue) [baseline \(baseline.version)]",
+                file: file,
+                line: line
+            )
+        }
+
+        for keyName in expectedKeys.intersection(guardedMeasuredKeys).sorted() {
+            guard let measured = measuredByKey[keyName], let baselineAvg = expected[keyName] else { continue }
+
+            assertHarnessMatches(measured, key: keyName, baseline: baseline, file: file, line: line)
 
             let budget = max(
-                baseline * maxSlowdownFactor,
-                baseline + absoluteSlackMs
+                baselineAvg * baseline.policy.maxSlowdownFactor,
+                baselineAvg + baseline.policy.absoluteSlackMilliseconds
             )
 
             XCTAssertLessThanOrEqual(
@@ -149,7 +162,7 @@ enum BenchmarkRegressionGuard {
                 budget,
                 """
                 Benchmark regression for \(keyName): avg \(fmt(measured.avg)) exceeded budget \(fmt(budget)) \
-                (baseline \(fmt(baseline)), version \(baselineVersion))
+                (baseline \(fmt(baselineAvg)), version \(baseline.version))
                 """,
                 file: file,
                 line: line
@@ -206,6 +219,39 @@ enum BenchmarkRegressionGuard {
                 concurrent8.avg,
                 sequential8.avg,
                 "8-way concurrent benchmark should not be slower than sequential",
+                file: file,
+                line: line
+            )
+        }
+    }
+
+    /// Verifies a measured result was produced with the exact warmup/measure
+    /// iteration counts recorded in `baseline.harness`, so baseline metadata can
+    /// never silently drift from the workload it claims to describe.
+    private static func assertHarnessMatches(
+        _ result: BenchmarkResult,
+        key keyName: String,
+        baseline: BenchmarkBaseline,
+        file: StaticString,
+        line: UInt
+    ) {
+        if result.warmupIterations != baseline.harness.warmupIterations {
+            XCTFail(
+                """
+                Benchmark harness drift for \(keyName): warmupIterations \(result.warmupIterations) != \
+                expected \(baseline.harness.warmupIterations) (baseline \(baseline.version))
+                """,
+                file: file,
+                line: line
+            )
+        }
+
+        if result.iterations != baseline.harness.measureIterations {
+            XCTFail(
+                """
+                Benchmark harness drift for \(keyName): measured iterations \(result.iterations) != \
+                expected \(baseline.harness.measureIterations) (baseline \(baseline.version))
+                """,
                 file: file,
                 line: line
             )

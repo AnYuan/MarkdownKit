@@ -185,8 +185,21 @@ review the complete diff, then commit and push before starting the next stage.
   Review: the lane enumerates and executes all 374 enabled iOS tests, requires
   every UIKit-bearing suite, rejects process restarts/private-font fallback,
   and the macOS gate remains green at 320 correctness + 4 snapshot tests.
-- [ ] `bench: make the regression baseline authoritative`
+- [x] `bench: make the regression baseline authoritative`
   Use one machine-readable benchmark baseline for tests and documentation.
+  Review: `Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json` is now the
+  single schema-versioned source; `BenchmarkRegressionGuard` decodes/validates
+  it via `Bundle.module` (no embedded timing table), and
+  `scripts/render_benchmark_baseline.py` renders the same JSON into
+  `docs/BENCHMARK_BASELINE.md`, with `--check` wired into
+  `scripts/verify_benchmarks.sh` as a fail-fast pre-flight step. New
+  `PerformanceBaselineContractTests` (no "Benchmark" in the name, so
+  `verify_fast.sh` still runs it) cover schema validation and exact key
+  alignment without executing timing workloads. Validation: the complete
+  benchmark gate passes, and the CI correctness configuration runs 330 tests
+  including all 10 baseline-contract tests. The local table snapshot still
+  depends on pre-layout appearance and is intentionally left to the next
+  snapshot-determinism stage rather than refreshing an unrelated baseline.
 - [ ] `test: separate snapshot determinism from visual regression`
   Give snapshot and documentation freshness checks explicit, honest CI roles.
 - [ ] `feat: make parser resource limits explicit`

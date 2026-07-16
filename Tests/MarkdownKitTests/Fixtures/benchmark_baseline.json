@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "version": "2026-05-28@e05b068",
+  "recordedAt": "2026-05-28",
+  "commit": "e05b068",
+  "platform": {
+    "os": "macOS",
+    "arch": "arm64",
+    "device": "Apple Silicon"
+  },
+  "harness": {
+    "warmupIterations": 3,
+    "measureIterations": 20,
+    "clock": "mach_absolute_time"
+  },
+  "policy": {
+    "maxSlowdownFactor": 3.0,
+    "absoluteSlackMilliseconds": 5.0
+  },
+  "measurements": [
+    { "key": "parse(small)", "group": "core.parse", "averageMilliseconds": 0.165 },
+    { "key": "parse(medium)", "group": "core.parse", "averageMilliseconds": 1.13 },
+    { "key": "parse(large)", "group": "core.parse", "averageMilliseconds": 9.11 },
+    { "key": "parse(code-heavy)", "group": "core.parse", "averageMilliseconds": 0.200 },
+    { "key": "parse(table-heavy)", "group": "core.parse", "averageMilliseconds": 8.97 },
+    { "key": "parse(math-heavy)", "group": "core.parse", "averageMilliseconds": 0.400 },
+    { "key": "parse(details-heavy)", "group": "core.parse", "averageMilliseconds": 1.34 },
+    { "key": "parse(diagram-heavy)", "group": "core.parse", "averageMilliseconds": 0.201 },
+    { "key": "parse(tasklist-heavy)", "group": "core.parse", "averageMilliseconds": 4.87 },
+    { "key": "solve(small)", "group": "core.layout", "averageMilliseconds": 0.353 },
+    { "key": "solve(medium)", "group": "core.layout", "averageMilliseconds": 2.20 },
+    { "key": "solve(large)", "group": "core.layout", "averageMilliseconds": 16.75 },
+    { "key": "solve(code-heavy)", "group": "core.layout", "averageMilliseconds": 3.23 },
+    { "key": "solve(table-heavy)", "group": "core.layout", "averageMilliseconds": 13.86 },
+    { "key": "solve(math-heavy)", "group": "core.layout", "averageMilliseconds": 0.981 },
+    { "key": "solve(details-heavy)", "group": "core.layout", "averageMilliseconds": 1.40 },
+    { "key": "solve(diagram-heavy)", "group": "core.layout", "averageMilliseconds": 0.770 },
+    { "key": "solve(tasklist-heavy)", "group": "core.layout", "averageMilliseconds": 7.25 },
+    { "key": "solve(cold)(medium)", "group": "core.cache", "averageMilliseconds": 3.56 },
+    { "key": "solve(warm)(medium)", "group": "core.cache", "averageMilliseconds": 0.003 },
+    { "key": "sequential-4x(medium)", "group": "deep.concurrency", "averageMilliseconds": 11.32 },
+    { "key": "concurrent-4x(medium)", "group": "deep.concurrency", "averageMilliseconds": 5.33 },
+    { "key": "sequential-8x(large)", "group": "deep.concurrency", "averageMilliseconds": 212.3 },
+    { "key": "concurrent-8x(large)", "group": "deep.concurrency", "averageMilliseconds": 54.71 }
+  ]
+}

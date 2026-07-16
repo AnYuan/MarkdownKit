@@ -1,10 +1,19 @@
 # MarkdownKit Benchmark — Post Phase 0-6 Refresh
 
+> **Archival analysis.** This document is a point-in-time write-up of the
+> 2026-05-28 refresh and is not regenerated or gated in CI. The authoritative,
+> machine-readable benchmark baseline lives in
+> [`Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json`](../Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json)
+> and is rendered into [`docs/BENCHMARK_BASELINE.md`](BENCHMARK_BASELINE.md) by
+> `scripts/render_benchmark_baseline.py`; that pair is what `BenchmarkRegressionGuard`
+> and CI actually enforce. Treat the tables and narrative below as historical
+> attribution/analysis, not as the source of current pass/fail numbers.
+
 **Run Date**: 2026-05-28
 **Platform**: macOS · arm64 (Apple Silicon, same machine class as prior runs)
 **Harness**: `BenchmarkHarness` (warmup=3, iterations=20)
 **Head Commit**: `e05b068` (Phase 6.2 final extraction)
-**Baseline Reference**: `docs/BENCHMARK_BASELINE.md` (2026-02-27 initial / 2026-04-01 Phase 2 refresh)
+**Baseline Reference**: `Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json` (authoritative), rendered at `docs/BENCHMARK_BASELINE.md`
 **Reproduction**:
 
 ```bash
@@ -207,12 +216,14 @@ Sequential-4x went from baseline `4 × cold solve(medium)` to `4 × warm hits` b
 
 ## Regression Gating
 
-`BenchmarkRegressionGuard` thresholds (unchanged from baseline doc):
+`BenchmarkRegressionGuard` thresholds (defined by `policy` in
+`Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json`; see
+[`docs/BENCHMARK_BASELINE.md`](BENCHMARK_BASELINE.md) for the current authoritative values):
 
 * `maxSlowdownFactor = 3.0`
-* `absoluteSlackMs = 5.0`
+* `absoluteSlackMilliseconds = 5.0`
 
-The 1000-line solve regression sits at ~3.8× and is on the gating boundary. A follow-up PR should either widen the guard for this specific fixture or thread accessibility metadata as a lazy property.
+The 1000-line solve regression sits at ~3.8× and is on the gating boundary. A follow-up PR should either widen the guard for this specific fixture or thread accessibility metadata as a lazy property. Note `solve(1000-lines)` is not itself one of the guarded baseline keys (only the fixed fixture set in `core.parse`/`core.layout`/`core.cache`/`deep.concurrency` is enforced), so this observation is informational rather than a currently-gated regression.
 
 ## Files / Commits Driving These Numbers
 
