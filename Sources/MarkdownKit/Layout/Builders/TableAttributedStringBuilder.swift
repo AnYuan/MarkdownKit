@@ -13,13 +13,6 @@ import AppKit
 
 struct TableAttributedStringBuilder {
 
-    // Same utility enum isolated from AttributedStringBuilder
-    private enum FontTrait {
-        case bold
-        case italic
-        case boldItalic
-    }
-
     static func build(
         from table: TableNode,
         theme: Theme,
@@ -58,7 +51,7 @@ struct TableAttributedStringBuilder {
     ) -> NSAttributedString {
         let result = NSMutableAttributedString()
         let cellFont = theme.typography.paragraph.font
-        let headerFont = fontWithTrait(cellFont, trait: .bold)
+        let headerFont = FontTraitResolver.adding(.bold, to: cellFont)
 
         let textTable = NSTextTable()
         textTable.numberOfColumns = columnCount
@@ -169,7 +162,7 @@ struct TableAttributedStringBuilder {
     ) -> NSAttributedString {
         let result = NSMutableAttributedString()
         let cellFont = theme.typography.paragraph.font
-        let headerFont = fontWithTrait(cellFont, trait: .bold)
+        let headerFont = FontTraitResolver.adding(.bold, to: cellFont)
 
         let tableStyle = theme.table
         let horizontalInset = tableStyle.uiKitHorizontalInset
@@ -370,30 +363,4 @@ struct TableAttributedStringBuilder {
         TableLayoutShared.tableTextAlignment(for: table, column: column)
     }
 
-    private static func fontWithTrait(_ font: Font, trait: FontTrait) -> Font {
-        #if canImport(AppKit) && !targetEnvironment(macCatalyst)
-        let symbolicTraits: NSFontDescriptor.SymbolicTraits
-        switch trait {
-        case .bold:
-            symbolicTraits = .bold
-        case .italic:
-            symbolicTraits = .italic
-        case .boldItalic:
-            symbolicTraits = [.bold, .italic]
-        }
-        
-        let descriptor = font.fontDescriptor.withSymbolicTraits(symbolicTraits)
-        return Font(descriptor: descriptor, size: font.pointSize) ?? font
-        #else
-        var symTraits: UIFontDescriptor.SymbolicTraits = []
-        switch trait {
-        case .bold: symTraits.insert(.traitBold)
-        case .italic: symTraits.insert(.traitItalic)
-        case .boldItalic: symTraits.insert([.traitBold, .traitItalic])
-        }
-        
-        guard let desc = font.fontDescriptor.withSymbolicTraits(symTraits) else { return font }
-        return Font(descriptor: desc, size: font.pointSize)
-        #endif
-    }
 }

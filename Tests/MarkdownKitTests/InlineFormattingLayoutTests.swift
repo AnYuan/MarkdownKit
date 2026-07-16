@@ -20,16 +20,13 @@ final class InlineFormattingLayoutTests: XCTestCase {
             return
         }
 
-        var foundBold = false
+        var boldFont: Font?
         attrStr.enumerateAttribute(.font, in: NSRange(location: 0, length: attrStr.length)) { value, _, _ in
             guard let font = value as? Font else { return }
-            #if canImport(UIKit)
-            if font.fontDescriptor.symbolicTraits.contains(.traitBold) { foundBold = true }
-            #elseif canImport(AppKit)
-            if NSFontManager.shared.traits(of: font).contains(.boldFontMask) { foundBold = true }
-            #endif
+            if hasBoldTrait(font) { boldFont = font }
         }
-        XCTAssertTrue(foundBold, "Bold text should produce a font with bold trait")
+        let font = try XCTUnwrap(boldFont, "Bold text should produce a font with bold trait")
+        assertFontContinuity(font, from: Theme.default.typography.paragraph.font, bold: true, italic: false)
     }
 
     func testEmphasisNodeLayoutAppliesItalicFont() async throws {
@@ -41,16 +38,13 @@ final class InlineFormattingLayoutTests: XCTestCase {
             return
         }
 
-        var foundItalic = false
+        var italicFont: Font?
         attrStr.enumerateAttribute(.font, in: NSRange(location: 0, length: attrStr.length)) { value, _, _ in
             guard let font = value as? Font else { return }
-            #if canImport(UIKit)
-            if font.fontDescriptor.symbolicTraits.contains(.traitItalic) { foundItalic = true }
-            #elseif canImport(AppKit)
-            if NSFontManager.shared.traits(of: font).contains(.italicFontMask) { foundItalic = true }
-            #endif
+            if hasItalicTrait(font) { italicFont = font }
         }
-        XCTAssertTrue(foundItalic, "Italic text should produce a font with italic trait")
+        let font = try XCTUnwrap(italicFont, "Italic text should produce a font with italic trait")
+        assertFontContinuity(font, from: Theme.default.typography.paragraph.font, bold: false, italic: true)
     }
 
     func testStrikethroughNodeLayoutAppliesStrikethroughAttribute() async throws {
@@ -237,18 +231,98 @@ final class InlineFormattingLayoutTests: XCTestCase {
             return
         }
 
-        var foundBoldItalic = false
+        var boldItalicFont: Font?
         attrStr.enumerateAttribute(.font, in: NSRange(location: 0, length: attrStr.length)) { value, _, _ in
             guard let font = value as? Font else { return }
-            #if canImport(UIKit)
-            let traits = font.fontDescriptor.symbolicTraits
-            if traits.contains(.traitBold) && traits.contains(.traitItalic) { foundBoldItalic = true }
-            #elseif canImport(AppKit)
-            let traits = NSFontManager.shared.traits(of: font)
-            if traits.contains(.boldFontMask) && traits.contains(.italicFontMask) { foundBoldItalic = true }
-            #endif
+            if hasBoldTrait(font), hasItalicTrait(font) { boldItalicFont = font }
         }
-        XCTAssertTrue(foundBoldItalic, "***text*** should produce a font with both bold and italic traits")
+        let font = try XCTUnwrap(
+            boldItalicFont,
+            "***text*** should produce a font with both bold and italic traits"
+        )
+        assertFontContinuity(font, from: Theme.default.typography.paragraph.font, bold: true, italic: true)
+    }
+
+    func testBoldItalicPreservesNamedMonospacedFontSemantics() async throws {
+        guard let baseFont = Font(name: "Menlo-Regular", size: 18) else {
+            throw XCTSkip("Menlo is unavailable on this platform")
+        }
+        let theme = theme(replacingParagraphFontWith: baseFont)
+        let layout = await TestHelper.solveLayout("***both***", theme: theme)
+        let attrStr = try XCTUnwrap(layout.children.first?.attributedString)
+        let font = try XCTUnwrap(firstFont(in: attrStr))
+
+        assertFontContinuity(font, from: baseFont, bold: true, italic: true)
+        XCTAssertTrue(isMonospaced(font), "Derived font should preserve the source font's monospaced trait")
+    }
+
+    func testMonospacedSystemFontPreservesTraitsWhenAddingBoldThenItalic() {
+        let baseFont = Font.monospacedSystemFont(ofSize: 18, weight: .regular)
+        let boldFont = FontTraitResolver.adding(.bold, to: baseFont)
+        let boldItalicFont = FontTraitResolver.adding(.italic, to: boldFont)
+
+        assertFontContinuity(boldItalicFont, from: baseFont, bold: true, italic: true)
+        XCTAssertTrue(isMonospaced(boldItalicFont))
+    }
+
+    func testMonospacedSystemFontPreservesTraitsWhenAddingItalicThenBold() {
+        let baseFont = Font.monospacedSystemFont(ofSize: 18, weight: .regular)
+        let italicFont = FontTraitResolver.adding(.italic, to: baseFont)
+        let boldItalicFont = FontTraitResolver.adding(.bold, to: italicFont)
+
+        assertFontContinuity(boldItalicFont, from: baseFont, bold: true, italic: true)
+        XCTAssertTrue(isMonospaced(boldItalicFont))
+    }
+
+    func testRepeatedFontTraitDerivationUsesCache() {
+        FontTraitResolver.resetCacheForTesting()
+        let baseFont = Font.monospacedSystemFont(ofSize: 18.375, weight: .regular)
+
+        let firstFont = FontTraitResolver.adding(.bold, to: baseFont)
+        let secondFont = FontTraitResolver.adding(.bold, to: baseFont)
+        let stats = FontTraitResolver.cacheStatsForTesting()
+
+        XCTAssertTrue(firstFont === secondFont)
+        XCTAssertEqual(stats.misses, 1)
+        XCTAssertEqual(stats.hits, 1)
+    }
+
+    func testTableHeaderBoldPreservesNamedMonospacedFontSemantics() throws {
+        guard let baseFont = Font(name: "Menlo-Regular", size: 18) else {
+            throw XCTSkip("Menlo is unavailable on this platform")
+        }
+        let theme = theme(replacingParagraphFontWith: baseFont)
+        let document = TestHelper.parse("""
+        | Header |
+        |--------|
+        | Body   |
+        """)
+        let table = try XCTUnwrap(document.children.first as? TableNode)
+        let attrStr = TableAttributedStringBuilder.build(
+            from: table,
+            theme: theme,
+            constrainedToWidth: 400
+        )
+        let font = try XCTUnwrap(firstFont(in: attrStr))
+
+        assertFontContinuity(font, from: baseFont, bold: true, italic: false)
+        XCTAssertTrue(isMonospaced(font), "Table header should preserve the source font's monospaced trait")
+    }
+
+    func testBoldItalicFontMatchesBetweenAsyncAndSyncBuilders() async throws {
+        guard let baseFont = Font(name: "Menlo-Regular", size: 18) else {
+            throw XCTSkip("Menlo is unavailable on this platform")
+        }
+        let theme = theme(replacingParagraphFontWith: baseFont)
+        let document = TestHelper.parse("***both***")
+
+        let asyncLayout = await LayoutSolver(theme: theme).solve(node: document, constrainedToWidth: 400)
+        let syncLayout = LayoutSolver(theme: theme).solveSync(node: document, constrainedToWidth: 400)
+        let asyncFont = try XCTUnwrap(asyncLayout.children.first?.attributedString.flatMap(firstFont))
+        let syncFont = try XCTUnwrap(syncLayout.children.first?.attributedString.flatMap(firstFont))
+
+        XCTAssertEqual(asyncFont, syncFont, "Async and sync builders should derive the same font")
+        assertFontContinuity(asyncFont, from: baseFont, bold: true, italic: true)
     }
 
     func testBoldWithStrikethrough() async throws {
@@ -455,5 +529,95 @@ final class InlineFormattingLayoutTests: XCTestCase {
 
         let relativePath = imageURL.path.replacingOccurrences(of: cwdURL.path + "/", with: "")
         return (relativePath, imageURL)
+    }
+
+    private func firstFont(in attributedString: NSAttributedString) -> Font? {
+        guard attributedString.length > 0 else { return nil }
+        return attributedString.attribute(.font, at: 0, effectiveRange: nil) as? Font
+    }
+
+    private func hasBoldTrait(_ font: Font) -> Bool {
+        #if canImport(UIKit)
+        font.fontDescriptor.symbolicTraits.contains(.traitBold)
+        #elseif canImport(AppKit)
+        NSFontManager.shared.traits(of: font).contains(.boldFontMask)
+        #endif
+    }
+
+    private func hasItalicTrait(_ font: Font) -> Bool {
+        #if canImport(UIKit)
+        font.fontDescriptor.symbolicTraits.contains(.traitItalic)
+        #elseif canImport(AppKit)
+        NSFontManager.shared.traits(of: font).contains(.italicFontMask)
+        #endif
+    }
+
+    private func isMonospaced(_ font: Font) -> Bool {
+        #if canImport(UIKit)
+        font.fontDescriptor.symbolicTraits.contains(.traitMonoSpace)
+        #elseif canImport(AppKit)
+        NSFontManager.shared.traits(of: font).contains(.fixedPitchFontMask)
+        #endif
+    }
+
+    private func assertFontContinuity(
+        _ font: Font,
+        from baseFont: Font,
+        bold: Bool,
+        italic: Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(hasBoldTrait(font), bold, file: file, line: line)
+        XCTAssertEqual(hasItalicTrait(font), italic, file: file, line: line)
+        XCTAssertEqual(font.pointSize, baseFont.pointSize, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(font.familyName, baseFont.familyName, file: file, line: line)
+        XCTAssertEqual(font.ascender, baseFont.ascender, accuracy: 0.05, file: file, line: line)
+        XCTAssertEqual(font.descender, baseFont.descender, accuracy: 0.05, file: file, line: line)
+        XCTAssertEqual(font.capHeight, baseFont.capHeight, accuracy: 0.05, file: file, line: line)
+        XCTAssertFalse(
+            font.fontName.localizedCaseInsensitiveContains("Times"),
+            "Trait derivation should not resolve to a Times fallback",
+            file: file,
+            line: line
+        )
+        #if canImport(AppKit) && !canImport(UIKit)
+        let advertisedNames = NSFontManager.shared.availableMembers(ofFontFamily: font.familyName ?? "")?
+            .compactMap { $0.first as? String } ?? []
+        XCTAssertTrue(
+            advertisedNames.contains(font.fontName),
+            "Derived AppKit font should resolve to a family member advertised by NSFontManager",
+            file: file,
+            line: line
+        )
+        #endif
+    }
+
+    private func theme(replacingParagraphFontWith font: Font) -> Theme {
+        let theme = Theme.default
+        let paragraph = theme.typography.paragraph
+        let typography = Theme.Typography(
+            header1: theme.typography.header1,
+            header2: theme.typography.header2,
+            header3: theme.typography.header3,
+            paragraph: TypographyToken(
+                font: font,
+                lineHeightMultiple: paragraph.lineHeightMultiple,
+                paragraphSpacing: paragraph.paragraphSpacing
+            ),
+            codeBlock: theme.typography.codeBlock
+        )
+        return Theme(
+            typography: typography,
+            colors: theme.colors,
+            codeBlock: theme.codeBlock,
+            blockQuote: theme.blockQuote,
+            list: theme.list,
+            details: theme.details,
+            table: theme.table,
+            syntaxColors: theme.syntaxColors,
+            highlight: theme.highlight,
+            thematicBreak: theme.thematicBreak
+        )
     }
 }

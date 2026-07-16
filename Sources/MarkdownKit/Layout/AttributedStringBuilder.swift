@@ -420,7 +420,7 @@ struct AttributedStringBuilder {
     func italicAttributes(base: [NSAttributedString.Key: Any]) -> [NSAttributedString.Key: Any] {
         var attrs = base
         if let font = base[.font] as? Font {
-            attrs[.font] = fontWithTrait(font, trait: .italic)
+            attrs[.font] = FontTraitResolver.adding(.italic, to: font)
         }
         return attrs
     }
@@ -428,7 +428,7 @@ struct AttributedStringBuilder {
     func boldAttributes(base: [NSAttributedString.Key: Any]) -> [NSAttributedString.Key: Any] {
         var attrs = base
         if let font = base[.font] as? Font {
-            attrs[.font] = fontWithTrait(font, trait: .bold)
+            attrs[.font] = FontTraitResolver.adding(.bold, to: font)
         }
         return attrs
     }
@@ -439,38 +439,6 @@ struct AttributedStringBuilder {
         return attrs
     }
     
-    // MARK: - Font Trait Helper
-
-    private func fontWithTrait(_ font: Font, trait: FontTrait) -> Font {
-        #if canImport(UIKit)
-        let descriptor = font.fontDescriptor
-        var traits = descriptor.symbolicTraits
-        switch trait {
-        case .bold: traits.insert(.traitBold)
-        case .italic: traits.insert(.traitItalic)
-        }
-        if let newDescriptor = descriptor.withSymbolicTraits(traits) {
-            return Font(descriptor: newDescriptor, size: 0)
-        }
-        return font
-        #elseif canImport(AppKit)
-        var symbolicTraits = font.fontDescriptor.symbolicTraits
-        switch trait {
-        case .bold:
-            symbolicTraits.insert(.bold)
-        case .italic:
-            symbolicTraits.insert(.italic)
-        }
-        
-        let descriptor = font.fontDescriptor.withSymbolicTraits(symbolicTraits)
-        return Font(descriptor: descriptor, size: font.pointSize) ?? font
-        #endif
-    }
-
-    private enum FontTrait {
-        case bold, italic
-    }
-
     // MARK: - Code Block Helper
 
     func buildCodeBlockAttributedString(from code: CodeBlockNode) -> NSAttributedString {
@@ -580,7 +548,7 @@ struct AttributedStringBuilder {
     private func detailsSummaryAttributes() -> [NSAttributedString.Key: Any] {
         var attrs = defaultAttributes(for: theme.typography.paragraph)
         if let font = attrs[.font] as? Font {
-            attrs[.font] = fontWithTrait(font, trait: .bold)
+            attrs[.font] = FontTraitResolver.adding(.bold, to: font)
         }
         return attrs
     }
