@@ -52,10 +52,23 @@ print(layout.children.count)
 
 ## Automated Verification
 
-Fast regression gate (recommended for daily iteration):
+Fast regression gate (recommended for daily iteration, correctness-only in every environment):
 
 ```bash
 bash scripts/verify_fast.sh
+```
+
+Strict documentation freshness gate:
+
+```bash
+bash scripts/check_doc_freshness.sh
+```
+
+Snapshot contracts (macOS only, two independent modes — see below):
+
+```bash
+bash scripts/verify_snapshots.sh --visual
+bash scripts/verify_snapshots.sh --determinism
 ```
 
 Benchmark-only gate (heavier):
@@ -90,12 +103,17 @@ bash scripts/verify_ios.sh
 
 ### Test Split Strategy
 
-The test suite is split into fast regression tests and heavy benchmarks:
+CI enforces four separate, honestly-scoped contracts rather than one monolithic test run:
 
-- **Fast suite** (`verify_fast.sh`): Discovers every `XCTestCase` suite in `MarkdownKitTests` via `swift test list` and runs all of them except the benchmark suites and the two true snapshot suites (`SnapshotTests`, `iOSSnapshotTests`), so newly added test classes are covered automatically instead of relying on a hand-maintained allow-list. This is the complete macOS correctness gate; used as the CI gate.
-- **Benchmark suite** (`verify_benchmarks.sh`): Heavy performance regression tests. Run locally or in nightly CI. It first checks that `docs/BENCHMARK_BASELINE.md` is up to date with `Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json` (the authoritative, machine-readable baseline consumed by both the docs and `BenchmarkRegressionGuard`) via `python3 scripts/render_benchmark_baseline.py --check`, failing fast before any timing suite runs if the baseline is malformed or the doc is stale. After editing the baseline JSON, refresh the doc with `python3 scripts/render_benchmark_baseline.py`.
-- **iOS Simulator suite** (`verify_ios.sh`): Discovers the same correctness suites by scanning source (minus benchmarks and true snapshot suites), verifies the compiled iOS test bundle contains every UIKit-bearing suite, and runs the enumerated tests on a dynamically-selected iOS Simulator via `xcodebuild`, with exact executed-count validation, per-test timeouts, crash/restart detection, and a private system-font fallback check, as a separate CI job.
-- Running bare `swift test` executes everything including benchmarks. Prefer `verify_fast.sh` for daily iteration.
+- **Correctness gate** (`verify_fast.sh`, CI job `verify`): Discovers every `XCTestCase` suite in `MarkdownKitTests` via `swift test list` and runs all of them except the benchmark suites and the two true snapshot suites (`SnapshotTests`, `iOSSnapshotTests`). It is correctness-only in every environment — it never records or verifies snapshots, locally or in CI — so newly added test classes are covered automatically instead of relying on a hand-maintained allow-list. `DiagramSnapshotTests` is a deterministic suite and stays in this gate.
+- **Documentation freshness gate** (`check_doc_freshness.sh`, CI job `verify`): A strict, Bash 3.2-compatible, read-only check that the discoverable test count and generated benchmark docs match their sources. Runs after the correctness gate as its own explicit CI step.
+- **Snapshot contracts** (`verify_snapshots.sh`, CI job `verify-snapshots`): Owns `SnapshotTests` exclusively, split into two independent, honestly-labeled modes:
+  - `--visual` diffs the current run against the *committed* baseline PNGs. Because CI runs on `macos-26`/`latest-stable` — a rendering environment that moves under us (fonts, OS point releases) — this is a genuine visual-regression signal but is **non-blocking** (`continue-on-error: true`) since environment drift alone can flip it.
+  - `--determinism` records fresh baselines and immediately re-verifies against them in the *same* run/environment, then restores the original snapshot directory. This proves the renderer is internally deterministic and is **blocking**.
+  - `iOSSnapshotTests` currently has no committed baseline or dedicated CI lane; it is intentionally excluded from both `verify_fast.sh` and `verify_snapshots.sh` and should not be read as covered by either gate.
+- **iOS Simulator suite** (`verify_ios.sh`, CI job `verify-ios`): Discovers the same correctness suites by scanning source (minus benchmarks and true snapshot suites), verifies the compiled iOS test bundle contains every UIKit-bearing suite, and runs the enumerated tests on a dynamically-selected iOS Simulator via `xcodebuild`, with exact executed-count validation, per-test timeouts, crash/restart detection, and a private system-font fallback check.
+- **Benchmark suite** (`verify_benchmarks.sh`): Heavy performance regression tests. Run locally or through deliberately configured manual/scheduled automation; they are not part of PR CI. The gate first checks that `docs/BENCHMARK_BASELINE.md` is up to date with `Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json` (the authoritative, machine-readable baseline consumed by both the docs and `BenchmarkRegressionGuard`) via `python3 scripts/render_benchmark_baseline.py --check`, failing fast before any timing suite runs if the baseline is malformed or the doc is stale. After editing the baseline JSON, refresh the doc with `python3 scripts/render_benchmark_baseline.py`.
+- Running bare `swift test` executes everything including benchmarks and true snapshot suites. Prefer `verify_fast.sh` for daily iteration.
 
 ## Project Structure
 

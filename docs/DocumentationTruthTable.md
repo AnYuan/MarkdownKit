@@ -1,4 +1,4 @@
-# Documentation Truth Table (2026-03-04)
+# Documentation Truth Table (2026-07-16)
 
 本表用于快速判断当前仓库文档的“可依赖程度”，并给出最小修复动作。
 
@@ -15,11 +15,12 @@
 | `README.md` | 项目入口与快速使用 | A | API 用法与 `MarkdownKitEngine`、`scripts/verify_all.sh` 一致 | 作为 onboarding 首读文档，保持精简 |
 | `docs/PRD.md` | 产品目标与验收边界 | A | 目标定义完整，仍可作为长期北极星 | 每次新增语法特性时同步更新 §3 和 §7 |
 | `docs/PLAN.md` | 实施节奏与验证策略 | A | 自动化验证主线清晰，和脚本入口一致 | 继续用于阶段性执行跟踪 |
-| `docs/CodebaseKnowledge.md` | 当前实现快照与架构索引 | B | 含“时间快照”数据，测试文件计数已很快漂移（文内 47） | 保留为快照文档；按月刷新一次统计字段 |
+| `docs/CodebaseKnowledge.md` | 当前实现快照与架构索引 | B | 测试发现数由严格 freshness gate 核对；其余时间快照数据仍可能漂移 | 保留为快照文档；按月刷新非门禁统计字段 |
 | `docs/FeatureMatrix.md` | 功能状态矩阵 | A | 与测试映射关系清楚，可用于评审和回归 | 新增功能时同步补齐对应测试链接 |
 | `docs/ImplementationChecklist.md` | 原子任务完成记录 | A | 当前波次已完成，闭环明确 | 可保留归档；新波次另开新 checklist |
-| `docs/BENCHMARK_BASELINE.md` | 性能基线与回归阈值参考 | A | 结构完整，可复现命令清晰 | 每次性能阈值调整后重刷数据和 commit 标识 |
-| `docs/TestCoverage.md` | 覆盖率叙述与测试清单 | B | 已更新到当前统计与执行状态，但仍有手工维护成本 | 建议改为脚本半自动生成，减少后续漂移 |
+| `docs/BENCHMARK_BASELINE.md` | 性能基线与回归阈值参考 | A | 由 `benchmark_baseline.json` 通过渲染脚本生成，JSON 是单一事实源 | 修改 JSON 后重新生成，并运行渲染器 `--check` |
+| `docs/TestCoverage.md` | 时间戳化测试清单与执行快照 | B | 由脚本生成且具有归档性质；`swift test list` 计数受严格门禁约束，执行结论仅在提供日志时有效 | 按需重新生成；不得把“未提供执行日志”写成通过 |
+| `scripts/check_doc_freshness.sh` | CI 文档新鲜度门禁 | A | Bash 3.2 兼容的严格只读门禁；校验测试列表格式/计数和 benchmark 生成文档 | 已接入 CI（macOS `verify` job 的独立步骤）；任何解析、计数或生成物漂移均失败 |
 | `docs/TechnicalDebtRoadmap.md` | 技术债排序 | B | 仍写“Public API facade is empty”，但 `MarkdownKitEngine` 已实现 | 删除已解决项，补充仍未解决项（并发隔离、数学一致性等） |
 | `docs/evaluation_report.md` | 生产级风险评估 | B | 已修正旧结论并同步当前状态，后续需随风险变化滚动更新 | 每轮稳定性改动后刷新“主要风险”章节 |
 | `docs/Layout.md` | 布局引擎概念说明 | B | 架构描述正确，但偏概念，缺少实现细节与约束 | 增加“现状实现 vs 目标愿景”分节 |
@@ -36,8 +37,10 @@
 ## 证据锚点（用于核对）
 
 - API facade 已存在: `Sources/MarkdownKit/MarkdownKit.swift`
-- 当前测试文件数量: `find Tests/MarkdownKitTests -maxdepth 1 -type f -name '*.swift' | wc -l`（当前为 48）
-- `TestCoverage` 已更新为当前口径（218 执行 / 0 跳过 / 0 失败）: `docs/TestCoverage.md`
+- 当前测试文件数量: `find Tests/MarkdownKitTests -maxdepth 1 -type f -name '*.swift' | wc -l`（当前为 66）
+- 当前可发现测试数: `swift test list`（347）；`TestCoverage` 本次未提供全量执行日志: `docs/TestCoverage.md`
+- Benchmark 文档事实源: `Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json`；生成一致性检查: `python3 scripts/render_benchmark_baseline.py --check`
+- 严格文档新鲜度门禁: `bash scripts/check_doc_freshness.sh`
 - `evaluation_report` 已改为当前风险基线: `docs/evaluation_report.md`
 - `TechnicalDebtRoadmap` 仍声明 facade 为空: `docs/TechnicalDebtRoadmap.md`
 

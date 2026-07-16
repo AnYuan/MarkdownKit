@@ -200,8 +200,34 @@ review the complete diff, then commit and push before starting the next stage.
   including all 10 baseline-contract tests. The local table snapshot still
   depends on pre-layout appearance and is intentionally left to the next
   snapshot-determinism stage rather than refreshing an unrelated baseline.
-- [ ] `test: separate snapshot determinism from visual regression`
+- [x] `test: separate snapshot determinism from visual regression`
   Give snapshot and documentation freshness checks explicit, honest CI roles.
+  Review: macOS reference construction fixes Aqua before test-only synchronous
+  layout, view configuration, and drawing, so committed snapshots no longer
+  inherit the host appearance. CI now enforces four separate, honestly-scoped
+  contracts instead of one blended gate. (1) `verify_fast.sh` (job `verify`) is
+  correctness-only in every environment — the CI-conditional snapshot branch
+  is gone, so it never records or verifies snapshots locally or in CI; it
+  still discovers and excludes only the exact
+  `SnapshotTests`/`iOSSnapshotTests` suites, keeping `DiagramSnapshotTests` as
+  correctness. (2) `check_doc_freshness.sh` runs as its own explicit, strict
+  step in the `verify` job right after the
+  correctness gate. (3) `verify_snapshots.sh` owns `SnapshotTests` in a new
+  `verify-snapshots` job with two independent modes: `--visual` diffs against
+  exactly one git-tracked baseline PNG per discovered test and is
+  `continue-on-error: true` because
+  `macos-26`/`latest-stable` is a moving rendering environment; `--determinism`
+  records-then-reverifies in the same run and is blocking. (4) `verify-ios`
+  is unchanged and still owns UIKit correctness; `iOSSnapshotTests` has no
+  committed baseline or dedicated CI lane yet, so it stays intentionally
+  excluded from both `verify_fast.sh` and `verify_snapshots.sh` rather than
+  being implied as covered. Validation: `bash -n` on all three touched
+  scripts, Ruby `YAML.load_file` on `ci.yml`, `bash scripts/check_doc_freshness.sh`,
+  `CI=true bash scripts/verify_fast.sh` (330 correctness tests, 0 failures),
+  `bash scripts/verify_snapshots.sh --visual` (4/4 passed), `bash
+  scripts/verify_snapshots.sh --determinism` (4/4 record-expected-failures,
+  4/4 reverify passed), snapshot directory `git status` identical before and
+  after determinism, and `git diff --check` all pass.
 - [ ] `feat: make parser resource limits explicit`
   Replace global input/depth limits and silent truncation with per-parser policy
   and diagnosable outcomes.

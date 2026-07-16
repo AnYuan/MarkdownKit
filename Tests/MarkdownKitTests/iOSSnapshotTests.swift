@@ -2,6 +2,7 @@ import XCTest
 import SnapshotTesting
 @testable import MarkdownKit
 
+// No committed baselines; intentionally excluded pending a dedicated simulator and async-render-completion policy.
 #if os(iOS)
 import UIKit
 

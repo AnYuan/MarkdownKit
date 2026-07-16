@@ -51,8 +51,9 @@ swift test --filter URLSanitizerTests
 swift test --filter DepthLimitTests
 swift test --filter FuzzTests
 
-# Snapshot checks
-swift test --filter SnapshotTests
+# Snapshot checks (owned exclusively by scripts/verify_snapshots.sh)
+bash scripts/verify_snapshots.sh --visual
+bash scripts/verify_snapshots.sh --determinism
 
 # Mermaid adapter sanity
 swift test --filter MermaidDiagramAdapterTests
@@ -64,8 +65,8 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **236** discoverable tests
-- `swift test`: **236 executed, 0 failures**
+- `swift test list`: **347** discoverable tests
+- `swift test`: no execution log supplied for this refresh
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -144,7 +145,9 @@ High-value suites:
 - Parser/plugin correctness: `Parser*Tests`, `ASTPluginTests`, `*ExtractionPluginTests`, `GitHubAutolinkPluginTests`
 - Layout invariants: `LayoutSolverExtendedTests`, `InlineFormattingLayoutTests`, `CrossPlatformLayoutTests`, `iOSTableLayoutTests`
 - Safety and Utils: `URLSanitizerTests`, `DepthLimitTests`, `FuzzTests`, `TableOfContentsBuilderTests`, `PlatformAccessibilityTests`, `PerformanceProfilerTests`
-- Visual regression: `SnapshotTests`, `iOSSnapshotTests`, `DiagramSnapshotTests`
+- Committed visual regression: macOS `SnapshotTests`
+- Deferred visual coverage: `iOSSnapshotTests` has no committed baseline or dedicated lane
+- Deterministic diagram rendering integration (not image snapshot assertions): `DiagramSnapshotTests`
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`, `BenchmarkCacheTests`
 
 ## 6. Known Gaps / Risks / Technical Debt
@@ -169,6 +172,7 @@ For broad confidence with reasonable time cost:
 
 1. `swift test --filter SyntaxMatrixTests`
 2. `swift test --filter "DetailsExtractionPluginTests|DiagramExtractionPluginTests|MathExtractionPluginTests|GitHubAutolinkPluginTests"`
-3. `swift test --filter "LayoutSolverExtendedTests|InlineFormattingLayoutTests|CrossPlatformLayoutTests|SnapshotTests"`
-4. `swift test --filter "URLSanitizerTests|DepthLimitTests|FuzzTests"`
-5. (optional heavy) `swift test --filter MarkdownKitBenchmarkTests/testBenchmarkFullReport`
+3. `swift test --filter "LayoutSolverExtendedTests|InlineFormattingLayoutTests|CrossPlatformLayoutTests"`
+4. `bash scripts/verify_snapshots.sh --visual` and `bash scripts/verify_snapshots.sh --determinism` (SnapshotTests, owned exclusively by this script)
+5. `swift test --filter "URLSanitizerTests|DepthLimitTests|FuzzTests"`
+6. (optional heavy) `swift test --filter MarkdownKitBenchmarkTests/testBenchmarkFullReport`

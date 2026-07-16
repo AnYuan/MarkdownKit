@@ -54,10 +54,11 @@ run_suite() {
 #   - Benchmark suites (heavy, timing-sensitive) stay owned by
 #     scripts/verify_benchmarks.sh.
 #   - The true environment-sensitive snapshot suites (SnapshotTests,
-#     iOSSnapshotTests) run in a separate lane below so CI can skip them
-#     while ci.yml owns its own record-then-verify snapshot step.
-#     DiagramSnapshotTests is a deterministic correctness suite and is
-#     deliberately NOT excluded here.
+#     iOSSnapshotTests) are excluded entirely from this gate in every
+#     environment (local and CI). They are owned exclusively by
+#     scripts/verify_snapshots.sh (--visual / --determinism), never by this
+#     script. DiagramSnapshotTests is a deterministic correctness suite and
+#     is deliberately NOT excluded here.
 # ---------------------------------------------------------------------------
 
 echo
@@ -127,26 +128,22 @@ join_with_pipe() {
 
 echo "Discovered ${#ALL_SUITES[@]} suite(s) total."
 echo "Benchmark suites excluded (owned by scripts/verify_benchmarks.sh): $(join_with_pipe "${BENCHMARK_SUITES[@]:-}")"
-echo "True snapshot suites excluded (environment-sensitive, run in a separate lane below): $(join_with_pipe "${TRUE_SNAPSHOT_SUITES[@]:-}")"
+echo "True snapshot suites excluded (owned by scripts/verify_snapshots.sh, not run here): $(join_with_pipe "${TRUE_SNAPSHOT_SUITES[@]:-}")"
 echo "Correctness suites included (${#CORRECTNESS_SUITES[@]}): $(join_with_pipe "${CORRECTNESS_SUITES[@]}")"
 
 CORRECTNESS_FILTER="^MarkdownKitTests\\.($(join_with_pipe "${CORRECTNESS_SUITES[@]}"))/"
 
 run_suite "Correctness Gate (discovery-driven, all non-benchmark/non-snapshot suites)" "$CORRECTNESS_FILTER"
 
-# Snapshot baselines are environment-sensitive (fonts/rendering stack/OS image).
-# Keep them in fast local validation, but skip in CI unless explicitly requested,
-# because ci.yml owns the record-then-verify snapshot step.
-if (( ${#TRUE_SNAPSHOT_SUITES[@]} > 0 )) && { [[ "${MARKDOWNKIT_RUN_SNAPSHOTS_IN_CI:-0}" == "1" ]] || [[ "${CI:-false}" != "true" ]]; }; then
-  SNAPSHOT_FILTER="^MarkdownKitTests\\.($(join_with_pipe "${TRUE_SNAPSHOT_SUITES[@]}"))/"
-  run_suite "Snapshot Stability" "$SNAPSHOT_FILTER"
-else
-  echo
-  echo "============================================================"
-  echo "[SKIP] Snapshot Stability"
-  echo "Reason: CI environment (set MARKDOWNKIT_RUN_SNAPSHOTS_IN_CI=1 to enable)"
-  echo "============================================================"
-fi
+echo
+echo "============================================================"
+echo "[INFO] Snapshot Contracts"
+echo "This script is correctness-only in every environment (local and CI)."
+echo "SnapshotTests and iOSSnapshotTests are never run here."
+echo "They are owned exclusively by scripts/verify_snapshots.sh:"
+echo "  bash scripts/verify_snapshots.sh --visual"
+echo "  bash scripts/verify_snapshots.sh --determinism"
+echo "============================================================"
 
 if (( ${#FAILURES[@]} > 0 )); then
   echo

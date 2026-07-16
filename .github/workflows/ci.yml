@@ -33,19 +33,45 @@ jobs:
       - name: Fast verification (discovery-driven correctness gate)
         run: bash scripts/verify_fast.sh
 
-      - name: Snapshot stability (record then verify)
-        run: |
-          # Delete local baselines so SnapshotTesting records fresh ones for this environment
-          rm -rf Tests/MarkdownKitTests/__Snapshots__/SnapshotTests/*.png
-          # Anchored to the exact SnapshotTests/iOSSnapshotTests classes only - a bare
-          # "SnapshotTests" filter would also substring-match DiagramSnapshotTests,
-          # which is a deterministic correctness suite already covered above by
-          # verify_fast.sh and must not be re-recorded/re-verified here.
-          SNAPSHOT_FILTER='^MarkdownKitTests\.(SnapshotTests|iOSSnapshotTests)/'
-          # First run: records baselines (fails with "no reference found" - expected)
-          swift test --filter "$SNAPSHOT_FILTER" 2>&1 || true
-          # Second run: verifies against just-recorded baselines from the same environment
-          swift test --filter "$SNAPSHOT_FILTER"
+      - name: Documentation freshness (strict gate)
+        run: bash scripts/check_doc_freshness.sh
+
+  verify-snapshots:
+    name: Snapshot contracts (macOS, visual + determinism)
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build
+
+      # macos-26/latest-stable is a moving rendering environment (fonts/OS
+      # updates shift pixels), so committed baselines can drift for reasons
+      # unrelated to a real regression. This step is an explicit, committed
+      # visual-regression signal but is intentionally non-blocking.
+      - name: Snapshot visual regression (non-blocking, moving CI image)
+        run: bash scripts/verify_snapshots.sh --visual
+        continue-on-error: true
+
+      # Determinism is blocking: it records fresh baselines and immediately
+      # re-verifies against them in this same run/environment, so it cannot
+      # be defeated by cross-environment rendering drift.
+      - name: Snapshot determinism (blocking, same-environment)
+        run: bash scripts/verify_snapshots.sh --determinism
 
   verify-ios:
     runs-on: macos-26
