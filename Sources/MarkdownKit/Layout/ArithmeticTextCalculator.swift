@@ -314,11 +314,22 @@ public final class ArithmeticTextCalculator {
         guard !preparedText.widths.isEmpty else { return .zero }
 
         var currentLineAdvance: CGFloat = 0
+        var currentLineFitWidth: CGFloat = 0
         var currentLinePaintWidth: CGFloat = 0
         var currentLineHeight: CGFloat = 0
         var totalHeight: CGFloat = 0
         var maxComputedWidth: CGFloat = 0
         var lineCount = 0
+
+        func committedLinePaintWidth(availableWidth: CGFloat) -> CGFloat {
+            guard currentLinePaintWidth > currentLineFitWidth else {
+                return currentLinePaintWidth
+            }
+
+            // TextKit retains trailing separator advance while it fits, but its
+            // used rect stops at the line-fragment boundary when it overhangs.
+            return min(currentLinePaintWidth, max(availableWidth, currentLineFitWidth))
+        }
 
         func appendOversizedTextSegment(
             text: String,
@@ -347,6 +358,7 @@ public final class ArithmeticTextCalculator {
                 let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
 
                 currentLineAdvance = lineWidth
+                currentLineFitWidth = lineWidth
                 currentLinePaintWidth = lineWidth
                 currentLineHeight = max(currentLineHeight, height)
                 start += count
@@ -356,6 +368,7 @@ public final class ArithmeticTextCalculator {
                     maxComputedWidth = max(maxComputedWidth, currentLinePaintWidth + currentIndent)
                     lineCount += 1
                     currentLineAdvance = 0
+                    currentLineFitWidth = 0
                     currentLinePaintWidth = 0
                     currentLineHeight = 0
                 }
@@ -377,9 +390,11 @@ public final class ArithmeticTextCalculator {
             
             if chunk.kind == .hardBreak {
                 totalHeight += max(currentLineHeight, height)
-                let visibleLineWidth = currentLinePaintWidth > 0 ? currentLinePaintWidth + currentIndent : 0
+                let committedPaintWidth = committedLinePaintWidth(availableWidth: availableWidth)
+                let visibleLineWidth = committedPaintWidth > 0 ? committedPaintWidth + currentIndent : 0
                 maxComputedWidth = max(maxComputedWidth, visibleLineWidth)
                 currentLineAdvance = 0
+                currentLineFitWidth = 0
                 currentLinePaintWidth = 0
                 currentLineHeight = 0
                 lineCount += 1
@@ -393,11 +408,13 @@ public final class ArithmeticTextCalculator {
             if nextLineFitWidth > availableWidth && currentLineAdvance > 0 {
                 // Break line
                 totalHeight += currentLineHeight
-                maxComputedWidth = max(maxComputedWidth, currentLinePaintWidth + currentIndent)
+                let committedPaintWidth = committedLinePaintWidth(availableWidth: availableWidth)
+                maxComputedWidth = max(maxComputedWidth, committedPaintWidth + currentIndent)
                 
                 lineCount += 1
                 if kind.isSpace {
                     currentLineAdvance = 0
+                    currentLineFitWidth = 0
                     currentLinePaintWidth = 0
                     currentLineHeight = 0
                 } else {
@@ -405,6 +422,7 @@ public final class ArithmeticTextCalculator {
                     let nextAvailableWidth = maxWidth - nextIndent
                     if kind == .text && width > nextAvailableWidth && !segmentText.isEmpty {
                         currentLineAdvance = 0
+                        currentLineFitWidth = 0
                         currentLinePaintWidth = 0
                         currentLineHeight = 0
                         appendOversizedTextSegment(
@@ -415,6 +433,7 @@ public final class ArithmeticTextCalculator {
                         )
                     } else {
                         currentLineAdvance = width
+                        currentLineFitWidth = lineEndFitAdvance
                         currentLinePaintWidth = lineEndPaintAdvance
                         currentLineHeight = height
                     }
@@ -428,6 +447,7 @@ public final class ArithmeticTextCalculator {
                 )
             } else {
                 currentLineAdvance = nextLineAdvance
+                currentLineFitWidth = nextLineFitWidth
                 currentLinePaintWidth = nextLinePaintWidth
                 currentLineHeight = max(currentLineHeight, height)
             }
@@ -436,8 +456,10 @@ public final class ArithmeticTextCalculator {
         // Add final line height if it wasn't empty
         if currentLineAdvance > 0 || totalHeight == 0 {
             let currentIndent = (lineCount == 0) ? preparedText.firstLineHeadIndent : preparedText.headIndent
+            let availableWidth = maxWidth - currentIndent
             totalHeight += currentLineHeight
-            let visibleLineWidth = currentLinePaintWidth > 0 ? currentLinePaintWidth + currentIndent : 0
+            let committedPaintWidth = committedLinePaintWidth(availableWidth: availableWidth)
+            let visibleLineWidth = committedPaintWidth > 0 ? committedPaintWidth + currentIndent : 0
             maxComputedWidth = max(maxComputedWidth, visibleLineWidth)
         }
         

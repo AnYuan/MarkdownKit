@@ -172,7 +172,7 @@
 Each stage is intentionally atomic: implement one concern, run its focused checks,
 review the complete diff, then commit and push before starting the next stage.
 
-- [ ] `fix: restore arithmetic width invariant`
+- [x] `fix: restore arithmetic width invariant`
   Ensure reported arithmetic layout width never exceeds the supplied constraint
   because of trailing separator paint width.
 - [ ] `fix: derive system-font traits safely`

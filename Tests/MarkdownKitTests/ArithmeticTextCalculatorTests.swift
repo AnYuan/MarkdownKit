@@ -342,6 +342,96 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         XCTAssertEqual(arithmeticSize.height, textKitSize.height, accuracy: 1)
     }
 
+    func testNarrowFinalLineTrailingSeparatorOverhangMatchesTextKit() {
+        let attributedString = makeAttributedString("Hi        ")
+        let constrainedWidth: CGFloat = 40
+        let arithmeticSize = ArithmeticTextCalculator().calculateSize(
+            for: attributedString,
+            constrainedToWidth: constrainedWidth
+        )
+        let textKitSize = TextKitCalculator().calculateSize(
+            for: attributedString,
+            constrainedToWidth: constrainedWidth
+        )
+
+        XCTAssertLessThanOrEqual(arithmeticSize.width, constrainedWidth)
+        XCTAssertEqual(arithmeticSize.width, textKitSize.width, accuracy: 1)
+    }
+
+    func testNarrowHardBreakTrailingSeparatorOverhangMatchesTextKit() {
+        let attributedString = makeAttributedString("Hi        \nMore text")
+        let constrainedWidth: CGFloat = 40
+        let arithmeticSize = ArithmeticTextCalculator().calculateSize(
+            for: attributedString,
+            constrainedToWidth: constrainedWidth
+        )
+        let textKitSize = TextKitCalculator().calculateSize(
+            for: attributedString,
+            constrainedToWidth: constrainedWidth
+        )
+
+        XCTAssertLessThanOrEqual(arithmeticSize.width, constrainedWidth)
+        XCTAssertEqual(arithmeticSize.width, textKitSize.width, accuracy: 1)
+    }
+
+    func testSoftWrapBoundarySeparatorDoesNotExceedConstraint() {
+        let arithmeticCalc = ArithmeticTextCalculator()
+        let textKitCalc = TextKitCalculator()
+        let originalBoundaryString = makeAttributedString(
+            "This is a much longer paragraph that should theoretically wrap if we constrain it to a very tight width, unlike the header."
+        )
+        let multipleSpacesString = makeAttributedString("Boundary   x")
+        let multipleSpacesPrepared = arithmeticCalc.prepare(attributedString: multipleSpacesString)
+        let multipleSpacesBoundaryWidth = ceil(multipleSpacesPrepared.widths[0])
+
+        XCTAssertGreaterThan(
+            multipleSpacesPrepared.widths[0] + multipleSpacesPrepared.widths[1],
+            multipleSpacesBoundaryWidth
+        )
+
+        for (attributedString, constrainedWidth) in [
+            (originalBoundaryString, CGFloat(100)),
+            (multipleSpacesString, multipleSpacesBoundaryWidth)
+        ] {
+            let arithmeticSize = arithmeticCalc.calculateSize(
+                for: attributedString,
+                constrainedToWidth: constrainedWidth
+            )
+            let textKitSize = textKitCalc.calculateSize(
+                for: attributedString,
+                constrainedToWidth: constrainedWidth
+            )
+
+            XCTAssertLessThanOrEqual(arithmeticSize.width, constrainedWidth)
+            XCTAssertEqual(arithmeticSize.width, textKitSize.width, accuracy: 1)
+        }
+    }
+
+    func testSoftWrapRetainsTrailingSeparatorPaintMatchingTextKit() {
+        let arithmeticCalc = ArithmeticTextCalculator()
+        let textKitCalc = TextKitCalculator()
+        let constrainedWidth: CGFloat = 100
+
+        for text in ["Hello world foo", "Hello  world foo", "Hello   world foo"] {
+            let attributedString = makeAttributedString(text)
+            let arithmeticSize = arithmeticCalc.calculateSize(
+                for: attributedString,
+                constrainedToWidth: constrainedWidth
+            )
+            let textKitSize = textKitCalc.calculateSize(
+                for: attributedString,
+                constrainedToWidth: constrainedWidth
+            )
+
+            XCTAssertEqual(
+                arithmeticSize.width,
+                textKitSize.width,
+                accuracy: 1,
+                "Trailing separator paint drifted for \(String(reflecting: text))"
+            )
+        }
+    }
+
     func testOversizedTextTokenFallsBackToGraphemeWrapping() {
         let attributedString = makeAttributedString("Supercalifragilisticexpialidocious")
         let arithmeticCalc = ArithmeticTextCalculator()
