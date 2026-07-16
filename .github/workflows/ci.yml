@@ -30,14 +30,19 @@ jobs:
       - name: Build
         run: swift build
 
-      - name: Fast verification (non-snapshot suites)
+      - name: Fast verification (discovery-driven correctness gate)
         run: bash scripts/verify_fast.sh
 
       - name: Snapshot stability (record then verify)
         run: |
           # Delete local baselines so SnapshotTesting records fresh ones for this environment
           rm -rf Tests/MarkdownKitTests/__Snapshots__/SnapshotTests/*.png
-          # First run: records baselines (fails with "no reference found" — expected)
-          swift test --filter "SnapshotTests" 2>&1 || true
+          # Anchored to the exact SnapshotTests/iOSSnapshotTests classes only - a bare
+          # "SnapshotTests" filter would also substring-match DiagramSnapshotTests,
+          # which is a deterministic correctness suite already covered above by
+          # verify_fast.sh and must not be re-recorded/re-verified here.
+          SNAPSHOT_FILTER='^MarkdownKitTests\.(SnapshotTests|iOSSnapshotTests)/'
+          # First run: records baselines (fails with "no reference found" - expected)
+          swift test --filter "$SNAPSHOT_FILTER" 2>&1 || true
           # Second run: verifies against just-recorded baselines from the same environment
-          swift test --filter "SnapshotTests"
+          swift test --filter "$SNAPSHOT_FILTER"
