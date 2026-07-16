@@ -147,8 +147,13 @@ public final class ArithmeticTextCalculator {
         var lineEndFitAdvances: [CGFloat] = []
         var lineEndPaintAdvances: [CGFloat] = []
         var segmentTexts: [String] = []
-        var fontNames: [String] = []
-        var pointSizes: [CGFloat] = []
+        // Stores the concrete `CTFont` captured during preparation (for `.text`
+        // segments only) so oversized-token fallback can reuse the exact font
+        // instance instead of reconstructing one from a string name. Re-deriving
+        // a `CTFont` from `Font.fontName` breaks on iOS, where system fonts
+        // report a private PostScript name (e.g. ".SFUI-Regular") that
+        // `CTFontCreateWithName` cannot resolve, silently substituting Times.
+        var ctFonts: [CTFont?] = []
         var heights: [CGFloat] = []
         var chunks: [Chunk] = []
         var headIndent: CGFloat = 0
@@ -159,8 +164,7 @@ public final class ArithmeticTextCalculator {
             kind: SegmentKind,
             height: CGFloat,
             text: String = "",
-            fontName: String = "",
-            pointSize: CGFloat = 0,
+            ctFont: CTFont? = nil,
             lineEndFitAdvance: CGFloat? = nil,
             lineEndPaintAdvance: CGFloat? = nil
         ) {
@@ -169,8 +173,7 @@ public final class ArithmeticTextCalculator {
             self.lineEndFitAdvances.append(lineEndFitAdvance ?? kind.lineEndFitAdvance(for: width))
             self.lineEndPaintAdvances.append(lineEndPaintAdvance ?? kind.lineEndPaintAdvance(for: width))
             self.segmentTexts.append(text)
-            self.fontNames.append(fontName)
-            self.pointSizes.append(pointSize)
+            self.ctFonts.append(ctFont)
             self.heights.append(height)
             self.chunks.append(
                 Chunk(
@@ -271,6 +274,18 @@ public final class ArithmeticTextCalculator {
         return width
     }
 
+    /// Derives a `CTFont` from the platform `Font`'s own descriptor rather than
+    /// re-opening `font.fontName` as a PostScript name via `CTFontCreateWithName`.
+    /// `UIFontDescriptor`/`NSFontDescriptor` are toll-free bridged to
+    /// `CTFontDescriptor`, so this reconstructs the exact font CoreText would
+    /// resolve for TextKit, including private system font identities (e.g. iOS
+    /// system fonts, whose `fontName` is a private name such as ".SFUI-Regular"
+    /// that `CTFontCreateWithName` cannot look up and silently falls back to
+    /// Times for).
+    private static func ctFont(from font: Font) -> CTFont {
+        CTFontCreateWithFontDescriptor(font.fontDescriptor as CTFontDescriptor, font.pointSize, nil)
+    }
+
     private static func requiresTextKitFallback(for scalar: UnicodeScalar) -> Bool {
         switch scalar.value {
         case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0x3040...0x30FF, 0xAC00...0xD7AF,
@@ -333,12 +348,11 @@ public final class ArithmeticTextCalculator {
 
         func appendOversizedTextSegment(
             text: String,
-            fontName: String,
-            pointSize: CGFloat,
+            ctFont: CTFont,
             height: CGFloat
         ) {
             let attributes: [NSAttributedString.Key: Any] = [
-                NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName(fontName as CFString, pointSize, nil)
+                NSAttributedString.Key(kCTFontAttributeName as String): ctFont
             ]
             let attributedText = NSAttributedString(string: text, attributes: attributes)
             let typesetter = CTTypesetterCreateWithAttributedString(attributedText)
@@ -381,8 +395,7 @@ public final class ArithmeticTextCalculator {
             let lineEndFitAdvance = preparedText.lineEndFitAdvances[index]
             let lineEndPaintAdvance = preparedText.lineEndPaintAdvances[index]
             let segmentText = preparedText.segmentTexts[index]
-            let fontName = preparedText.fontNames[index]
-            let pointSize = preparedText.pointSizes[index]
+            let ctFont = preparedText.ctFonts[index]
             let kind = preparedText.kinds[index]
             let height = preparedText.heights[index]
             let currentIndent = (lineCount == 0) ? preparedText.firstLineHeadIndent : preparedText.headIndent
@@ -420,15 +433,14 @@ public final class ArithmeticTextCalculator {
                 } else {
                     let nextIndent = (lineCount == 0) ? preparedText.firstLineHeadIndent : preparedText.headIndent
                     let nextAvailableWidth = maxWidth - nextIndent
-                    if kind == .text && width > nextAvailableWidth && !segmentText.isEmpty {
+                    if let ctFont, kind == .text && width > nextAvailableWidth && !segmentText.isEmpty {
                         currentLineAdvance = 0
                         currentLineFitWidth = 0
                         currentLinePaintWidth = 0
                         currentLineHeight = 0
                         appendOversizedTextSegment(
                             text: segmentText,
-                            fontName: fontName,
-                            pointSize: pointSize,
+                            ctFont: ctFont,
                             height: height
                         )
                     } else {
@@ -438,11 +450,10 @@ public final class ArithmeticTextCalculator {
                         currentLineHeight = height
                     }
                 }
-            } else if nextLineFitWidth > availableWidth && kind == .text && !segmentText.isEmpty {
+            } else if let ctFont, nextLineFitWidth > availableWidth && kind == .text && !segmentText.isEmpty {
                 appendOversizedTextSegment(
                     text: segmentText,
-                    fontName: fontName,
-                    pointSize: pointSize,
+                    ctFont: ctFont,
                     height: height
                 )
             } else {
@@ -483,12 +494,16 @@ public final class ArithmeticTextCalculator {
                 pointSizeMilli: Int((font.pointSize * 1000).rounded())
             )
             
-            // Convert platform Font to CTFont
+            // Convert platform Font to CTFont via the font's own descriptor, never
+            // by re-opening `font.fontName` as a PostScript name. System fonts
+            // (e.g. `UIFont.systemFont(ofSize:)`) report a private name on iOS
+            // (".SFUI-Regular") that `CTFontCreateWithName` cannot resolve back
+            // to the original font, silently substituting Times and diverging
+            // from TextKit's metrics, which measure the original font object.
+            let ctFont = Self.ctFont(from: font)
             #if canImport(UIKit)
-            let ctFont = CTFontCreateWithName(font.fontName as CFString, font.pointSize, nil)
             let lineHeightMetric = font.lineHeight
             #elseif canImport(AppKit)
-            let ctFont = CTFontCreateWithName(font.fontName as CFString, font.pointSize, nil)
             let lineHeightMetric = font.ascender - font.descender + font.leading
             #endif
             
@@ -535,8 +550,7 @@ public final class ArithmeticTextCalculator {
                         kind: kind,
                         height: lineHeight,
                         text: kind == .text ? segmentText : "",
-                        fontName: kind == .text ? font.fontName : "",
-                        pointSize: kind == .text ? font.pointSize : 0
+                        ctFont: kind == .text ? ctFont : nil
                     )
                     if terminatesWithHardBreak {
                         preparedText.append(width: 0, kind: .hardBreak, height: lineHeight)
@@ -560,8 +574,7 @@ public final class ArithmeticTextCalculator {
                             kind: kind,
                             height: lineHeight,
                             text: kind == .text ? segmentText : "",
-                            fontName: kind == .text ? font.fontName : "",
-                            pointSize: kind == .text ? font.pointSize : 0
+                            ctFont: kind == .text ? ctFont : nil
                         )
                     } else {
                         Self.storeCachedWidth(0, for: segmentText, fontKey: fontCacheKey)
@@ -570,8 +583,7 @@ public final class ArithmeticTextCalculator {
                             kind: kind,
                             height: lineHeight,
                             text: kind == .text ? segmentText : "",
-                            fontName: kind == .text ? font.fontName : "",
-                            pointSize: kind == .text ? font.pointSize : 0
+                            ctFont: kind == .text ? ctFont : nil
                         )
                     }
                 }

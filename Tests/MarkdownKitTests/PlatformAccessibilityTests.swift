@@ -71,7 +71,7 @@ final class PlatformAccessibilityTests: XCTestCase {
         let layoutDetails = LayoutResult(node: DetailsNode(range: nil, isOpen: false, summary: nil, children: []), size: .zero, attributedString: nil)
         XCTAssertTrue(PlatformAccessibility.accessibilityTraits(for: layoutDetails).contains(.button))
         
-        let layoutImage = LayoutResult(node: ImageNode(range: nil, source: "", title: nil, altText: nil), size: .zero, attributedString: nil)
+        let layoutImage = LayoutResult(node: ImageNode(range: nil, source: "", altText: nil, title: nil), size: .zero, attributedString: nil)
         XCTAssertTrue(PlatformAccessibility.accessibilityTraits(for: layoutImage).contains(.image))
         
         let layoutGeneral = LayoutResult(node: ParagraphNode(range: nil, children: []), size: .zero, attributedString: nil)

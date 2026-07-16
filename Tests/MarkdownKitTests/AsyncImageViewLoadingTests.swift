@@ -44,7 +44,7 @@ final class AsyncImageViewLoadingTests: XCTestCase {
         let layout = LayoutResult(node: node, size: CGSize(width: 10, height: 10))
 
         let view = AsyncImageView(frame: CGRect(origin: .zero, size: layout.size))
-        view.configure(with: layout)
+        view.configure(with: layout, imageLoadingPolicy: .trusted)
 
         try await waitForLayerContents(view)
         XCTAssertNotNil(view.layer.contents, "Local image should load and decode into layer.contents")
@@ -68,7 +68,7 @@ final class AsyncImageViewLoadingTests: XCTestCase {
         let layout = LayoutResult(node: node, size: CGSize(width: 10, height: 10))
 
         let view = AsyncImageView(frame: CGRect(origin: .zero, size: layout.size))
-        view.configure(with: layout)
+        view.configure(with: layout, imageLoadingPolicy: .trusted)
 
         try await waitForLayerContents(view)
         XCTAssertNotNil(view.layer.contents, "Relative local image path should resolve and render")
@@ -93,29 +93,50 @@ final class AsyncImageViewLoadingTests: XCTestCase {
 
         let view = AsyncImageView(frame: .zero)
         // Configure with A, immediately reconfigure with B
-        view.configure(with: layoutA)
-        view.configure(with: layoutB)
+        view.configure(with: layoutA, imageLoadingPolicy: .trusted)
+        view.configure(with: layoutB, imageLoadingPolicy: .trusted)
 
         try await waitForLayerContents(view)
         // Should complete without crash
         XCTAssertNotNil(view.layer.contents)
     }
 
-    func testConfigureClearsLayerImmediately() async throws {
+    func testConfigureClearsLayerBeforeUncachedLoad() async throws {
         let node = ImageNode(range: nil, source: testImageURL.absoluteString, altText: nil, title: nil)
         let layout = LayoutResult(node: node, size: CGSize(width: 10, height: 10))
+        let uncachedLayout = LayoutResult(node: node, size: CGSize(width: 12, height: 12))
 
         let view = AsyncImageView(frame: CGRect(origin: .zero, size: layout.size))
 
         // First load
-        view.configure(with: layout)
+        view.configure(with: layout, imageLoadingPolicy: .trusted)
         try await waitForLayerContents(view)
         XCTAssertNotNil(view.layer.contents)
 
-        // Reconfigure — layer.contents should be cleared synchronously
-        view.configure(with: layout)
+        // Reconfigure to a different size so the imageCache key is guaranteed uncached.
+        // The stale layer.contents should still clear synchronously before the async load starts.
+        view.configure(with: uncachedLayout, imageLoadingPolicy: .trusted)
         // The clearing (self.layer.contents = nil) happens before async task starts
         XCTAssertNil(view.layer.contents, "Reconfigure should synchronously clear layer.contents before starting new load")
+        view.prepareForReuse()
+    }
+
+    func testDefaultPolicyDoesNotLoadLocalFiles() async throws {
+        let node = ImageNode(range: nil, source: testImageURL.absoluteString, altText: "red square", title: nil)
+        let layout = LayoutResult(node: node, size: CGSize(width: 10, height: 10))
+        let resolved = try XCTUnwrap(ImageSourceResolver.resolve(testImageURL.absoluteString))
+
+        XCTAssertTrue(ImageLoadingPolicy.default.allowedRemoteSchemes.isEmpty)
+        XCTAssertFalse(ImageLoadingPolicy.default.allowsLocalFileURLs)
+        XCTAssertFalse(ImageLoadingPolicy.default.allowsRelativeFilePaths)
+        XCTAssertFalse(ImageLoadingPolicy.default.allows(resolved))
+
+        let view = AsyncImageView(frame: CGRect(origin: .zero, size: layout.size))
+        view.configure(with: layout)
+
+        XCTAssertNil(view.layer.contents, "Default image loading policy must not perform local image I/O")
+        await Task.yield()
+        XCTAssertNil(view.layer.contents, "Default policy should continue to block local image loading")
     }
 
     func testContentsGravityIsResizeAspect() {

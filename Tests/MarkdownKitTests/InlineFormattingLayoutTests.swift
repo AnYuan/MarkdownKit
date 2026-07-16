@@ -119,6 +119,7 @@ final class InlineFormattingLayoutTests: XCTestCase {
 
     // MARK: - Thematic Break Layout
 
+    #if canImport(AppKit) && !targetEnvironment(macCatalyst)
     func testThematicBreakLayoutRendersHorizontalRule() async throws {
         let layout = await TestHelper.solveLayout("---")
         let hrLayout = layout.children[0]
@@ -140,7 +141,6 @@ final class InlineFormattingLayoutTests: XCTestCase {
         XCTAssertTrue(foundGray, "Thematic break should use gray foreground color")
     }
 
-    #if canImport(AppKit) && !targetEnvironment(macCatalyst)
     func testThematicBreakLayoutStaysSingleLineInNarrowWidth() async throws {
         let layout = await TestHelper.solveLayout("---", width: 80)
         let hrLayout = layout.children[0]
@@ -160,6 +160,61 @@ final class InlineFormattingLayoutTests: XCTestCase {
 
         XCTAssertTrue(foundClipping, "Thematic break should use clipping to avoid wrapping in narrow widths")
         XCTAssertLessThanOrEqual(hrLayout.size.height, 20, "Narrow thematic break should remain a single visual line")
+    }
+    #else
+    // UIKit draws the thematic break as a hairline directly via `customDraw`
+    // (see `LayoutSolver.solveThematicBreak`), so `attributedString` is
+    // intentionally nil here. Verify the customDraw contract and geometry
+    // instead of attributed-string dash-line text.
+    func testThematicBreakLayoutRoutesToCustomDrawWithFiniteGeometry() async throws {
+        let layout = await TestHelper.solveLayout("---", width: 320)
+        let hrLayout = layout.children[0]
+
+        XCTAssertTrue(hrLayout.node is ThematicBreakNode)
+        XCTAssertNil(hrLayout.attributedString,
+                     "UIKit thematic break is drawn via customDraw, not an attributed string")
+        XCTAssertNotNil(hrLayout.customDraw, "UIKit thematic break should provide a customDraw closure")
+
+        let theme = Theme.default
+        let expectedHeight = theme.thematicBreak.paddingTop
+            + theme.thematicBreak.dividerHeight
+            + theme.thematicBreak.paddingBottom
+        XCTAssertEqual(hrLayout.size.height, expectedHeight, accuracy: 0.01,
+                       "Thematic break height should equal paddingTop + dividerHeight + paddingBottom")
+        XCTAssertEqual(hrLayout.size.width, 320, accuracy: 0.01,
+                       "Thematic break should span the full constrained width")
+        XCTAssertTrue(hrLayout.size.width.isFinite && hrLayout.size.height.isFinite)
+    }
+
+    func testThematicBreakLayoutStaysSingleLineInNarrowWidth() async throws {
+        let layout = await TestHelper.solveLayout("---", width: 80)
+        let hrLayout = layout.children[0]
+
+        XCTAssertNil(hrLayout.attributedString)
+        XCTAssertNotNil(hrLayout.customDraw)
+
+        let theme = Theme.default
+        let expectedHeight = theme.thematicBreak.paddingTop
+            + theme.thematicBreak.dividerHeight
+            + theme.thematicBreak.paddingBottom
+        XCTAssertEqual(hrLayout.size.height, expectedHeight, accuracy: 0.01,
+                       "Thematic break height is fixed (padding + hairline) regardless of width")
+        XCTAssertEqual(hrLayout.size.width, 80, accuracy: 0.01,
+                       "Thematic break should still span the constrained width at narrow sizes")
+    }
+
+    func testThematicBreakCustomDrawPaintsVisibleHairlineIntoCGContext() async throws {
+        let layout = await TestHelper.solveLayout("---", width: 200)
+        let hrLayout = layout.children[0]
+        let customDraw = try XCTUnwrap(hrLayout.customDraw)
+
+        let renderer = UIGraphicsImageRenderer(size: hrLayout.size)
+        let image = renderer.image { rendererContext in
+            customDraw(rendererContext.cgContext, hrLayout.size)
+        }
+
+        XCTAssertTrue(TestHelper.imageContainsVisibleNonWhitePixel(image.cgImage),
+                      "Drawing the thematic break hairline should paint visible pixels")
     }
     #endif
 
@@ -426,11 +481,11 @@ final class InlineFormattingLayoutTests: XCTestCase {
 
         var foundSecondaryColor = false
         attrStr.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attrStr.length)) { value, _, _ in
-            if let color = value as? Color, color == Color.secondaryLabelColor {
+            if let color = value as? Color, color == Color.platformSecondaryLabel {
                 foundSecondaryColor = true
             }
         }
-        XCTAssertTrue(foundSecondaryColor, "Image alt text should use secondaryLabelColor")
+        XCTAssertTrue(foundSecondaryColor, "Image alt text should use platformSecondaryLabel")
     }
 
     func testImageRelativeLocalPathRendersAttachment() async throws {

@@ -82,12 +82,19 @@ One-shot full suite (includes all tests, including benchmarks/snapshots):
 bash scripts/verify_all.sh --full
 ```
 
+iOS Simulator correctness lane (builds and runs the package's tests with `xcodebuild` against a dynamically-selected iOS Simulator, since the tracked `MarkdownKit.xcodeproj` has no test action):
+
+```bash
+bash scripts/verify_ios.sh
+```
+
 ### Test Split Strategy
 
 The test suite is split into fast regression tests and heavy benchmarks:
 
-- **Fast suite** (`verify_fast.sh`): ~200 tests covering parsing, layout, plugins, security, and snapshot stability. Runs in under 60 seconds. Used as CI gate.
+- **Fast suite** (`verify_fast.sh`): Discovers every `XCTestCase` suite in `MarkdownKitTests` via `swift test list` and runs all of them except the benchmark suites and the two true snapshot suites (`SnapshotTests`, `iOSSnapshotTests`), so newly added test classes are covered automatically instead of relying on a hand-maintained allow-list. This is the complete macOS correctness gate; used as the CI gate.
 - **Benchmark suite** (`verify_benchmarks.sh`): Heavy performance regression tests. Run locally or in nightly CI.
+- **iOS Simulator suite** (`verify_ios.sh`): Discovers the same correctness suites by scanning source (minus benchmarks and true snapshot suites), verifies the compiled iOS test bundle contains every UIKit-bearing suite, and runs the enumerated tests on a dynamically-selected iOS Simulator via `xcodebuild`, with exact executed-count validation, per-test timeouts, crash/restart detection, and a private system-font fallback check, as a separate CI job.
 - Running bare `swift test` executes everything including benchmarks. Prefer `verify_fast.sh` for daily iteration.
 
 ## Project Structure

@@ -3,6 +3,7 @@ import XCTest
 
 #if canImport(UIKit) && !os(watchOS)
 import UIKit
+import Markdown
 
 final class TextKitHitTesterTests: XCTestCase {
 

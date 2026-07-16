@@ -100,8 +100,8 @@ public class AsyncTextView: UIView {
         fingerprint: Int,
         size: CGSize,
         scale: CGFloat
-    ) -> NSString {
-        "\(fingerprint)|\(Int(size.width.rounded()))x\(Int(size.height.rounded()))@\(scale)" as NSString
+    ) -> String {
+        "\(fingerprint)|\(Int(size.width.rounded()))x\(Int(size.height.rounded()))@\(scale)"
     }
 
     /// Pre-rasterizes a layout's bitmap on a background task so it's ready in
@@ -120,7 +120,7 @@ public class AsyncTextView: UIView {
         )
 
         // Already cached? Return an instantly-finished no-op task.
-        if imageCache.object(forKey: cacheKey) != nil {
+        if imageCache.object(forKey: cacheKey as NSString) != nil {
             return Task {}
         }
 
@@ -129,7 +129,7 @@ public class AsyncTextView: UIView {
                 let cgImage = await renderImageCustom(customDraw: customDraw, size: size, scale: scale)
                 if Task.isCancelled { return }
                 if let cgImage {
-                    imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey)
+                    imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
                 }
             }
         }
@@ -145,7 +145,7 @@ public class AsyncTextView: UIView {
             let cgImage = await renderImage(drawString: drawString, size: size, scale: scale)
             if Task.isCancelled { return }
             if let cgImage {
-                imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey)
+                imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
             }
         }
     }
@@ -246,7 +246,7 @@ public class AsyncTextView: UIView {
             )
 
             // Cache hit: mount synchronously, skip the rasterization Task.
-            if let cached = Self.imageCache.object(forKey: cacheKey) {
+            if let cached = Self.imageCache.object(forKey: cacheKey as NSString) {
                 layer.contents = cached.image
                 return
             }
@@ -260,7 +260,7 @@ public class AsyncTextView: UIView {
                     )
                     if Task.isCancelled { return }
                     if let cgImage {
-                        Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey)
+                        Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
                     }
                     self.layer.contents = cgImage
                 }
@@ -271,7 +271,7 @@ public class AsyncTextView: UIView {
                     scale: scale
                 )
                 if let cgImage {
-                    Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey)
+                    Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
                 }
                 self.layer.contents = cgImage
             }
@@ -295,7 +295,7 @@ public class AsyncTextView: UIView {
         )
 
         // Cache hit: scroll-back or prefetch warmup landed here first.
-        if let cached = Self.imageCache.object(forKey: cacheKey) {
+        if let cached = Self.imageCache.object(forKey: cacheKey as NSString) {
             layer.contents = cached.image
             return
         }
@@ -310,7 +310,7 @@ public class AsyncTextView: UIView {
                 )
                 if Task.isCancelled { return }
                 if let cgImage {
-                    Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey)
+                    Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
                 }
                 self.layer.contents = cgImage
             }
@@ -321,7 +321,7 @@ public class AsyncTextView: UIView {
                 scale: scale
             )
             if let cgImage {
-                Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey)
+                Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
             }
             self.layer.contents = cgImage
         }
@@ -329,42 +329,56 @@ public class AsyncTextView: UIView {
 
     // MARK: - Tap Handling
 
-    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
-        guard let attrString = currentAttributedString else { return }
-        let point = gesture.location(in: self)
+    private func interactionHitTester() -> TextKitHitTester? {
+        guard let attrString = currentAttributedString else { return nil }
 
         if hitTester == nil {
             hitTester = TextKitHitTester(attributedString: attrString, containerSize: currentSize)
         }
 
-        guard let charIndex = hitTester?.characterIndex(at: point) else { return }
+        return hitTester
+    }
+
+    @discardableResult
+    func handleInteraction(at point: CGPoint) -> Bool {
+        guard let attrString = currentAttributedString,
+              let hitTester = interactionHitTester(),
+              let charIndex = hitTester.characterIndex(at: point) else {
+            return false
+        }
 
         // 1. Check for link
-        if let url: URL = hitTester?.attribute(.link, at: charIndex) {
+        if let url: URL = hitTester.attribute(.link, at: charIndex) {
             if let handler = onLinkTap {
                 handler(url)
             } else {
                 UIApplication.shared.open(url)
             }
-            return
+            return true
         }
 
         // 2. Check for checkbox
-        if let data: CheckboxInteractionData = hitTester?.attribute(.markdownCheckbox, at: charIndex) {
+        if let data: CheckboxInteractionData = hitTester.attribute(.markdownCheckbox, at: charIndex) {
             onCheckboxToggle?(data)
-            return
+            return true
         }
 
         // 3. Check custom interactive attributes
-        if let attrString = currentAttributedString, charIndex < attrString.length {
+        if charIndex < attrString.length {
             for key in customInteractiveAttributes {
                 let value = attrString.attribute(key, at: charIndex, effectiveRange: nil)
                 if let value {
                     onCustomAttributeTap?(key, value)
-                    return
+                    return true
                 }
             }
         }
+
+        return false
+    }
+
+    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+        handleInteraction(at: gesture.location(in: self))
     }
 
     // MARK: - Press Highlight
@@ -381,24 +395,19 @@ public class AsyncTextView: UIView {
     }
 
     private func showHighlight(at point: CGPoint) {
-        guard let attrString = currentAttributedString else { return }
-
-        if hitTester == nil {
-            hitTester = TextKitHitTester(attributedString: attrString, containerSize: currentSize)
-        }
-
-        guard let charIndex = hitTester?.characterIndex(at: point) else { return }
+        guard let hitTester = interactionHitTester(),
+              let charIndex = hitTester.characterIndex(at: point) else { return }
 
         // Determine the interactive range to highlight
         var highlightRange: NSRange?
 
-        if hitTester?.effectiveRange(of: .link, at: charIndex) != nil {
-            highlightRange = hitTester?.effectiveRange(of: .link, at: charIndex)
-        } else if hitTester?.effectiveRange(of: .markdownCheckbox, at: charIndex) != nil {
-            highlightRange = hitTester?.effectiveRange(of: .markdownCheckbox, at: charIndex)
+        if hitTester.effectiveRange(of: .link, at: charIndex) != nil {
+            highlightRange = hitTester.effectiveRange(of: .link, at: charIndex)
+        } else if hitTester.effectiveRange(of: .markdownCheckbox, at: charIndex) != nil {
+            highlightRange = hitTester.effectiveRange(of: .markdownCheckbox, at: charIndex)
         } else {
             for key in customInteractiveAttributes {
-                if let range = hitTester?.effectiveRange(of: key, at: charIndex) {
+                if let range = hitTester.effectiveRange(of: key, at: charIndex) {
                     highlightRange = range
                     break
                 }
@@ -406,7 +415,8 @@ public class AsyncTextView: UIView {
         }
 
         guard let range = highlightRange,
-              let rect = hitTester?.boundingRect(for: range) else { return }
+              range.length > 0 else { return }
+        let rect = hitTester.boundingRect(for: range)
 
         // Texture-inspired highlight
         let isDark = traitCollection.userInterfaceStyle == .dark
@@ -469,7 +479,15 @@ public class AsyncTextView: UIView {
         return image.cgImage
     }
 
-    private static func drawAttributedString(
+    // Explicitly `nonisolated`: as a `private static` member of a `UIView`
+    // subclass this would otherwise infer `@MainActor` isolation, forcing an
+    // implicit main-actor hop from the synchronous, non-async
+    // `UIGraphicsImageRenderer.image(_:)` closure in `renderImage` below —
+    // which is not possible without `await` and triggers a compile error.
+    // The function only touches its parameters and TextKit locals, never
+    // main-actor state, so it is safe to run on whatever background executor
+    // the caller is isolated to.
+    private static nonisolated func drawAttributedString(
         _ drawString: NSAttributedString,
         in drawRect: CGRect
     ) {

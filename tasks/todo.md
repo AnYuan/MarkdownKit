@@ -180,8 +180,11 @@ review the complete diff, then commit and push before starting the next stage.
   fallback diagnostics.
 - [x] `ci: run the complete macOS correctness suite`
   Replace the suite allow-list with an exclusion-based non-benchmark gate.
-- [ ] `ci: execute UIKit tests on an iOS simulator`
+- [x] `ci: execute UIKit tests on an iOS simulator`
   Repair stale platform tests first, then add an iOS CI lane.
+  Review: the lane enumerates and executes all 374 enabled iOS tests, requires
+  every UIKit-bearing suite, rejects process restarts/private-font fallback,
+  and the macOS gate remains green at 320 correctness + 4 snapshot tests.
 - [ ] `bench: make the regression baseline authoritative`
   Use one machine-readable benchmark baseline for tests and documentation.
 - [ ] `test: separate snapshot determinism from visual regression`

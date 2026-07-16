@@ -34,8 +34,8 @@ public class AsyncImageView: UIView {
         imageCache.removeAllObjects()
     }
 
-    private static func cacheKey(url: URL, size: CGSize, scale: CGFloat) -> NSString {
-        "\(url.absoluteString)|\(Int(size.width.rounded()))x\(Int(size.height.rounded()))@\(scale)" as NSString
+    private static func cacheKey(url: URL, size: CGSize, scale: CGFloat) -> String {
+        "\(url.absoluteString)|\(Int(size.width.rounded()))x\(Int(size.height.rounded()))@\(scale)"
     }
 
     /// When `true` (the default), images are fetched and decoded on a background queue.
@@ -120,7 +120,7 @@ public class AsyncImageView: UIView {
         // Fast path: another cell already decoded this URL at this exact size.
         // Mounts synchronously, avoids re-download and re-decode on scroll-back.
         let cacheKey = Self.cacheKey(url: resolved.url, size: targetSize, scale: currentDisplayScale)
-        if let cached = Self.imageCache.object(forKey: cacheKey) {
+        if let cached = Self.imageCache.object(forKey: cacheKey as NSString) {
             layer.contents = cached.cgImage
             return
         }
@@ -142,7 +142,7 @@ public class AsyncImageView: UIView {
             let decoded = renderer.image { _ in
                 sourceImage.draw(in: CGRect(origin: .zero, size: targetSize))
             }
-            Self.imageCache.setObject(decoded, forKey: cacheKey)
+            Self.imageCache.setObject(decoded, forKey: cacheKey as NSString)
             self.layer.contents = decoded.cgImage
             return
         }
@@ -220,7 +220,7 @@ public class AsyncImageView: UIView {
 
             // Populate the shared cache before the main-actor hop. NSCache is
             // documented as thread-safe, so this is safe off-main.
-            Self.imageCache.setObject(decodedImage, forKey: cacheKey)
+            Self.imageCache.setObject(decodedImage, forKey: cacheKey as NSString)
 
             // 5. Mount the uncompressed GPU-ready buffer to the layer (Instantaneous)
             await MainActor.run {

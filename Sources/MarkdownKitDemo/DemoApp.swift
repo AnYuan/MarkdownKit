@@ -406,4 +406,32 @@ enum SyntaxPage: String, CaseIterable, Hashable {
     }
     // swiftlint:enable line_length
 }
+#elseif os(iOS)
+import SwiftUI
+import MarkdownKit
+
+/// Minimal iOS entry point so the `MarkdownKitDemo` executable links when the
+/// package is built for iOS (e.g. Simulator test builds). This intentionally
+/// mirrors only a small slice of the macOS demo rather than duplicating the
+/// full AppKit UI.
+@main
+struct DemoApp: App {
+    var body: some Scene {
+        WindowGroup {
+            NavigationStack {
+                MarkdownView(text: iOSDemoMarkdown)
+                    .navigationTitle("MarkdownKit Demo")
+            }
+        }
+    }
+}
+
+private let iOSDemoMarkdown = """
+# MarkdownKit iOS Demo
+
+This minimal screen renders Markdown using the public `MarkdownView` API.
+
+- **Bold**, *italic*, and `inline code` all work.
+- [Links](https://github.com) are supported too.
+"""
 #endif

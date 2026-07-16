@@ -22,6 +22,14 @@ public class AsyncCodeView: UIView {
 
     private let theme: Theme
     private var rawCode: String = ""
+    private var copyButtonDefaultImage: UIImage?
+    private var copyFeedbackResetWorkItem: DispatchWorkItem?
+    private var copyFeedbackGeneration = 0
+
+    /// Internal dependency-injection seam for copy handling. Defaults to writing to
+    /// `UIPasteboard.general`, but tests can substitute an in-memory sink to avoid
+    /// touching the system pasteboard (which can block headlessly under XCTest).
+    internal var copySink: (String) -> Void = { UIPasteboard.general.string = $0 }
 
     private var padding: CGFloat { theme.codeBlock.viewPadding }
     
@@ -52,6 +60,7 @@ public class AsyncCodeView: UIView {
     private func setupCopyButton() {
         let config = UIImage.SymbolConfiguration(pointSize: theme.codeBlock.copyButtonIconSize, weight: .semibold)
         let image = UIImage(systemName: "doc.on.doc", withConfiguration: config)
+        copyButtonDefaultImage = image
         copyButton.setImage(image, for: .normal)
         copyButton.tintColor = .secondaryLabel
         copyButton.backgroundColor = theme.colors.codeColor.background.withAlphaComponent(0.8)
@@ -64,24 +73,37 @@ public class AsyncCodeView: UIView {
     
     private func executeCopy() {
         guard !rawCode.isEmpty else { return }
-        UIPasteboard.general.string = rawCode
+        copySink(rawCode)
+        resetCopyFeedback()
         
         // Feedback animation
-        let originalImage = copyButton.image(for: .normal)
         let checkImage = UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: theme.codeBlock.copyButtonIconSize, weight: .bold))
         
         UIView.animate(withDuration: 0.2) {
             self.copyButton.setImage(checkImage, for: .normal)
             self.copyButton.tintColor = .systemGreen
         }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            guard let self else { return }
+
+        let generation = copyFeedbackGeneration
+        let resetWorkItem = DispatchWorkItem { [weak self] in
+            guard let self, self.copyFeedbackGeneration == generation else { return }
             UIView.animate(withDuration: 0.2) {
-                self.copyButton.setImage(originalImage, for: .normal)
+                self.copyButton.setImage(self.copyButtonDefaultImage, for: .normal)
                 self.copyButton.tintColor = .secondaryLabel
             }
+            self.copyFeedbackResetWorkItem = nil
         }
+        copyFeedbackResetWorkItem = resetWorkItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: resetWorkItem)
+    }
+
+    private func resetCopyFeedback() {
+        copyFeedbackResetWorkItem?.cancel()
+        copyFeedbackResetWorkItem = nil
+        copyFeedbackGeneration &+= 1
+        copyButton.layer.removeAllAnimations()
+        copyButton.setImage(copyButtonDefaultImage, for: .normal)
+        copyButton.tintColor = .secondaryLabel
     }
     
     public override func layoutSubviews() {
@@ -102,12 +124,14 @@ public class AsyncCodeView: UIView {
     
     /// Resets internal state so the view can be reused by a recycling cell.
     public func prepareForReuse() {
+        resetCopyFeedback()
         rawCode = ""
         textView.prepareForReuse()
     }
 
     /// Binds the `LayoutResult` constraint to the view.
     public func configure(with layout: LayoutResult) {
+        resetCopyFeedback()
         self.frame.size = layout.size
         
         // Pass the configuration down to the AsyncTextView to begin background text rasterization

@@ -108,12 +108,25 @@ final class AsyncTextViewRenderTests: XCTestCase {
         view.displaysAsynchronously = false
         view.configure(with: layout)
 
-        guard let cgImage = view.layer.contents as? CGImage else {
+        guard let contents = view.layer.contents else {
             XCTFail("Expected attachment rendering to produce a CGImage")
             return
         }
 
-        XCTAssertTrue(imageContainsNonWhitePixel(cgImage), "Attachment rendering should draw visible pixels into layer.contents")
+        // `CALayer.contents` is typed `Any?`. Swift 6 treats a conditional
+        // downcast to a Core Foundation type (`contents as? CGImage`) as
+        // always succeeding and rejects it as a redundant cast, so verify
+        // the dynamic type explicitly via `CFGetTypeID` instead.
+        guard CFGetTypeID(contents as CFTypeRef) == CGImage.typeID else {
+            XCTFail("Expected layer.contents to be a CGImage, got \(type(of: contents))")
+            return
+        }
+        let cgImage = contents as! CGImage
+
+        XCTAssertTrue(
+            TestHelper.imageContainsVisibleNonWhitePixel(cgImage),
+            "Attachment rendering should draw visible pixels into layer.contents"
+        )
     }
 
     private func makeAttachmentImage() -> UIImage {
@@ -127,37 +140,5 @@ final class AsyncTextViewRenderTests: XCTestCase {
         }
     }
 
-    private func imageContainsNonWhitePixel(_ image: CGImage) -> Bool {
-        let width = image.width
-        let height = image.height
-        let bytesPerRow = width * 4
-        var data = [UInt8](repeating: 0, count: height * bytesPerRow)
-
-        guard let context = CGContext(
-            data: &data,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            return false
-        }
-
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-
-        for index in stride(from: 0, to: data.count, by: 4) {
-            let red = data[index]
-            let green = data[index + 1]
-            let blue = data[index + 2]
-            let alpha = data[index + 3]
-            if alpha > 0, red < 250 || green < 250 || blue < 250 {
-                return true
-            }
-        }
-
-        return false
-    }
 }
 #endif

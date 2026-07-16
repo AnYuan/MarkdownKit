@@ -39,8 +39,12 @@ final class IntegrationPipelineTests: XCTestCase {
         for (index, child) in layout.children.enumerated() {
             XCTAssertGreaterThan(child.size.height, 0,
                 "Child[\(index)] (\(type(of: child.node))) should have non-zero height")
-            XCTAssertNotNil(child.attributedString,
-                "Child[\(index)] (\(type(of: child.node))) should have attributed string")
+            // Table and thematic-break nodes are drawn via `customDraw` on
+            // UIKit (attributedString is intentionally nil there); every
+            // other node — and every node on AppKit — is attributed-string
+            // based. Either counts as valid rendered output.
+            XCTAssertTrue(child.attributedString != nil || child.customDraw != nil,
+                "Child[\(index)] (\(type(of: child.node))) should have attributed string or a customDraw closure")
         }
     }
 

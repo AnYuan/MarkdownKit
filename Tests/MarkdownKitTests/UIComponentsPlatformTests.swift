@@ -125,16 +125,52 @@ final class UIComponentsPlatformTests: XCTestCase {
         XCTAssertTrue(cell.contentView.subviews[0] is AsyncCodeView)
     }
 
-    func testCellPrepareForReuseRemovesAllSubviews() {
+    func testCellPrepareForReuseRetainsHostedViewAndClearsState() {
         let textNode = ParagraphNode(range: nil, children: [])
-        let layout = LayoutResult(node: textNode, size: CGSize(width: 320, height: 50))
+        let attributedString = NSAttributedString(string: "Reusable text")
+        let layout = LayoutResult(
+            node: textNode,
+            size: CGSize(width: 320, height: 50),
+            attributedString: attributedString
+        )
 
         let cell = MarkdownCollectionViewCell(frame: .zero)
         cell.configure(with: layout)
+
         XCTAssertEqual(cell.contentView.subviews.count, 1)
+        guard let hostedView = cell.contentView.subviews.first as? AsyncTextView else {
+            XCTFail("Expected AsyncTextView after configure")
+            return
+        }
+        XCTAssertEqual(hostedView.currentAttributedString?.string, attributedString.string)
+
+        cell.onLinkTap = { _ in }
+        cell.onCheckboxToggle = { _ in }
+        cell.onDetailsTap = { _ in }
+        cell.isAccessibilityElement = true
+        cell.accessibilityLabel = "stale"
+        cell.accessibilityValue = "stale"
+        cell.accessibilityHint = "stale"
+        cell.accessibilityTraits = .link
 
         cell.prepareForReuse()
-        XCTAssertEqual(cell.contentView.subviews.count, 0)
+
+        XCTAssertEqual(cell.contentView.subviews.count, 1)
+        XCTAssertIdentical(cell.contentView.subviews.first, hostedView)
+        XCTAssertNil(hostedView.currentAttributedString)
+        XCTAssertNil(cell.onLinkTap)
+        XCTAssertNil(cell.onCheckboxToggle)
+        XCTAssertNil(cell.onDetailsTap)
+        XCTAssertFalse(cell.isAccessibilityElement)
+        XCTAssertNil(cell.accessibilityLabel)
+        XCTAssertNil(cell.accessibilityValue)
+        XCTAssertNil(cell.accessibilityHint)
+        XCTAssertEqual(cell.accessibilityTraits, .none)
+
+        cell.configure(with: layout)
+        XCTAssertEqual(cell.contentView.subviews.count, 1)
+        XCTAssertIdentical(cell.contentView.subviews.first, hostedView)
+        XCTAssertEqual(hostedView.currentAttributedString?.string, attributedString.string)
     }
 }
 #endif

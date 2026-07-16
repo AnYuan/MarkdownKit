@@ -4,142 +4,236 @@ import XCTest
 #if canImport(UIKit) && !os(watchOS)
 import UIKit
 
-/// iOS-specific tests verifying UIKit table layout behavior:
-/// tab stop offsets, container insets, and column alignment.
+/// iOS-specific tests verifying the intentional `customDraw` table contract:
+/// `LayoutSolver` routes `TableNode` to `TableCardRenderer` and draws the card
+/// directly via `CGContext`, so `LayoutResult.attributedString` is nil on this
+/// platform. These tests exercise `TableCardRenderer`'s computed layout model
+/// (cell content, column alignment/widths, header/body fonts, row geometry)
+/// and confirm the closure renders into a `CGContext`.
 final class iOSTableLayoutTests: XCTestCase {
 
-    // MARK: - Container Inset Tests
+    // MARK: - LayoutResult Contract
 
-    func testUIKitTableFirstColumnHasHeadIndent() async throws {
+    func testUIKitTableRoutesToCustomDrawWithNilAttributedString() async throws {
         let markdown = """
         | Name | Score |
         |------|-------|
         | Alice | 95   |
         """
         let layout = await TestHelper.solveLayout(markdown, width: 400)
-        guard let attrStr = layout.children[0].attributedString else {
-            XCTFail("Table layout missing attributed string")
-            return
-        }
+        let tableLayout = layout.children[0]
 
-        let style = attrStr.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
-        XCTAssertNotNil(style, "Expected paragraph style on table text")
-        XCTAssertGreaterThan(style?.firstLineHeadIndent ?? 0, 0,
-                             "First column should have a leading head indent")
-        XCTAssertGreaterThan(style?.headIndent ?? 0, 0,
-                             "First column should have a head indent for wrapped lines")
+        XCTAssertTrue(tableLayout.node is TableNode, "Expected the first child to be a TableNode")
+        XCTAssertNil(tableLayout.attributedString,
+                     "UIKit table layout should not produce an attributed string — it is drawn via customDraw")
+        XCTAssertNotNil(tableLayout.customDraw,
+                        "UIKit table layout should provide a customDraw closure")
     }
 
-    func testUIKitTableTabStopsAreOffsetByInset() async throws {
+    func testUIKitTableLayoutSizeMatchesTableCardRendererComputedLayout() async throws {
         let markdown = """
         | A | B | C |
         |---|---|---|
         | 1 | 2 | 3 |
         """
-        let layout = await TestHelper.solveLayout(markdown, width: 600)
-        guard let attrStr = layout.children[0].attributedString else {
-            XCTFail("Table layout missing attributed string")
-            return
-        }
+        let width: CGFloat = 600
+        let layout = await TestHelper.solveLayout(markdown, width: width)
+        let tableLayout = layout.children[0]
 
-        let style = attrStr.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
-        let tabStops = style?.tabStops ?? []
+        let document = TestHelper.parse(markdown)
+        let table = try XCTUnwrap(document.children.first as? TableNode)
+        let computed = TableCardRenderer.computeLayout(from: table, theme: .default, constrainedToWidth: width)
 
-        XCTAssertEqual(tabStops.count, 3, "Expected 3 tab stops for 3 columns")
-        guard let firstStop = tabStops.first else { return }
-
-        // The first tab stop should be offset (> 0), not at position 0
-        XCTAssertGreaterThan(firstStop.location, 0,
-                             "First tab stop should be offset by the horizontal inset, not at 0")
-
-        // All tab stops should be evenly spaced
-        if tabStops.count >= 3 {
-            let gap1 = tabStops[1].location - tabStops[0].location
-            let gap2 = tabStops[2].location - tabStops[1].location
-            XCTAssertEqual(gap1, gap2, accuracy: 1.0,
-                           "Tab stops should be evenly spaced")
-        }
+        XCTAssertEqual(tableLayout.size, computed.totalSize,
+                       "LayoutSolver's reported size should match TableCardRenderer's computed total size")
     }
 
-    func testUIKitTableSeparatorTabStopsMatchContentTabStops() async throws {
+    // MARK: - TableCardRenderer Cell Content
+
+    func testTableCardRendererCellContentMatchesSourceMarkdown() throws {
         let markdown = """
-        | Left | Right |
-        |:-----|------:|
-        | x    | y     |
+        | Platform | Status |
+        |----------|--------|
+        | macOS    | Done   |
+        | iOS      | WIP    |
         """
-        let layout = await TestHelper.solveLayout(markdown, width: 500)
-        guard let attrStr = layout.children[0].attributedString else {
-            XCTFail("Table layout missing attributed string")
-            return
-        }
+        let document = TestHelper.parse(markdown)
+        let table = try XCTUnwrap(document.children.first as? TableNode)
+        let layout = TableCardRenderer.computeLayout(from: table, theme: .default, constrainedToWidth: 500)
 
-        // Collect paragraph styles from all runs
-        var contentTabStops: [NSTextTab]?
-        var separatorTabStops: [NSTextTab]?
-        let text = attrStr.string
+        XCTAssertEqual(layout.rows.count, 3, "Expected 1 header row + 2 body rows")
 
-        attrStr.enumerateAttribute(
-            .paragraphStyle,
-            in: NSRange(location: 0, length: attrStr.length)
-        ) { value, range, _ in
-            guard let style = value as? NSParagraphStyle else { return }
-            let substring = (text as NSString).substring(with: range)
-            if substring.contains("─") {
-                separatorTabStops = style.tabStops
-            } else if contentTabStops == nil && !substring.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                contentTabStops = style.tabStops
+        let headerTexts = layout.rows[0].cells.map(\.text.string)
+        XCTAssertEqual(headerTexts, ["Platform", "Status"])
+
+        let firstBodyTexts = layout.rows[1].cells.map(\.text.string)
+        XCTAssertEqual(firstBodyTexts, ["macOS", "Done"])
+
+        let secondBodyTexts = layout.rows[2].cells.map(\.text.string)
+        XCTAssertEqual(secondBodyTexts, ["iOS", "WIP"])
+
+        XCTAssertTrue(layout.rows[0].isHeader, "First row should be flagged as the header")
+        XCTAssertFalse(layout.rows[1].isHeader, "Body rows should not be flagged as the header")
+        XCTAssertFalse(layout.rows[2].isHeader, "Body rows should not be flagged as the header")
+    }
+
+    func testTableCardRendererDoesNotExposeRawMarkdownSyntax() throws {
+        let markdown = """
+        | A | B |
+        |---|---|
+        | 1 | 2 |
+        """
+        let document = TestHelper.parse(markdown)
+        let table = try XCTUnwrap(document.children.first as? TableNode)
+        let layout = TableCardRenderer.computeLayout(from: table, theme: .default, constrainedToWidth: 400)
+
+        for row in layout.rows {
+            for cell in row.cells {
+                XCTAssertFalse(cell.text.string.contains("|"), "Cell text should not contain raw markdown pipes")
+                XCTAssertFalse(cell.text.string.contains("-"), "Cell text should not contain separator dashes")
             }
         }
-
-        XCTAssertNotNil(contentTabStops, "Should find content row tab stops")
-        XCTAssertNotNil(separatorTabStops, "Should find separator row tab stops")
-
-        guard let content = contentTabStops, let separator = separatorTabStops else { return }
-        XCTAssertEqual(content.count, separator.count,
-                       "Separator and content rows should have the same number of tab stops")
-
-        for (contentStop, sepStop) in zip(content, separator) {
-            XCTAssertEqual(contentStop.location, sepStop.location, accuracy: 0.01,
-                           "Separator tab stop locations should match content tab stop locations")
-        }
     }
 
-    // MARK: - Column Alignment Tests
+    // MARK: - Column Alignment
 
-    func testUIKitTableColumnAlignmentWithInset() async throws {
+    func testTableCardRendererColumnAlignmentMatchesMarkdownSpec() throws {
         let markdown = """
         | Left | Center | Right |
         |:-----|:------:|------:|
         | a    | b      | c     |
         """
-        let layout = await TestHelper.solveLayout(markdown, width: 600)
-        guard let attrStr = layout.children[0].attributedString else {
-            XCTFail("Table layout missing attributed string")
-            return
-        }
+        let document = TestHelper.parse(markdown)
+        let table = try XCTUnwrap(document.children.first as? TableNode)
+        let layout = TableCardRenderer.computeLayout(from: table, theme: .default, constrainedToWidth: 600)
 
-        // First run's paragraph style controls column 0 alignment
-        let style = attrStr.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
-        XCTAssertEqual(style?.alignment, .left,
-                       "Column 0 paragraph alignment should be .left")
+        let headerRow = layout.rows[0]
+        XCTAssertEqual(headerRow.cells[0].alignment, .left, "Column 0 should be left-aligned")
+        XCTAssertEqual(headerRow.cells[1].alignment, .center, "Column 1 should be center-aligned")
+        XCTAssertEqual(headerRow.cells[2].alignment, .right, "Column 2 should be right-aligned")
 
-        // Tab stops encode alignment for columns 1+
-        let tabStops = style?.tabStops ?? []
-        guard tabStops.count >= 3 else {
-            XCTFail("Expected at least 3 tab stops, got \(tabStops.count)")
-            return
-        }
-        XCTAssertEqual(tabStops[1].alignment, .center,
-                       "Column 1 tab stop should have .center alignment")
-        XCTAssertEqual(tabStops[2].alignment, .right,
-                       "Column 2 tab stop should have .right alignment")
-
-        // Head indent should still be applied
-        XCTAssertGreaterThan(style?.firstLineHeadIndent ?? 0, 0,
-                             "Head indent should be applied even with custom alignment")
+        // Alignment should be consistent across every row, not just the header.
+        let bodyRow = layout.rows[1]
+        XCTAssertEqual(bodyRow.cells[0].alignment, .left)
+        XCTAssertEqual(bodyRow.cells[1].alignment, .center)
+        XCTAssertEqual(bodyRow.cells[2].alignment, .right)
     }
 
-    // MARK: - Size Constraint Tests
+    // MARK: - Column Widths
+
+    func testTableCardRendererColumnWidthsAreEvenlySplitAndPositive() throws {
+        let markdown = """
+        | A | B | C | D |
+        |---|---|---|---|
+        | 1 | 2 | 3 | 4 |
+        """
+        let document = TestHelper.parse(markdown)
+        let table = try XCTUnwrap(document.children.first as? TableNode)
+        let width: CGFloat = 400
+        let layout = TableCardRenderer.computeLayout(from: table, theme: .default, constrainedToWidth: width)
+
+        XCTAssertEqual(layout.columnWidths.count, 4, "Expected one width per column")
+        for columnWidth in layout.columnWidths {
+            XCTAssertGreaterThan(columnWidth, 0, "Every column should have positive width")
+        }
+
+        let firstWidth = layout.columnWidths[0]
+        for columnWidth in layout.columnWidths {
+            XCTAssertEqual(columnWidth, firstWidth, accuracy: 0.5,
+                           "Columns should be evenly split when cell content is similar in size")
+        }
+    }
+
+    // MARK: - Header / Body Fonts
+
+    func testTableCardRendererHeaderUsesSemiboldBodyUsesRegularFont() throws {
+        let markdown = """
+        | Header |
+        |--------|
+        | Body   |
+        """
+        let document = TestHelper.parse(markdown)
+        let table = try XCTUnwrap(document.children.first as? TableNode)
+        let layout = TableCardRenderer.computeLayout(from: table, theme: .default, constrainedToWidth: 400)
+
+        let headerFont = try XCTUnwrap(
+            layout.rows[0].cells[0].text.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
+        )
+        let bodyFont = try XCTUnwrap(
+            layout.rows[1].cells[0].text.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
+        )
+
+        // `.semibold` doesn't necessarily flip the `.traitBold` symbolic bit, so
+        // compare the descriptor's numeric weight trait instead — this is the
+        // same signal `UIFont.systemFont(ofSize:weight:)` encodes.
+        let headerWeight = weightTrait(of: headerFont)
+        let bodyWeight = weightTrait(of: bodyFont)
+
+        XCTAssertEqual(headerWeight, UIFont.Weight.semibold.rawValue, accuracy: 0.01,
+                       "Header row should use the semibold system font weight")
+        XCTAssertEqual(bodyWeight, UIFont.Weight.regular.rawValue, accuracy: 0.01,
+                       "Body row should use the regular system font weight")
+        XCTAssertGreaterThan(headerWeight, bodyWeight, "Header font should be heavier than the body font")
+        XCTAssertEqual(headerFont.pointSize, Theme.default.table.fontSize, accuracy: 0.01)
+        XCTAssertEqual(bodyFont.pointSize, Theme.default.table.fontSize, accuracy: 0.01)
+    }
+
+    private func weightTrait(of font: UIFont) -> CGFloat {
+        let traits = font.fontDescriptor.object(forKey: .traits) as? [UIFontDescriptor.TraitKey: Any]
+        return traits?[.weight] as? CGFloat ?? 0
+    }
+
+    // MARK: - Row Geometry
+
+    func testTableCardRendererRowGeometryIsMonotonicAndNonOverlapping() throws {
+        let markdown = """
+        | Name  | Score |
+        |-------|-------|
+        | Alice | 95    |
+        | Bob   | 87    |
+        """
+        let document = TestHelper.parse(markdown)
+        let table = try XCTUnwrap(document.children.first as? TableNode)
+        let layout = TableCardRenderer.computeLayout(from: table, theme: .default, constrainedToWidth: 420)
+
+        XCTAssertEqual(layout.rows.count, 3)
+
+        var previousRowEnd: CGFloat = 0
+        for (index, row) in layout.rows.enumerated() {
+            XCTAssertGreaterThan(row.height, 0, "Row \(index) should have positive height")
+            XCTAssertGreaterThanOrEqual(row.yOffset, previousRowEnd,
+                                        "Row \(index) should start at or after the previous row's end")
+            previousRowEnd = row.yOffset + row.height
+        }
+
+        XCTAssertLessThanOrEqual(previousRowEnd, layout.totalSize.height,
+                                 "Rows should fit within the total computed card height")
+    }
+
+    // MARK: - Constrained Size
+
+    func testTableCardRendererConstrainedWidthProducesFiniteNonNegativeSize() throws {
+        let markdown = """
+        | Feature | Status | Priority | Owner |
+        |---------|--------|----------|-------|
+        | Parsing | Done   | High     | Core  |
+        """
+        let document = TestHelper.parse(markdown)
+        let table = try XCTUnwrap(document.children.first as? TableNode)
+        let width: CGFloat = 100 // Very narrow width — should not crash or produce invalid geometry.
+        let layout = TableCardRenderer.computeLayout(from: table, theme: .default, constrainedToWidth: width)
+
+        XCTAssertTrue(layout.totalSize.width.isFinite)
+        XCTAssertTrue(layout.totalSize.height.isFinite)
+        XCTAssertGreaterThanOrEqual(layout.totalSize.width, 0)
+        XCTAssertGreaterThan(layout.totalSize.height, 0)
+        XCTAssertLessThanOrEqual(layout.totalSize.width, width,
+                                 "Table card width should not exceed the constrained width")
+
+        for columnWidth in layout.columnWidths {
+            XCTAssertGreaterThanOrEqual(columnWidth, 0, "Column widths should never be negative")
+        }
+    }
 
     func testUIKitTableContentFitsWithinConstrainedWidth() async throws {
         let markdown = """
@@ -156,92 +250,56 @@ final class iOSTableLayoutTests: XCTestCase {
                                  "Table layout width should not exceed the constrained width")
         XCTAssertGreaterThan(tableLayout.size.height, 0,
                              "Table should have positive height")
+        XCTAssertNil(tableLayout.attributedString)
+        XCTAssertNotNil(tableLayout.customDraw)
     }
 
-    func testUIKitTableNarrowWidthDoesNotCrash() async throws {
-        let markdown = """
-        | A | B | C | D |
-        |---|---|---|---|
-        | 1 | 2 | 3 | 4 |
-        """
-        // Very narrow width — should not crash or produce negative tab stop locations
-        let layout = await TestHelper.solveLayout(markdown, width: 100)
-        let tableLayout = layout.children[0]
+    // MARK: - CGContext Rendering
 
-        XCTAssertNotNil(tableLayout.attributedString,
-                        "Table should still produce an attributed string at narrow widths")
-        XCTAssertGreaterThan(tableLayout.size.height, 0)
-
-        // Verify no negative tab stop locations
-        if let style = tableLayout.attributedString?.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle {
-            for stop in style.tabStops {
-                XCTAssertGreaterThanOrEqual(stop.location, 0,
-                                            "Tab stop locations should never be negative")
-            }
-        }
-    }
-
-    func testUIKitTableNarrowWidthUsesReadableFallbackWithoutTabStops() async throws {
-        let markdown = """
-        | Feature | Status | Priority | Owner |
-        |---------|--------|----------|-------|
-        | Parsing | Done   | High     | Core  |
-        """
-
-        let layout = await TestHelper.solveLayout(markdown, width: 100)
-        let tableLayout = layout.children[0]
-
-        guard let attr = tableLayout.attributedString else {
-            XCTFail("Table should produce attributed output")
-            return
-        }
-
-        XCTAssertFalse(attr.string.contains("\t"),
-                       "Narrow-width fallback should avoid tab-delimited table rows")
-
-        if let style = attr.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle {
-            XCTAssertTrue(style.tabStops.isEmpty,
-                          "Narrow-width fallback should not rely on tab stops")
-        }
-    }
-
-    func testUIKitTableBodyRowsUseAlternatingBackgroundShading() async throws {
+    func testTableCardRendererDrawsIntoCGContextWithoutCrashing() throws {
         let markdown = """
         | Name  | Score |
         |-------|-------|
         | Alice | 95    |
         | Bob   | 87    |
         """
-        let layout = await TestHelper.solveLayout(markdown, width: 420)
-        guard let attr = layout.children[0].attributedString else {
-            XCTFail("Table layout missing attributed string")
-            return
+        let document = TestHelper.parse(markdown)
+        let table = try XCTUnwrap(document.children.first as? TableNode)
+        let theme = Theme.default
+        let layout = TableCardRenderer.computeLayout(from: table, theme: theme, constrainedToWidth: 420)
+        let resolvedColors = TableCardRenderer.ResolvedColors.resolve(from: theme)
+
+        let renderer = UIGraphicsImageRenderer(size: layout.totalSize)
+        let image = renderer.image { rendererContext in
+            TableCardRenderer.draw(
+                layout: layout,
+                resolvedColors: resolvedColors,
+                in: rendererContext.cgContext,
+                size: layout.totalSize
+            )
         }
 
-        let fullText = attr.string as NSString
-        var aliceBackground: UIColor?
-        var bobBackground: UIColor?
+        XCTAssertTrue(TestHelper.imageContainsVisibleNonWhitePixel(image.cgImage),
+                      "Drawing the table card should paint visible content into the context")
+    }
 
-        attr.enumerateAttribute(.backgroundColor, in: NSRange(location: 0, length: attr.length)) { value, range, _ in
-            let snippet = fullText.substring(with: range)
-            if snippet.contains("Alice") {
-                aliceBackground = value as? UIColor
-            }
-            if snippet.contains("Bob") {
-                bobBackground = value as? UIColor
-            }
+    func testUIKitTableCustomDrawRendersThroughLayoutSolverPipeline() async throws {
+        let markdown = """
+        | A | B |
+        |---|---|
+        | 1 | 2 |
+        """
+        let layout = await TestHelper.solveLayout(markdown, width: 400)
+        let tableLayout = layout.children[0]
+        let customDraw = try XCTUnwrap(tableLayout.customDraw)
+
+        let renderer = UIGraphicsImageRenderer(size: tableLayout.size)
+        let image = renderer.image { rendererContext in
+            customDraw(rendererContext.cgContext, tableLayout.size)
         }
 
-        XCTAssertNotNil(aliceBackground, "First body row should carry background attribute")
-        XCTAssertNotNil(bobBackground, "Second body row should carry background attribute")
-
-        let aliceAlpha = aliceBackground?.cgColor.alpha ?? -1
-        let bobAlpha = bobBackground?.cgColor.alpha ?? -1
-
-        XCTAssertEqual(aliceAlpha, 0, accuracy: 0.01,
-                       "First body row should remain unshaded")
-        XCTAssertGreaterThan(bobAlpha, 0.01,
-                             "Second body row should receive subtle shading")
+        XCTAssertTrue(TestHelper.imageContainsVisibleNonWhitePixel(image.cgImage),
+                      "The LayoutSolver-provided customDraw closure should paint visible content")
     }
 }
 #endif

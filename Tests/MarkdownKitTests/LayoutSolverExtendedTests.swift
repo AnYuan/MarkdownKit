@@ -77,7 +77,7 @@ final class LayoutSolverExtendedTests: XCTestCase {
         XCTAssertEqual(thirdStyle.paragraphSpacing, Theme.default.typography.paragraph.paragraphSpacing, accuracy: 0.01)
     }
 
-    func testTableLayoutProducesAttributedString() async throws {
+    func testTableLayoutProducesRenderedOutput() async throws {
         let markdown = """
         | A | B |
         |---|---|
@@ -87,12 +87,20 @@ final class LayoutSolverExtendedTests: XCTestCase {
         XCTAssertEqual(layout.children.count, 1)
 
         let tableLayout = layout.children[0]
-        XCTAssertNotNil(tableLayout.attributedString)
         XCTAssertGreaterThan(tableLayout.size.height, 0)
+
+        #if canImport(AppKit) && !targetEnvironment(macCatalyst)
+        XCTAssertNotNil(tableLayout.attributedString)
 
         // Verify the table produced some text content
         let text = tableLayout.attributedString?.string ?? ""
         XCTAssertGreaterThan(text.count, 0, "Table text should not be empty")
+        #else
+        // UIKit routes tables through `TableCardRenderer` via `customDraw`;
+        // `attributedString` is intentionally nil there.
+        XCTAssertNil(tableLayout.attributedString)
+        XCTAssertNotNil(tableLayout.customDraw, "UIKit table layout should provide a customDraw closure")
+        #endif
     }
 
     func testTableLayoutRetainsHeaderContent() async throws {
@@ -104,6 +112,7 @@ final class LayoutSolverExtendedTests: XCTestCase {
         let layout = await TestHelper.solveLayout(markdown, width: 700)
         let tableLayout = layout.children[0]
 
+        #if canImport(AppKit) && !targetEnvironment(macCatalyst)
         guard let text = tableLayout.attributedString?.string else {
             XCTFail("Table layout missing attributed string")
             return
@@ -113,6 +122,19 @@ final class LayoutSolverExtendedTests: XCTestCase {
         XCTAssertTrue(text.contains("Status"))
         XCTAssertTrue(text.contains("Priority"))
         XCTAssertFalse(text.contains("|---"), "Rendered table should not expose raw markdown separator syntax")
+        #else
+        guard let table = tableLayout.node as? TableNode else {
+            XCTFail("Expected a TableNode")
+            return
+        }
+        let cardLayout = TableCardRenderer.computeLayout(from: table, theme: .default, constrainedToWidth: 700)
+        let text = cardLayout.rows.flatMap { $0.cells.map(\.text.string) }.joined(separator: "\n")
+
+        XCTAssertTrue(text.contains("Feature"))
+        XCTAssertTrue(text.contains("Status"))
+        XCTAssertTrue(text.contains("Priority"))
+        XCTAssertFalse(text.contains("|---"), "Rendered table should not expose raw markdown separator syntax")
+        #endif
     }
 
     #if canImport(AppKit) && !targetEnvironment(macCatalyst)

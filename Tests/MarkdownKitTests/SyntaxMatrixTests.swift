@@ -144,14 +144,48 @@ final class SyntaxMatrixTests: XCTestCase {
             XCTAssertTrue(text.contains("2."), "[ordered-list] expected ordered prefix 2.")
 
         case "table":
+            #if canImport(AppKit) && !targetEnvironment(macCatalyst)
             XCTAssertTrue(usesNativeTextTableBlocks(in: layout), "[table] expected NSTextTableBlock-based rendering")
             XCTAssertFalse(text.contains("|---"), "[table] should not expose markdown separator syntax")
             XCTAssertTrue(text.contains("Feature"), "[table] expected header text in rendered output")
             XCTAssertTrue(text.contains("Parsing"), "[table] expected body text in rendered output")
+            #else
+            guard let tableLayout = firstLayout(matching: { $0.node is TableNode }, in: layout) else {
+                XCTFail("[table] expected a table layout node")
+                return
+            }
+            XCTAssertNil(tableLayout.attributedString,
+                         "[table] UIKit tables are drawn via customDraw, not an attributed string")
+            XCTAssertNotNil(tableLayout.customDraw, "[table] expected a customDraw closure for UIKit table rendering")
+
+            guard let table = tableLayout.node as? TableNode else {
+                XCTFail("[table] expected a TableNode")
+                return
+            }
+            let cardLayout = TableCardRenderer.computeLayout(from: table, theme: .default, constrainedToWidth: width)
+            let cardText = cardLayout.rows.flatMap { $0.cells.map(\.text.string) }.joined(separator: "\n")
+            XCTAssertFalse(cardText.contains("|---"), "[table] should not expose markdown separator syntax")
+            XCTAssertTrue(cardText.contains("Feature"), "[table] expected header text in rendered output")
+            XCTAssertTrue(cardText.contains("Parsing"), "[table] expected body text in rendered output")
+            #endif
 
         case "blockquote-and-hr":
             XCTAssertTrue(text.contains("┃"), "[blockquote-and-hr] expected quote bar glyph")
+
+            #if canImport(AppKit) && !targetEnvironment(macCatalyst)
             XCTAssertTrue(text.contains(String(repeating: "─", count: 40)), "[blockquote-and-hr] expected thematic break line")
+            #else
+            // UIKit draws the thematic break as a hairline via `customDraw`
+            // rather than an attributed-string dash line.
+            guard let hrLayout = firstLayout(matching: { $0.node is ThematicBreakNode }, in: layout) else {
+                XCTFail("[blockquote-and-hr] expected a thematic break layout node")
+                return
+            }
+            XCTAssertNil(hrLayout.attributedString,
+                         "[blockquote-and-hr] UIKit thematic break is drawn via customDraw, not an attributed string")
+            XCTAssertNotNil(hrLayout.customDraw, "[blockquote-and-hr] expected a customDraw closure for the hairline")
+            XCTAssertGreaterThan(hrLayout.size.height, 0, "[blockquote-and-hr] thematic break should have positive height")
+            #endif
 
         case "details-closed":
             XCTAssertTrue(text.contains("▶ Build status"), "[details-closed] expected closed disclosure indicator")
@@ -207,11 +241,34 @@ final class SyntaxMatrixTests: XCTestCase {
             .map(\.length)
             .reduce(0, +)
 
-        XCTAssertGreaterThan(
-            renderedCount,
-            0,
-            "[\(fixtureID)] [width=\(Int(width))] expected non-empty rendered attributed output"
+        // On UIKit, tables and thematic breaks are drawn via `customDraw` and
+        // intentionally carry no attributed string, so a customDraw closure
+        // anywhere in the tree counts as rendered output too.
+        let hasCustomDraw = containsCustomDraw(in: layout)
+
+        XCTAssertTrue(
+            renderedCount > 0 || hasCustomDraw,
+            "[\(fixtureID)] [width=\(Int(width))] expected non-empty rendered output (attributed string or customDraw)"
         )
+    }
+
+    private func containsCustomDraw(in layout: LayoutResult) -> Bool {
+        if layout.customDraw != nil {
+            return true
+        }
+        return layout.children.contains { containsCustomDraw(in: $0) }
+    }
+
+    private func firstLayout(matching predicate: (LayoutResult) -> Bool, in layout: LayoutResult) -> LayoutResult? {
+        if predicate(layout) {
+            return layout
+        }
+        for child in layout.children {
+            if let match = firstLayout(matching: predicate, in: child) {
+                return match
+            }
+        }
+        return nil
     }
 
     private func allAttributedStrings(in layout: LayoutResult) -> [NSAttributedString] {
@@ -263,6 +320,7 @@ final class SyntaxMatrixTests: XCTestCase {
         return false
     }
 
+    #if canImport(AppKit) && !targetEnvironment(macCatalyst)
     private func usesNativeTextTableBlocks(in layout: LayoutResult) -> Bool {
         for attributed in allAttributedStrings(in: layout) {
             var found = false
@@ -279,6 +337,7 @@ final class SyntaxMatrixTests: XCTestCase {
         }
         return false
     }
+    #endif
 
     private func containsNode(_ kind: NodeKind, in root: MarkdownNode) -> Bool {
         if node(root, matches: kind) {

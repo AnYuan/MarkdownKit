@@ -33,6 +33,42 @@ enum TestHelper {
         return await solver.solve(node: doc, constrainedToWidth: width)
     }
 
+    #if canImport(UIKit) && !os(watchOS)
+    static func imageContainsVisibleNonWhitePixel(_ image: CGImage?) -> Bool {
+        guard let image else { return false }
+        let width = image.width
+        let height = image.height
+        guard width > 0, height > 0 else { return false }
+
+        let bytesPerRow = width * 4
+        var data = [UInt8](repeating: 0, count: height * bytesPerRow)
+        guard let context = CGContext(
+            data: &data,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return false
+        }
+
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        for index in stride(from: 0, to: data.count, by: 4) {
+            let red = data[index]
+            let green = data[index + 1]
+            let blue = data[index + 2]
+            let alpha = data[index + 3]
+            if alpha > 0, red < 250 || green < 250 || blue < 250 {
+                return true
+            }
+        }
+
+        return false
+    }
+    #endif
+
     /// Assert a child at index is a specific node type and return it.
     @discardableResult
     static func assertChild<T: MarkdownNode>(

@@ -182,12 +182,32 @@ public struct DefaultMathRenderingAdapter: MathRenderingAdapter {
         svg.size(processed.size)
 
         let image = svg.rasterize()
-        // SwiftDraw rasterizes at screen scale (2x on Retina), but returns pixel
-        // dimensions as the image size. Set the point size explicitly so the
-        // attachment bounds use the correct logical size.
-        image.size = processed.size
+        return Self.normalizedImage(image, targetSize: processed.size)
+    }
+
+#if canImport(UIKit)
+    /// SwiftDraw's UIKit rasterization rounds the point-size bounds up to the
+    /// next whole point before rendering, so the resulting `UIImage.size` can
+    /// overshoot the preprocessed SVG's logical size. `UIImage.size` is
+    /// get-only and derived from `scale` (`cgImage` pixel size / `scale`), so
+    /// rewrap the same `cgImage` with a `scale` chosen to make the reported
+    /// width match the target exactly (height matches to within sub-point
+    /// rounding) without resampling any pixels or mutating read-only state.
+    private static func normalizedImage(_ image: UIImage, targetSize: CGSize) -> UIImage {
+        guard let cgImage = image.cgImage, targetSize.width > 0 else { return image }
+        let scale = CGFloat(cgImage.width) / targetSize.width
+        guard scale.isFinite, scale > 0 else { return image }
+        return UIImage(cgImage: cgImage, scale: scale, orientation: image.imageOrientation)
+    }
+#elseif canImport(AppKit)
+    /// SwiftDraw's AppKit rasterization reports the image size in device
+    /// pixels rather than logical points, so reset it to the preprocessed
+    /// SVG's exact logical point size for correct attachment bounds.
+    private static func normalizedImage(_ image: NSImage, targetSize: CGSize) -> NSImage {
+        image.size = targetSize
         return image
     }
+#endif
 
     // MARK: - Attachment
 
