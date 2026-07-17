@@ -11,6 +11,25 @@ private final class InteractiveTextView: NSTextView {
     var onSummaryClick: (() -> Void)?
     var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
     var onLinkTap: ((URL) -> Void)?
+    private var projectedAccessibilityValue: Any?
+
+    func setProjectedAccessibilityValue(_ value: PlatformAccessibility.AppKitValue?) {
+        switch value {
+        case let .text(text):
+            projectedAccessibilityValue = text
+        case let .number(number):
+            projectedAccessibilityValue = NSNumber(value: number)
+        case nil:
+            projectedAccessibilityValue = nil
+        }
+    }
+
+    // NSTextView narrows this Objective-C API to String? in Swift, while
+    // NSAccessibility permits NSNumber for checkbox values.
+    @objc(accessibilityValue)
+    func projectedAccessibilityValueForAppKit() -> Any? {
+        projectedAccessibilityValue
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard let layoutManager = layoutManager, let textContainer = textContainer else {
@@ -89,22 +108,11 @@ public class MarkdownItemView: NSCollectionViewItem {
 
     public override func prepareForReuse() {
         super.prepareForReuse()
-        // Reset state without destroying the view hierarchy
-        hostedView?.textStorage?.setAttributedString(NSAttributedString())
-        hostedView?.onSummaryClick = nil
-        hostedView?.onCheckboxToggle = nil
-        hostedView?.onLinkTap = nil
-        hostedView?.summaryCharacterRange = NSRange(location: NSNotFound, length: 0)
-        
-        // Reset accessibility
-        hostedView?.setAccessibilityRole(.none)
-        hostedView?.setAccessibilityLabel(nil)
-        hostedView?.setAccessibilityValue(nil)
-        
-        // Reset styling modifications from specific node types
-        hostedView?.drawsBackground = false
-        hostedView?.layer?.cornerRadius = 0
-        hostedView?.textContainerInset = .zero
+        if let textView = hostedView {
+            resetNonTextState(textView)
+            clearText(in: textView)
+            textView.isSelectable = false
+        }
         preferredContainerWidth = nil
     }
 
@@ -116,10 +124,10 @@ public class MarkdownItemView: NSCollectionViewItem {
         onCheckboxToggle: ((CheckboxInteractionData) -> Void)? = nil,
         onLinkTap: ((URL) -> Void)? = nil
     ) {
-        guard let attrString = layout.attributedString, attrString.length > 0,
-              let textView = hostedView else { return }
+        guard let textView = hostedView else { return }
 
         self.textInteractionMode = textInteractionMode
+        textView.isSelectable = textInteractionMode == .selectableNative
 
         let containerWidth = preferredContainerWidth
             ?? (view.bounds.width > 0 ? view.bounds.width : layout.size.width)
@@ -136,10 +144,17 @@ public class MarkdownItemView: NSCollectionViewItem {
             width: containerWidth,
             height: layout.size.height
         )
-        
+
+        guard let attrString = layout.attributedString, attrString.length > 0 else {
+            resetNonTextState(textView)
+            clearText(in: textView)
+            return
+        }
+
         textView.onCheckboxToggle = onCheckboxToggle
         textView.onLinkTap = onLinkTap
-        textView.isSelectable = textInteractionMode == .selectableNative
+        textView.onSummaryClick = nil
+        textView.summaryCharacterRange = NSRange(location: NSNotFound, length: 0)
 
         if let details = layout.node as? DetailsNode {
             textView.summaryCharacterRange = detailsSummaryRange(in: attrString.string)
@@ -152,48 +167,49 @@ public class MarkdownItemView: NSCollectionViewItem {
             textView.layoutManager?.ensureLayout(for: textContainer)
         }
 
-        // Handle NSAccessibility for the textView
+        let accessibility = PlatformAccessibility.appKitProjection(for: layout)
         textView.setAccessibilityElement(true)
+        textView.setAccessibilityRole(accessibility.role)
+        textView.setAccessibilityLabel(accessibility.label)
+        textView.setProjectedAccessibilityValue(accessibility.value)
+        textView.setAccessibilityHelp(accessibility.help)
+
         if layout.node is CodeBlockNode || layout.node is DiagramNode {
             textView.drawsBackground = true
             textView.backgroundColor = theme.resolved(for: layout.appearance).colors.codeColor.background
             textView.wantsLayer = true
             textView.layer?.cornerRadius = theme.codeBlock.macOSCornerRadius
             textView.textContainerInset = theme.codeBlock.macOSTextContainerInset
-            textView.setAccessibilityRole(.group)
-            textView.setAccessibilityLabel("Code Block")
-            textView.setAccessibilityValue(attrString.string)
-        } else if layout.node is TableNode {
-            textView.setAccessibilityRole(.group)
-            textView.setAccessibilityLabel("Table")
-        } else if let details = layout.node as? DetailsNode {
-            textView.setAccessibilityRole(.button)
-            textView.setAccessibilityLabel("Collapsible Section")
-            textView.setAccessibilityValue(details.isOpen ? "Expanded" : "Collapsed")
-        } else if layout.node is MathNode {
-            textView.setAccessibilityRole(.staticText)
-            textView.setAccessibilityLabel("Math Equation")
-            textView.setAccessibilityValue((layout.node as? MathNode)?.equation)
         } else {
-            // General paragraphs and text
-            textView.setAccessibilityRole(.staticText)
-            
-            // Check if it's a task list item
-            var isTask = false
-            var isChecked = false
-            attrString.enumerateAttribute(.markdownCheckbox, in: NSRange(location: 0, length: attrString.length), options: []) { value, range, stop in
-                if let data = value as? CheckboxInteractionData {
-                    isTask = true
-                    isChecked = data.isChecked
-                    stop.pointee = true
-                }
-            }
-            if isTask {
-                textView.setAccessibilityRole(.checkBox)
-                textView.setAccessibilityValue(isChecked ? 1 : 0)
-            }
+            resetStyling(textView)
         }
+    }
 
+    private func resetNonTextState(_ textView: InteractiveTextView) {
+        textView.onSummaryClick = nil
+        textView.onCheckboxToggle = nil
+        textView.onLinkTap = nil
+        textView.summaryCharacterRange = NSRange(location: NSNotFound, length: 0)
+
+        textView.setAccessibilityElement(false)
+        textView.setAccessibilityRole(.none)
+        textView.setAccessibilityLabel(nil)
+        textView.setProjectedAccessibilityValue(nil)
+        textView.setAccessibilityHelp(nil)
+
+        resetStyling(textView)
+    }
+
+    private func resetStyling(_ textView: InteractiveTextView) {
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
+        textView.layer?.cornerRadius = 0
+        textView.textContainerInset = .zero
+        textView.wantsLayer = false
+    }
+
+    private func clearText(in textView: InteractiveTextView) {
+        textView.textStorage?.setAttributedString(NSAttributedString())
     }
 
     private func detailsSummaryRange(in text: String) -> NSRange {

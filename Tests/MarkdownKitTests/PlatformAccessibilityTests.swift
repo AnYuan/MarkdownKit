@@ -76,6 +76,10 @@ final class PlatformAccessibilityTests: XCTestCase {
         
         let layoutGeneral = LayoutResult(node: ParagraphNode(range: nil, children: []), size: .zero, attributedString: nil)
         XCTAssertEqual(PlatformAccessibility.accessibilityTraits(for: layoutGeneral), .staticText)
+
+        let layoutCheckbox = LayoutResult(node: ListItemNode(range: nil, checkbox: .checked, children: []), size: .zero)
+        XCTAssertEqual(PlatformAccessibility.accessibilityTraits(for: layoutCheckbox), .staticText)
+        XCTAssertEqual(PlatformAccessibility.accessibilityValue(for: layoutCheckbox), "Checked")
     }
     #endif
 
@@ -92,6 +96,77 @@ final class PlatformAccessibilityTests: XCTestCase {
         
         let layoutGeneral = LayoutResult(node: ParagraphNode(range: nil, children: []), size: .zero, attributedString: nil)
         XCTAssertEqual(PlatformAccessibility.accessibilityRole(for: layoutGeneral), .staticText)
+    }
+
+    func testAppKitCheckboxProjectionUsesNativeRoleAndNumericValue() {
+        let checked = LayoutResult(
+            node: ListItemNode(range: nil, checkbox: .checked, children: []),
+            size: .zero
+        )
+        let unchecked = LayoutResult(
+            node: ListItemNode(range: nil, checkbox: .unchecked, children: []),
+            size: .zero
+        )
+
+        let checkedProjection = PlatformAccessibility.appKitProjection(for: checked)
+        guard case .staticText = checked.accessibility.nodeRoleHint else {
+            XCTFail("Checkbox metadata must preserve the public static-text role hint")
+            return
+        }
+        XCTAssertEqual(checkedProjection.role, .checkBox)
+        XCTAssertEqual(checkedProjection.value, .number(1))
+
+        let uncheckedProjection = PlatformAccessibility.appKitProjection(for: unchecked)
+        guard case .staticText = unchecked.accessibility.nodeRoleHint else {
+            XCTFail("Checkbox metadata must preserve the public static-text role hint")
+            return
+        }
+        XCTAssertEqual(uncheckedProjection.role, .checkBox)
+        XCTAssertEqual(uncheckedProjection.value, .number(0))
+    }
+
+    func testAppKitCheckboxProjectionAcceptsPublicPrecomputedState() {
+        let layout = LayoutResult(
+            node: ParagraphNode(range: nil, children: []),
+            size: .zero,
+            attributedString: NSAttributedString(string: "Precomputed task"),
+            accessibility: AccessibilityMetadata(
+                label: "Precomputed task",
+                value: "Checked",
+                hint: nil,
+                nodeRoleHint: .staticText,
+                taskCheckboxState: .checked
+            )
+        )
+
+        let projection = PlatformAccessibility.appKitProjection(for: layout)
+        XCTAssertEqual(projection.role, .checkBox)
+        XCTAssertEqual(projection.value, .number(1))
+    }
+
+    func testAppKitCheckboxProjectionUsesAttributedStringFallbackMetadata() {
+        let parser = MarkdownParser()
+        let sourceRange = parser.parse("[]").range!
+        let attributedString = NSMutableAttributedString(string: "Fallback task")
+        attributedString.addAttribute(
+            .markdownCheckbox,
+            value: CheckboxInteractionData(isChecked: false, range: sourceRange),
+            range: NSRange(location: 0, length: attributedString.length)
+        )
+        let layout = LayoutResult(
+            node: ParagraphNode(range: nil, children: []),
+            size: .zero,
+            attributedString: attributedString
+        )
+
+        let projection = PlatformAccessibility.appKitProjection(for: layout)
+        guard case .staticText = layout.accessibility.nodeRoleHint else {
+            XCTFail("Fallback checkbox metadata must preserve the public static-text role hint")
+            return
+        }
+        XCTAssertEqual(projection.role, .checkBox)
+        XCTAssertEqual(projection.value, .number(0))
+        XCTAssertEqual(layout.accessibility.value, "Unchecked")
     }
     #endif
 }

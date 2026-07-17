@@ -341,8 +341,21 @@ review the complete diff, then commit and push before starting the next stage.
   gate (459 tests) all pass. iOS logs contain no XCTest process restarts, corrupt
   image fixture diagnostics, private-font fallback diagnostics, or concurrency
   diagnostics, and `git diff --check` is clean.
-- [ ] `perf: reuse accessibility metadata on macOS`
-  Remove repeated main-thread attributed-string scans during item configuration.
+- [x] `perf: reuse accessibility metadata on macOS`
+  Make `LayoutResult.accessibility` the single source of truth for AppKit item
+  role, label, value, and help. Extend the cached metadata with typed checkbox
+  state so `MarkdownItemView` can preserve native `.checkBox` semantics without
+  enumerating `.markdownCheckbox` on the main thread. Reset all per-layout
+  accessibility state on direct reconfiguration and reuse, while preserving
+  existing iOS traits and string values. Add focused metadata, AppKit mapping,
+  configuration, and stale-state regressions before full cross-platform gates.
+  Review: reused the existing typed `CheckboxState` through a source-compatible
+  metadata initializer, avoided a public enum expansion, overrode AppKit's
+  narrowed `NSTextView` value bridge so native checkbox values are observable,
+  and removed reset-then-reapply TextKit work from non-empty configuration.
+  Validation: 22 focused accessibility/AppKit tests, 421 macOS correctness
+  tests, 438 discoverable-test documentation checks, visual and determinism
+  snapshot gates (4/4 each), and 459 iOS Simulator tests all pass.
 - [ ] `refactor: share sync and async layout dispatch`
   Eliminate duplicated node dispatch while preserving synchronous and asynchronous APIs.
 - [ ] `refactor: share table geometry across renderers`

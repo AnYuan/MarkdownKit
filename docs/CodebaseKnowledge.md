@@ -65,7 +65,7 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **430** discoverable tests
+- `swift test list`: **438** discoverable tests
 - `swift test`: no execution log supplied for this refresh
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
@@ -78,9 +78,10 @@ Pipeline:
 3. On parse misses, task-confined `MarkdownParser` + plugin chain produce a fresh internal `DocumentNode`.
 4. Details disclosure overrides are reapplied to the latest configuration before layout.
 5. `LayoutSolver.solve(node:width:)` builds attributed content + measured sizes (`TextKitCalculator`). Parser-produced images remain inline: `ImageAttachmentBuilder` loads through `ImageResourceLoader`, builds a bounded thumbnail attachment, or emits bracketed secondary-color alt text.
-6. `LayoutCache` memoizes `(node.contentFingerprint, rounded width, solver variant hash)` results, including image-policy inputs.
-7. UI containers mount top-level `LayoutResult` rows (`MarkdownCollectionView` iOS/macOS).
-8. `AsyncTextView` rasterizes attributed strings, including inline image attachments, off-main; `AsyncCodeView` handles code rows.
+6. Each `LayoutResult` caches accessibility label, value, hint, role, and task-checkbox state during layout so UIKit/AppKit cells apply metadata without re-scanning attributed strings.
+7. `LayoutCache` memoizes `(node.contentFingerprint, rounded width, solver variant hash)` results, including image-policy inputs.
+8. UI containers mount top-level `LayoutResult` rows (`MarkdownCollectionView` iOS/macOS).
+9. `AsyncTextView` rasterizes attributed strings, including inline image attachments, off-main; `AsyncCodeView` handles code rows.
 
 Core goal: move parse/layout cost off the main thread and keep cell sizing effectively O(1) during scrolling.
 

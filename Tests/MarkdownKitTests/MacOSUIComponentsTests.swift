@@ -54,7 +54,66 @@ final class MacOSUIComponentsTests: XCTestCase {
         }
 
         XCTAssertTrue(textView.drawsBackground, "Code block text view should draw background")
+        XCTAssertTrue(textView.wantsLayer, "Code block text view should be layer-backed")
         XCTAssertEqual(textView.layer?.cornerRadius, 6, "Code block should have corner radius of 6")
+    }
+
+    func testConfigureUsesPrecomputedAccessibilityMetadata() {
+        let item = MarkdownItemView()
+        item.loadView()
+
+        let layout = LayoutResult(
+            node: ParagraphNode(range: nil, children: []),
+            size: CGSize(width: 300, height: 20),
+            attributedString: NSAttributedString(string: "Rendered text"),
+            accessibility: AccessibilityMetadata(
+                label: "Cached label",
+                value: "Cached value",
+                hint: "Cached help",
+                nodeRoleHint: .table
+            )
+        )
+
+        item.configure(with: layout)
+
+        guard let textView = item.view.subviews.first as? NSTextView else {
+            XCTFail("Expected NSTextView subview")
+            return
+        }
+        XCTAssertTrue(textView.isAccessibilityElement())
+        XCTAssertEqual(textView.accessibilityRole(), .group)
+        XCTAssertEqual(textView.accessibilityLabel(), "Cached label")
+        XCTAssertEqual(textView.accessibilityValue(), "Cached value")
+        XCTAssertEqual(textView.accessibilityHelp(), "Cached help")
+    }
+
+    func testConfigureExposesCheckedAndUncheckedCheckboxValues() {
+        let item = MarkdownItemView()
+        item.loadView()
+
+        let checkedLayout = LayoutResult(
+            node: ListItemNode(range: nil, checkbox: .checked, children: []),
+            size: CGSize(width: 300, height: 20),
+            attributedString: NSAttributedString(string: "Checked task")
+        )
+        let uncheckedLayout = LayoutResult(
+            node: ListItemNode(range: nil, checkbox: .unchecked, children: []),
+            size: CGSize(width: 300, height: 20),
+            attributedString: NSAttributedString(string: "Unchecked task")
+        )
+
+        guard let textView = item.view.subviews.first as? NSTextView else {
+            XCTFail("Expected NSTextView subview")
+            return
+        }
+
+        item.configure(with: checkedLayout)
+        XCTAssertEqual(textView.accessibilityRole(), .checkBox)
+        XCTAssertEqual((textView as NSView).accessibilityValue() as? NSNumber, NSNumber(value: 1))
+
+        item.configure(with: uncheckedLayout)
+        XCTAssertEqual(textView.accessibilityRole(), .checkBox)
+        XCTAssertEqual((textView as NSView).accessibilityValue() as? NSNumber, NSNumber(value: 0))
     }
 
     func testConfigureWithNilAttributedStringLeavesViewEmpty() {
@@ -119,6 +178,135 @@ final class MacOSUIComponentsTests: XCTestCase {
         item.prepareForReuse()
         XCTAssertEqual(textView.textStorage?.length ?? 0, 0,
             "prepareForReuse should clear all text content from the recycled view")
+    }
+
+    func testDirectReconfigurationClearsAccessibilityAndStylingForEmptyLayout() {
+        let item = MarkdownItemView()
+        item.loadView()
+        item.preferredContainerWidth = 420
+
+        let configuredLayout = LayoutResult(
+            node: CodeBlockNode(range: nil, language: nil, code: "code"),
+            size: CGSize(width: 300, height: 40),
+            attributedString: NSAttributedString(string: "code"),
+            accessibility: AccessibilityMetadata(
+                label: "Cached code",
+                value: "Cached value",
+                hint: "Cached help",
+                nodeRoleHint: .codeBlock
+            )
+        )
+        let emptyLayout = LayoutResult(
+            node: ParagraphNode(range: nil, children: []),
+            size: .zero,
+            attributedString: nil
+        )
+
+        item.configure(with: configuredLayout)
+        guard let textView = item.view.subviews.first as? NSTextView else {
+            XCTFail("Expected NSTextView subview")
+            return
+        }
+        XCTAssertTrue(textView.wantsLayer)
+
+        item.configure(with: emptyLayout)
+
+        XCTAssertEqual(textView.textStorage?.length, 0)
+        XCTAssertFalse(textView.isAccessibilityElement())
+        XCTAssertEqual(textView.accessibilityRole(), .none)
+        XCTAssertNil(textView.accessibilityLabel())
+        XCTAssertNil(textView.accessibilityValue())
+        XCTAssertNil(textView.accessibilityHelp())
+        XCTAssertFalse(textView.drawsBackground)
+        XCTAssertEqual(textView.layer?.cornerRadius ?? 0, 0)
+        XCTAssertEqual(textView.textContainerInset, .zero)
+        XCTAssertFalse(textView.wantsLayer)
+        XCTAssertEqual(item.preferredContainerWidth, 420)
+    }
+
+    func testPrepareForReuseClearsAccessibilityAndPreferredWidth() {
+        let item = MarkdownItemView()
+        item.loadView()
+        item.preferredContainerWidth = 420
+
+        let layout = LayoutResult(
+            node: ParagraphNode(range: nil, children: []),
+            size: CGSize(width: 300, height: 20),
+            attributedString: NSAttributedString(string: "Accessible"),
+            accessibility: AccessibilityMetadata(
+                label: "Cached label",
+                value: "Cached value",
+                hint: "Cached help",
+                nodeRoleHint: .details
+            )
+        )
+
+        item.configure(with: layout)
+        item.prepareForReuse()
+
+        guard let textView = item.view.subviews.first as? NSTextView else {
+            XCTFail("Expected NSTextView subview")
+            return
+        }
+        XCTAssertFalse(textView.isAccessibilityElement())
+        XCTAssertEqual(textView.accessibilityRole(), .none)
+        XCTAssertNil(textView.accessibilityLabel())
+        XCTAssertNil(textView.accessibilityValue())
+        XCTAssertNil(textView.accessibilityHelp())
+        XCTAssertNil(item.preferredContainerWidth)
+    }
+
+    func testDirectReconfigurationClearsPreviousAccessibilityValues() {
+        let item = MarkdownItemView()
+        item.loadView()
+
+        let firstLayout = LayoutResult(
+            node: CodeBlockNode(range: nil, language: nil, code: "First"),
+            size: CGSize(width: 300, height: 20),
+            attributedString: NSAttributedString(string: "First"),
+            accessibility: AccessibilityMetadata(
+                label: "First label",
+                value: "First value",
+                hint: "First help",
+                nodeRoleHint: .codeBlock
+            )
+        )
+        let secondLayout = LayoutResult(
+            node: ParagraphNode(range: nil, children: []),
+            size: CGSize(width: 300, height: 20),
+            attributedString: NSAttributedString(string: "Second"),
+            accessibility: AccessibilityMetadata(
+                label: nil,
+                value: nil,
+                hint: nil,
+                nodeRoleHint: .staticText
+            )
+        )
+
+        item.configure(with: firstLayout)
+        guard let textView = item.view.subviews.first as? NSTextView else {
+            XCTFail("Expected NSTextView subview")
+            return
+        }
+        XCTAssertEqual(textView.accessibilityRole(), .group)
+        XCTAssertEqual(textView.accessibilityLabel(), "First label")
+        XCTAssertEqual(textView.accessibilityValue(), "First value")
+        XCTAssertEqual(textView.accessibilityHelp(), "First help")
+        XCTAssertTrue(textView.drawsBackground)
+        XCTAssertTrue(textView.wantsLayer)
+
+        item.configure(with: secondLayout)
+
+        XCTAssertTrue(textView.isAccessibilityElement())
+        XCTAssertEqual(textView.accessibilityRole(), .staticText)
+        XCTAssertNil(textView.accessibilityLabel())
+        XCTAssertNil(textView.accessibilityValue())
+        XCTAssertNil(textView.accessibilityHelp())
+        XCTAssertEqual(textView.textStorage?.string, "Second")
+        XCTAssertFalse(textView.drawsBackground)
+        XCTAssertEqual(textView.layer?.cornerRadius ?? 0, 0)
+        XCTAssertEqual(textView.textContainerInset, .zero)
+        XCTAssertFalse(textView.wantsLayer)
     }
 
     func testReconfigureRecyclesHostedView() {

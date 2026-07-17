@@ -35,16 +35,22 @@ public struct AccessibilityMetadata: Sendable {
 
     public let nodeRoleHint: NodeRoleHint
 
+    /// Task-list state used by platform adapters to expose native checkbox
+    /// semantics without re-scanning the rendered attributed string.
+    public let taskCheckboxState: CheckboxState
+
     public init(
         label: String?,
         value: String?,
         hint: String?,
-        nodeRoleHint: NodeRoleHint
+        nodeRoleHint: NodeRoleHint,
+        taskCheckboxState: CheckboxState = .none
     ) {
         self.label = label
         self.value = value
         self.hint = hint
         self.nodeRoleHint = nodeRoleHint
+        self.taskCheckboxState = taskCheckboxState
     }
 }
 
@@ -60,6 +66,7 @@ extension AccessibilityMetadata {
         let value: String?
         let hint: String?
         let role: NodeRoleHint
+        let taskCheckboxState: CheckboxState
 
         switch node {
         case let details as DetailsNode:
@@ -68,19 +75,23 @@ extension AccessibilityMetadata {
             value = details.isOpen ? "Expanded" : "Collapsed"
             hint = "Double-tap to expand or collapse"
             role = .details
+            taskCheckboxState = .none
         case let math as MathNode:
             label = "Math Equation: \(math.equation)"
             value = nil
             hint = nil
             role = .math
+            taskCheckboxState = .none
         case let image as ImageNode:
             label = "Image: \(image.altText ?? image.source ?? "Attachment")"
             value = nil
             hint = nil
             role = .image
+            taskCheckboxState = .none
         case let listItem as ListItemNode where listItem.checkbox != .none:
+            taskCheckboxState = listItem.checkbox
             label = attributedString?.string
-            value = listItem.checkbox == .checked ? "Checked" : "Unchecked"
+            value = checkboxValue(for: taskCheckboxState)
             hint = nil
             role = .staticText
         case is LinkNode:
@@ -88,19 +99,23 @@ extension AccessibilityMetadata {
             value = nil
             hint = "Double-tap to open link"
             role = .link
+            taskCheckboxState = .none
         case is CodeBlockNode, is DiagramNode:
             label = attributedString?.string
             value = nil
             hint = nil
             role = .codeBlock
+            taskCheckboxState = .none
         case is TableNode:
             label = attributedString?.string
             value = nil
             hint = nil
             role = .table
+            taskCheckboxState = .none
         default:
+            taskCheckboxState = scanCheckboxState(in: attributedString)
             label = attributedString?.string
-            value = scanCheckboxValue(in: attributedString)
+            value = checkboxValue(for: taskCheckboxState)
             hint = nil
             role = .staticText
         }
@@ -109,28 +124,37 @@ extension AccessibilityMetadata {
             label: label,
             value: value,
             hint: hint,
-            nodeRoleHint: role
+            nodeRoleHint: role,
+            taskCheckboxState: taskCheckboxState
         )
     }
 
     /// Single `enumerateAttribute(.markdownCheckbox, …)` pass executed at
     /// layout time. Cells consuming the metadata never re-walk the string.
-    private static func scanCheckboxValue(in attributedString: NSAttributedString?) -> String? {
-        guard let attributedString else { return nil }
-        var isTask = false
-        var isChecked = false
+    private static func scanCheckboxState(in attributedString: NSAttributedString?) -> CheckboxState {
+        guard let attributedString else { return .none }
+        var checkboxState = CheckboxState.none
         attributedString.enumerateAttribute(
             .markdownCheckbox,
             in: NSRange(location: 0, length: attributedString.length),
             options: []
         ) { value, _, stop in
             if let data = value as? CheckboxInteractionData {
-                isTask = true
-                isChecked = data.isChecked
+                checkboxState = data.isChecked ? .checked : .unchecked
                 stop.pointee = true
             }
         }
-        guard isTask else { return nil }
-        return isChecked ? "Checked" : "Unchecked"
+        return checkboxState
+    }
+
+    private static func checkboxValue(for state: CheckboxState) -> String? {
+        switch state {
+        case .checked:
+            return "Checked"
+        case .unchecked:
+            return "Unchecked"
+        case .none:
+            return nil
+        }
     }
 }

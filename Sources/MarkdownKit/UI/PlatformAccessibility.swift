@@ -42,15 +42,54 @@ public struct PlatformAccessibility {
     #endif
 
     #if canImport(AppKit)
-    public static func accessibilityRole(for layout: LayoutResult) -> NSAccessibility.Role {
-        switch layout.accessibility.nodeRoleHint {
-        case .details:
-            return .button
-        case .codeBlock, .table:
-            return .group
-        case .staticText, .link, .image, .math:
-            return .staticText
+    enum AppKitValue: Equatable {
+        case text(String)
+        case number(Int)
+    }
+
+    struct AppKitProjection {
+        let role: NSAccessibility.Role
+        let label: String?
+        let value: AppKitValue?
+        let help: String?
+    }
+
+    static func appKitProjection(for layout: LayoutResult) -> AppKitProjection {
+        let metadata = layout.accessibility
+        let role: NSAccessibility.Role
+        let value: AppKitValue?
+
+        switch metadata.taskCheckboxState {
+        case .checked:
+            role = .checkBox
+            value = .number(1)
+        case .unchecked:
+            role = .checkBox
+            value = .number(0)
+        case .none:
+            switch metadata.nodeRoleHint {
+            case .details:
+                role = .button
+                value = metadata.value.map(AppKitValue.text)
+            case .codeBlock, .table:
+                role = .group
+                value = metadata.value.map(AppKitValue.text)
+            case .staticText, .link, .image, .math:
+                role = .staticText
+                value = metadata.value.map(AppKitValue.text)
+            }
         }
+
+        return AppKitProjection(
+            role: role,
+            label: metadata.label,
+            value: value,
+            help: metadata.hint
+        )
+    }
+
+    public static func accessibilityRole(for layout: LayoutResult) -> NSAccessibility.Role {
+        appKitProjection(for: layout).role
     }
     #endif
 }

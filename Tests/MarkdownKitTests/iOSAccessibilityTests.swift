@@ -95,6 +95,7 @@ final class iOSAccessibilityTests: XCTestCase {
         let cell = MarkdownCollectionViewCell(frame: .zero)
         cell.configure(with: layout)
 
+        XCTAssertEqual(cell.accessibilityTraits, .staticText)
         XCTAssertEqual(cell.accessibilityValue, "Checked")
     }
 
@@ -108,6 +109,7 @@ final class iOSAccessibilityTests: XCTestCase {
         let cell = MarkdownCollectionViewCell(frame: .zero)
         cell.configure(with: layout)
 
+        XCTAssertEqual(cell.accessibilityTraits, .staticText)
         XCTAssertEqual(cell.accessibilityValue, "Unchecked")
     }
 

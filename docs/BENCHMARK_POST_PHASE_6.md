@@ -35,7 +35,7 @@ Two regressions worth flagging — they are accounted-for cost shifts, not bugs:
 
 | Regression | Why |
 |---|---|
-| `solve(1000-lines)` 96.3ms → 363ms | Background thread now also pre-computes `AccessibilityMetadata` per `LayoutResult`. Pays once on background, saves repeated `enumerateAttribute(.markdownCheckbox, …)` on main thread for every cell configure. Net win for UI thread; isolated layout benchmark looks worse. |
+| `solve(1000-lines)` 96.3ms → 363ms | Background thread now also pre-computes `AccessibilityMetadata` per `LayoutResult`. Pays once on background; UIKit and AppKit cells consume the cached metadata without repeating `enumerateAttribute(.markdownCheckbox, …)` during configure. Net win for UI thread; isolated layout benchmark looks worse. |
 | `Arithmetic.layout(long)` 0.358ms → 0.432ms | Same arithmetic, but `LayoutResult` now also stamps `stableIdentity` + `accessibility` at construction time. ~70 µs of extra hashing per long-text layout. Trivial relative to the cache reuse wins. |
 
 ## Phase 1: Parse
@@ -161,7 +161,7 @@ The headline-grabbing math win comes from `DefaultMathRenderingAdapter`'s SwiftD
 | 200 | 17.80ms | 12.69ms | 20.47ms | 11.66ms |
 | 1000 | 87.92ms | **62.66ms** | 96.30ms | **363.4ms** ⚠ |
 
-Parse stayed linear and got ~30 % faster across all sizes. `solve(1000-lines)` regressed ~4×. Root cause: Phase 6.4 moved `PlatformAccessibility` work to background layout time (one `AccessibilityMetadata.make` per `LayoutResult`, which does its own `enumerateAttribute(.markdownCheckbox, …)` on the cell's attributed string). On a 1000-block document with checkbox scan + identity-stamping, this is ~280 ms of extra background work — but it saves equivalent main-thread time in every cell `configure` call thereafter. Net win for the *user-facing* frame loop; isolated solve benchmark looks worse.
+Parse stayed linear and got ~30 % faster across all sizes. `solve(1000-lines)` regressed ~4×. Root cause: Phase 6.4 moved `PlatformAccessibility` work to background layout time (one `AccessibilityMetadata.make` per `LayoutResult`, which does its own `enumerateAttribute(.markdownCheckbox, …)` on the cell's attributed string). On a 1000-block document with checkbox scan + identity-stamping, this is ~280 ms of extra background work — but UIKit and AppKit now reuse that result instead of scanning again during cell configuration. Net win for the *user-facing* frame loop; isolated solve benchmark looks worse.
 
 To validate that this is the cause and not something else, in a follow-up we should bench `solve(1000-lines)` with `accessibility` precompute disabled (or routed lazily).
 
