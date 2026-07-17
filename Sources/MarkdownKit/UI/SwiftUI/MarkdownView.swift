@@ -29,6 +29,7 @@ public struct MarkdownView: View {
     private var checkboxToggleHandler: ((CheckboxInteractionData) -> Void)?
 
     @StateObject private var engine = MarkdownEngine()
+    @Environment(\.colorScheme) private var colorScheme
 
     /// Initializes a high-performance native Markdown view.
     /// - Parameters:
@@ -58,6 +59,18 @@ public struct MarkdownView: View {
 
     public var body: some View {
         GeometryReader { geometry in
+            let appearance = MarkdownAppearance(colorScheme: colorScheme)
+            let renderInput = MarkdownRenderInput(
+                text: text,
+                width: geometry.size.width,
+                resourceLimits: resourceLimits,
+                appearance: appearance,
+                theme: theme,
+                plugins: plugins,
+                diagramRegistry: diagramRegistry,
+                imageLoadingPolicy: imageLoadingPolicy
+            )
+
             MarkdownViewRepresentable(
                 layouts: engine.layouts,
                 onToggleDetails: { index, details in
@@ -66,7 +79,8 @@ public struct MarkdownView: View {
                         currentlyOpen: details.isOpen,
                         width: engine.preferredWidth(fallback: geometry.size.width),
                         diagramRegistry: diagramRegistry,
-                        imageLoadingPolicy: imageLoadingPolicy
+                        imageLoadingPolicy: imageLoadingPolicy,
+                        appearance: appearance
                     )
                 },
                 onEffectiveContentWidthChange: { newWidth in
@@ -77,7 +91,8 @@ public struct MarkdownView: View {
                         theme: theme,
                         diagramRegistry: diagramRegistry,
                         imageLoadingPolicy: imageLoadingPolicy,
-                        resourceLimits: resourceLimits
+                        resourceLimits: resourceLimits,
+                        appearance: appearance
                     )
                 },
                 onLinkTap: linkTapHandler,
@@ -96,14 +111,11 @@ public struct MarkdownView: View {
                     fallbackWidth: geometry.size.width,
                     diagramRegistry: diagramRegistry,
                     imageLoadingPolicy: imageLoadingPolicy,
-                    resourceLimits: resourceLimits
+                    resourceLimits: resourceLimits,
+                    appearance: appearance
                 )
             }
-            // Single `.onChange` over a combined input so a simultaneous
-            // text+width change only triggers one render (the previous code
-            // could race two cancellations). A changed `resourceLimits` policy
-            // is included so it also triggers a render.
-            .onChange(of: RenderInput(text: text, width: geometry.size.width, resourceLimits: resourceLimits)) { _, newInput in
+            .onChange(of: renderInput) { _, newInput in
                 engine.scheduleDebouncedTextRender(
                     markdown: newInput.text,
                     plugins: plugins,
@@ -111,7 +123,8 @@ public struct MarkdownView: View {
                     fallbackWidth: newInput.width,
                     diagramRegistry: diagramRegistry,
                     imageLoadingPolicy: imageLoadingPolicy,
-                    resourceLimits: newInput.resourceLimits
+                    resourceLimits: newInput.resourceLimits,
+                    appearance: newInput.appearance
                 )
             }
         }
@@ -141,13 +154,50 @@ public struct MarkdownView: View {
     }
 }
 
-/// Combined input for the single `.onChange` so simultaneous text + width
-/// changes coalesce into one render task.
 @available(iOS 14.0, macOS 11.0, *)
-private struct RenderInput: Equatable {
+struct MarkdownRenderInput: Equatable {
     let text: String
     let width: CGFloat
     let resourceLimits: MarkdownParser.ResourceLimits
+    let appearance: MarkdownAppearance
+    let themeFingerprint: Int
+    let pluginFingerprint: Int
+    let diagramFingerprint: Int
+    let imagePolicyFingerprint: Int
+
+    init(
+        text: String,
+        width: CGFloat,
+        resourceLimits: MarkdownParser.ResourceLimits,
+        appearance: MarkdownAppearance,
+        theme: Theme,
+        plugins: [ASTPlugin],
+        diagramRegistry: DiagramAdapterRegistry,
+        imageLoadingPolicy: ImageLoadingPolicy
+    ) {
+        self.text = text
+        self.width = width
+        self.resourceLimits = resourceLimits
+        self.appearance = appearance
+        self.themeFingerprint = Self.themeFingerprint(theme, appearance: appearance)
+        self.pluginFingerprint = ASTPluginFingerprint.make(for: plugins)
+        self.diagramFingerprint = diagramRegistry.cacheFingerprint
+        self.imagePolicyFingerprint = imageLoadingPolicy.cacheFingerprint
+    }
+
+    static func themeFingerprint(_ theme: Theme, appearance: MarkdownAppearance) -> Int {
+        var hasher = Hasher()
+        theme.resolved(for: appearance).cacheFingerprint(into: &hasher)
+        hasher.combine(appearance)
+        return hasher.finalize()
+    }
+}
+
+@available(iOS 14.0, macOS 11.0, *)
+private extension MarkdownAppearance {
+    init(colorScheme: ColorScheme) {
+        self = colorScheme == .dark ? .dark : .light
+    }
 }
 
 // MARK: - Async Rendering Engine
@@ -178,20 +228,23 @@ private final class MarkdownEngine: ObservableObject {
     private var cachedSolverKey: SolverKey?
 
     private struct SolverKey: Equatable {
-        let theme: Theme
+        let themeFingerprint: Int
         let diagramFingerprint: Int
         let policyFingerprint: Int
+        let appearance: MarkdownAppearance
     }
 
     private func solver(
         for theme: Theme,
         diagramRegistry: DiagramAdapterRegistry,
-        imageLoadingPolicy: ImageLoadingPolicy
+        imageLoadingPolicy: ImageLoadingPolicy,
+        appearance: MarkdownAppearance
     ) -> LayoutSolver {
         let key = SolverKey(
-            theme: theme,
+            themeFingerprint: MarkdownRenderInput.themeFingerprint(theme, appearance: appearance),
             diagramFingerprint: diagramRegistry.cacheFingerprint,
-            policyFingerprint: imageLoadingPolicy.cacheFingerprint
+            policyFingerprint: imageLoadingPolicy.cacheFingerprint,
+            appearance: appearance
         )
         if let solver = cachedSolver, cachedSolverKey == key {
             return solver
@@ -200,7 +253,8 @@ private final class MarkdownEngine: ObservableObject {
             theme: theme,
             cache: layoutCache,
             diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy
+            imageLoadingPolicy: imageLoadingPolicy,
+            appearance: appearance
         )
         cachedSolver = solver
         cachedSolverKey = key
@@ -233,7 +287,8 @@ private final class MarkdownEngine: ObservableObject {
         width: CGFloat,
         diagramRegistry: DiagramAdapterRegistry,
         imageLoadingPolicy: ImageLoadingPolicy,
-        resourceLimits: MarkdownParser.ResourceLimits
+        resourceLimits: MarkdownParser.ResourceLimits,
+        appearance: MarkdownAppearance
     ) {
         guard width > 50 else { return }
 
@@ -242,7 +297,8 @@ private final class MarkdownEngine: ObservableObject {
         let solver = self.solver(
             for: theme,
             diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy
+            imageLoadingPolicy: imageLoadingPolicy,
+            appearance: appearance
         )
         let job = RenderJob(
             markdown: markdown,
@@ -295,7 +351,8 @@ private final class MarkdownEngine: ObservableObject {
         fallbackWidth: CGFloat,
         diagramRegistry: DiagramAdapterRegistry,
         imageLoadingPolicy: ImageLoadingPolicy,
-        resourceLimits: MarkdownParser.ResourceLimits
+        resourceLimits: MarkdownParser.ResourceLimits,
+        appearance: MarkdownAppearance
     ) {
         #if canImport(AppKit) && !targetEnvironment(macCatalyst)
         guard currentWidth > 50 else { return }
@@ -306,7 +363,8 @@ private final class MarkdownEngine: ObservableObject {
             width: currentWidth,
             diagramRegistry: diagramRegistry,
             imageLoadingPolicy: imageLoadingPolicy,
-            resourceLimits: resourceLimits
+            resourceLimits: resourceLimits,
+            appearance: appearance
         )
         #else
         render(
@@ -316,7 +374,8 @@ private final class MarkdownEngine: ObservableObject {
             width: preferredWidth(fallback: fallbackWidth),
             diagramRegistry: diagramRegistry,
             imageLoadingPolicy: imageLoadingPolicy,
-            resourceLimits: resourceLimits
+            resourceLimits: resourceLimits,
+            appearance: appearance
         )
         #endif
     }
@@ -332,7 +391,8 @@ private final class MarkdownEngine: ObservableObject {
         fallbackWidth: CGFloat,
         diagramRegistry: DiagramAdapterRegistry,
         imageLoadingPolicy: ImageLoadingPolicy,
-        resourceLimits: MarkdownParser.ResourceLimits
+        resourceLimits: MarkdownParser.ResourceLimits,
+        appearance: MarkdownAppearance
     ) {
         renderTask?.cancel()
         renderTask = Task { [weak self] in
@@ -345,7 +405,8 @@ private final class MarkdownEngine: ObservableObject {
                 fallbackWidth: fallbackWidth,
                 diagramRegistry: diagramRegistry,
                 imageLoadingPolicy: imageLoadingPolicy,
-                resourceLimits: resourceLimits
+                resourceLimits: resourceLimits,
+                appearance: appearance
             )
         }
     }
@@ -362,7 +423,8 @@ private final class MarkdownEngine: ObservableObject {
         theme: Theme,
         diagramRegistry: DiagramAdapterRegistry,
         imageLoadingPolicy: ImageLoadingPolicy,
-        resourceLimits: MarkdownParser.ResourceLimits
+        resourceLimits: MarkdownParser.ResourceLimits,
+        appearance: MarkdownAppearance
     ) {
         guard width > 50 else { return }
         guard abs(width - currentWidth) > 0.5 else { return }
@@ -374,7 +436,8 @@ private final class MarkdownEngine: ObservableObject {
             width: width,
             diagramRegistry: diagramRegistry,
             imageLoadingPolicy: imageLoadingPolicy,
-            resourceLimits: resourceLimits
+            resourceLimits: resourceLimits,
+            appearance: appearance
         )
     }
     
@@ -383,7 +446,8 @@ private final class MarkdownEngine: ObservableObject {
         currentlyOpen: Bool,
         width: CGFloat,
         diagramRegistry: DiagramAdapterRegistry,
-        imageLoadingPolicy: ImageLoadingPolicy
+        imageLoadingPolicy: ImageLoadingPolicy,
+        appearance: MarkdownAppearance
     ) {
         guard let ast = lastAST,
               ast.children.indices.contains(index),
@@ -407,7 +471,8 @@ private final class MarkdownEngine: ObservableObject {
         let solver = self.solver(
             for: theme,
             diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy
+            imageLoadingPolicy: imageLoadingPolicy,
+            appearance: appearance
         )
 
         renderTask?.cancel()

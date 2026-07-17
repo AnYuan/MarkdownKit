@@ -20,11 +20,13 @@ public class AsyncCodeView: UIView {
         set { textView.displaysAsynchronously = newValue }
     }
 
-    private let theme: Theme
+    private var theme: Theme
     private var rawCode: String = ""
     private var copyButtonDefaultImage: UIImage?
     private var copyFeedbackResetWorkItem: DispatchWorkItem?
     private var copyFeedbackGeneration = 0
+    private var lastConfiguredTheme: Theme?
+    private var lastConfiguredAppearance: MarkdownAppearance?
 
     /// Internal dependency-injection seam for copy handling. Defaults to writing to
     /// `UIPasteboard.general`, but tests can substitute an in-memory sink to avoid
@@ -46,18 +48,25 @@ public class AsyncCodeView: UIView {
     }
     
     private func setup() {
-        self.backgroundColor = theme.colors.codeColor.background
-        self.layer.cornerRadius = theme.codeBlock.cornerRadius
         self.clipsToBounds = true
-        
         addSubview(textView)
-        
-        // Configure native copy button
         setupCopyButton()
         addSubview(copyButton)
+        applyTheme(theme)
     }
     
     private func setupCopyButton() {
+        copyButton.addAction(UIAction { [weak self] _ in
+            self?.executeCopy()
+        }, for: .touchUpInside)
+    }
+
+    private func applyTheme(_ theme: Theme) {
+        self.theme = theme
+        backgroundColor = theme.colors.codeColor.background
+        layer.cornerRadius = theme.codeBlock.cornerRadius
+        textView.theme = theme
+
         let config = UIImage.SymbolConfiguration(pointSize: theme.codeBlock.copyButtonIconSize, weight: .semibold)
         let image = UIImage(systemName: "doc.on.doc", withConfiguration: config)
         copyButtonDefaultImage = image
@@ -65,10 +74,7 @@ public class AsyncCodeView: UIView {
         copyButton.tintColor = .secondaryLabel
         copyButton.backgroundColor = theme.colors.codeColor.background.withAlphaComponent(0.8)
         copyButton.layer.cornerRadius = theme.codeBlock.copyButtonCornerRadius
-        
-        copyButton.addAction(UIAction { [weak self] _ in
-            self?.executeCopy()
-        }, for: .touchUpInside)
+        setNeedsLayout()
     }
     
     private func executeCopy() {
@@ -130,8 +136,14 @@ public class AsyncCodeView: UIView {
     }
 
     /// Binds the `LayoutResult` constraint to the view.
-    public func configure(with layout: LayoutResult) {
+    public func configure(with layout: LayoutResult, theme: Theme? = nil) {
         resetCopyFeedback()
+        let sourceTheme = theme ?? lastConfiguredTheme ?? self.theme
+        if lastConfiguredTheme != sourceTheme || lastConfiguredAppearance != layout.appearance {
+            lastConfiguredTheme = sourceTheme
+            lastConfiguredAppearance = layout.appearance
+            applyTheme(sourceTheme.resolved(for: layout.appearance))
+        }
         self.frame.size = layout.size
         
         // Pass the configuration down to the AsyncTextView to begin background text rasterization
@@ -146,7 +158,12 @@ public class AsyncCodeView: UIView {
             node: layout.node, 
             size: insetSize, 
             attributedString: layout.attributedString, 
-            children: layout.children
+            children: layout.children,
+            customDraw: layout.customDraw,
+            stableIdentity: layout.stableIdentity,
+            accessibility: layout.accessibility,
+            appearance: layout.appearance,
+            renderFingerprint: layout.renderFingerprint
         )
         
         if let codeNode = layout.node as? CodeBlockNode {

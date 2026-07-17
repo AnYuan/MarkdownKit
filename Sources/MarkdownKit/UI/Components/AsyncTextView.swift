@@ -69,8 +69,8 @@ public class AsyncTextView: UIView {
     /// setups since iOS 16.
     private var currentDisplayScale: CGFloat = 1
 
-    /// Shared cache of rasterized text bitmaps. Key is content-based
-    /// (`contentFingerprint + size + scale`), NOT identity-based — using
+    /// Shared cache of rasterized text bitmaps. Key is render-variant based
+    /// (`renderFingerprint + size + scale`), NOT identity-based — using
     /// `NSAttributedString.hash` would miss because `NSObject` hashes by
     /// pointer, and two equal attributed strings have different pointers.
     /// Cross-cell scroll-back and prefetch both benefit from this cache.
@@ -96,12 +96,13 @@ public class AsyncTextView: UIView {
         imageCache.removeAllObjects()
     }
 
-    private static func imageCacheKey(
-        fingerprint: Int,
+    static func imageCacheKey(
+        renderFingerprint: Int,
+        appearance: MarkdownAppearance,
         size: CGSize,
         scale: CGFloat
     ) -> String {
-        "\(fingerprint)|\(Int(size.width.rounded()))x\(Int(size.height.rounded()))@\(scale)"
+        "\(renderFingerprint)|\(appearance)|\(Int(size.width.rounded()))x\(Int(size.height.rounded()))@\(scale)"
     }
 
     /// Pre-rasterizes a layout's bitmap on a background task so it's ready in
@@ -113,8 +114,10 @@ public class AsyncTextView: UIView {
     /// cancelled in `cancelPrefetchingForItemsAt` when scrolling reverses.
     public static func preheat(_ layout: LayoutResult, scale: CGFloat = 2) -> Task<Void, Never> {
         let size = layout.size
+        let appearance = layout.appearance
         let cacheKey = imageCacheKey(
-            fingerprint: layout.node.contentFingerprint,
+            renderFingerprint: layout.renderFingerprint,
+            appearance: appearance,
             size: size,
             scale: scale
         )
@@ -126,7 +129,12 @@ public class AsyncTextView: UIView {
 
         if let customDraw = layout.customDraw {
             return Task.detached(priority: .utility) {
-                let cgImage = await renderImageCustom(customDraw: customDraw, size: size, scale: scale)
+                let cgImage = await renderImageCustom(
+                    customDraw: customDraw,
+                    size: size,
+                    scale: scale,
+                    appearance: appearance
+                )
                 if Task.isCancelled { return }
                 if let cgImage {
                     imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
@@ -142,7 +150,12 @@ public class AsyncTextView: UIView {
         // task by copying. The cell-driven render path uses the same pattern.
         nonisolated(unsafe) let drawString = NSAttributedString(attributedString: attributedString)
         return Task.detached(priority: .utility) {
-            let cgImage = await renderImage(drawString: drawString, size: size, scale: scale)
+            let cgImage = await renderImage(
+                drawString: drawString,
+                size: size,
+                scale: scale,
+                appearance: appearance
+            )
             if Task.isCancelled { return }
             if let cgImage {
                 imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
@@ -240,7 +253,8 @@ public class AsyncTextView: UIView {
             let size = layout.size
             let scale = currentDisplayScale
             let cacheKey = Self.imageCacheKey(
-                fingerprint: layout.node.contentFingerprint,
+                renderFingerprint: layout.renderFingerprint,
+                appearance: layout.appearance,
                 size: size,
                 scale: scale
             )
@@ -256,7 +270,8 @@ public class AsyncTextView: UIView {
                     let cgImage = await Self.renderImageCustom(
                         customDraw: customDraw,
                         size: size,
-                        scale: scale
+                        scale: scale,
+                        appearance: layout.appearance
                     )
                     if Task.isCancelled { return }
                     if let cgImage {
@@ -268,7 +283,8 @@ public class AsyncTextView: UIView {
                 let cgImage = Self.renderImageSyncCustom(
                     customDraw: customDraw,
                     size: size,
-                    scale: scale
+                    scale: scale,
+                    appearance: layout.appearance
                 )
                 if let cgImage {
                     Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
@@ -289,7 +305,8 @@ public class AsyncTextView: UIView {
         let size = layout.size
         let scale = currentDisplayScale
         let cacheKey = Self.imageCacheKey(
-            fingerprint: layout.node.contentFingerprint,
+            renderFingerprint: layout.renderFingerprint,
+            appearance: layout.appearance,
             size: size,
             scale: scale
         )
@@ -306,7 +323,8 @@ public class AsyncTextView: UIView {
                 let cgImage = await Self.renderImage(
                     drawString: drawString,
                     size: size,
-                    scale: scale
+                    scale: scale,
+                    appearance: layout.appearance
                 )
                 if Task.isCancelled { return }
                 if let cgImage {
@@ -318,7 +336,8 @@ public class AsyncTextView: UIView {
             let cgImage = Self.renderImageSync(
                 drawString: string,
                 size: size,
-                scale: scale
+                scale: scale,
+                appearance: layout.appearance
             )
             if let cgImage {
                 Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
@@ -452,31 +471,51 @@ public class AsyncTextView: UIView {
     private static func renderImageSync(
         drawString: NSAttributedString,
         size: CGSize,
-        scale: CGFloat
+        scale: CGFloat,
+        appearance: MarkdownAppearance
     ) -> CGImage? {
-        let format = UIGraphicsImageRendererFormat()
+        let traits = renderingTraits(appearance: appearance, scale: scale)
+        let format = UIGraphicsImageRendererFormat(for: traits)
         format.scale = scale
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        let image = renderer.image { _ in
-            drawAttributedString(drawString, in: CGRect(origin: .zero, size: size))
+        var renderedImage: UIImage?
+        traits.performAsCurrent {
+            renderedImage = renderer.image { _ in
+                drawAttributedString(drawString, in: CGRect(origin: .zero, size: size))
+            }
         }
-        return image.cgImage
+        return renderedImage?.cgImage
     }
 
     /// Renders the attributed string into a bitmap on a background executor.
     private static nonisolated func renderImage(
         drawString: sending NSAttributedString,
         size: CGSize,
-        scale: CGFloat
+        scale: CGFloat,
+        appearance: MarkdownAppearance
     ) async -> CGImage? {
-        let format = UIGraphicsImageRendererFormat()
+        let traits = renderingTraits(appearance: appearance, scale: scale)
+        let format = UIGraphicsImageRendererFormat(for: traits)
         format.scale = scale
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
-
-        let image = renderer.image { _ in
-            drawAttributedString(drawString, in: CGRect(origin: .zero, size: size))
+        var renderedImage: UIImage?
+        traits.performAsCurrent {
+            renderedImage = renderer.image { _ in
+                drawAttributedString(drawString, in: CGRect(origin: .zero, size: size))
+            }
         }
-        return image.cgImage
+        return renderedImage?.cgImage
+    }
+
+    private static nonisolated func renderingTraits(
+        appearance: MarkdownAppearance,
+        scale: CGFloat
+    ) -> UITraitCollection {
+        let interfaceStyle: UIUserInterfaceStyle = appearance == .dark ? .dark : .light
+        return UITraitCollection(traitsFrom: [
+            UITraitCollection(userInterfaceStyle: interfaceStyle),
+            UITraitCollection(displayScale: scale)
+        ])
     }
 
     // Explicitly `nonisolated`: as a `private static` member of a `UIView`
@@ -516,30 +555,40 @@ public class AsyncTextView: UIView {
     private static func renderImageSyncCustom(
         customDraw: @Sendable (CGContext, CGSize) -> Void,
         size: CGSize,
-        scale: CGFloat
+        scale: CGFloat,
+        appearance: MarkdownAppearance
     ) -> CGImage? {
-        let format = UIGraphicsImageRendererFormat()
+        let traits = renderingTraits(appearance: appearance, scale: scale)
+        let format = UIGraphicsImageRendererFormat(for: traits)
         format.scale = scale
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        let image = renderer.image { rendererContext in
-            customDraw(rendererContext.cgContext, size)
+        var renderedImage: UIImage?
+        traits.performAsCurrent {
+            renderedImage = renderer.image { rendererContext in
+                customDraw(rendererContext.cgContext, size)
+            }
         }
-        return image.cgImage
+        return renderedImage?.cgImage
     }
 
     /// Renders using a custom draw closure on a background executor.
     private static nonisolated func renderImageCustom(
         customDraw: @Sendable (CGContext, CGSize) -> Void,
         size: CGSize,
-        scale: CGFloat
+        scale: CGFloat,
+        appearance: MarkdownAppearance
     ) async -> CGImage? {
-        let format = UIGraphicsImageRendererFormat()
+        let traits = renderingTraits(appearance: appearance, scale: scale)
+        let format = UIGraphicsImageRendererFormat(for: traits)
         format.scale = scale
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        let image = renderer.image { rendererContext in
-            customDraw(rendererContext.cgContext, size)
+        var renderedImage: UIImage?
+        traits.performAsCurrent {
+            renderedImage = renderer.image { rendererContext in
+                customDraw(rendererContext.cgContext, size)
+            }
         }
-        return image.cgImage
+        return renderedImage?.cgImage
     }
 }
 

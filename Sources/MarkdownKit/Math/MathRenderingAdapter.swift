@@ -12,6 +12,8 @@ public protocol MathRenderingAdapter: Sendable {
     func render(from node: MathNode, theme: Theme, contextFont: Font?) async -> NSAttributedString
     /// Synchronously renders using cached results. Used by the sync layout path.
     func renderSync(from node: MathNode, theme: Theme, contextFont: Font?) -> NSAttributedString
+    /// Mixes configuration that changes rendered output into `hasher`.
+    func cacheFingerprint(into hasher: inout Hasher)
 }
 
 // Default implementations for backward compatibility with custom adapters.
@@ -21,5 +23,9 @@ public extension MathRenderingAdapter {
     }
     func renderSync(from node: MathNode, theme: Theme) -> NSAttributedString {
         renderSync(from: node, theme: theme, contextFont: nil)
+    }
+
+    func cacheFingerprint(into hasher: inout Hasher) {
+        hasher.combine(String(reflecting: type(of: self)))
     }
 }

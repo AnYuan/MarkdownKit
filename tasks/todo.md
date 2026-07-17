@@ -269,8 +269,26 @@ review the complete diff, then commit and push before starting the next stage.
   root-cause investigations, four read-only quality reviews, main-agent review,
   and `git diff --check` all pass; iOS logs contain no process restarts or
   private system-font fallback diagnostics.
-- [ ] `fix: make rendering appearance-aware`
-  Thread appearance through render input, layout environment, and cache identity.
+- [x] `fix: make rendering appearance-aware`
+  Thread an explicit immutable light/dark value through SwiftUI render input,
+  direct solver construction, layout cache variants, and detached layout work.
+  Resolve dynamic theme colors before off-main drawing; carry a full render
+  fingerprint into `LayoutResult` so the iOS bitmap cache cannot reuse pixels
+  across appearance, theme, registry, adapter, or image-policy variants.
+  Preserve semantic `StableNodeIdentity`, but reconfigure existing visible
+  collection items whenever that render fingerprint changes. Render
+  invalidation must cover text, width, parser limits, appearance, theme,
+  ordered plugin configuration, diagram registry, and image policy. Review:
+  AppKit color resolution is serialized and stress-tested after exposing a
+  concurrent `NSAppearance` crash; code views resolve retained themes for the
+  layout appearance even outside collection cells; attributed-color resolution
+  uses one attribute pass and avoids copying strings without colors. Validation:
+  20 focused appearance/render-input tests, 11 consecutive concurrency-stress
+  passes, documentation freshness (397 discoverable macOS tests), the complete
+  macOS correctness gate (46 suites / 380 tests), visual and determinism
+  snapshot gates (4/4 each), and the iOS Simulator gate (436 tests) all pass.
+  iOS logs contain no XCTest process restarts or private-font fallback
+  diagnostics, and `git diff --check` is clean.
 - [ ] `refactor: split host resolver and interaction contracts`
   Separate background `Sendable` autolink resolution from main-actor UI callbacks.
 - [ ] `perf: coalesce render jobs and reuse parsed ASTs`

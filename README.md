@@ -55,6 +55,11 @@ let layout = await MarkdownKitEngine.layout(
 print(layout.children.count)
 ```
 
+Direct layout APIs use a deterministic `.light` appearance by default. Pass
+`appearance: .dark` to `makeLayoutSolver` or `MarkdownKitEngine.layout` for
+dark output. SwiftUI `MarkdownView` follows the environment `colorScheme`
+automatically.
+
 ## Parser Resource Limits & Typed Outcomes
 
 `MarkdownParser` uses a per-instance `ResourceLimits` policy to bound accepted input size and

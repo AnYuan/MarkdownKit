@@ -2,6 +2,13 @@ import Foundation
 
 public protocol DiagramRenderingAdapter: Sendable {
     func render(source: String, language: DiagramLanguage) async -> NSAttributedString?
+    func cacheFingerprint(into hasher: inout Hasher)
+}
+
+public extension DiagramRenderingAdapter {
+    func cacheFingerprint(into hasher: inout Hasher) {
+        hasher.combine(String(reflecting: type(of: self)))
+    }
 }
 
 /// Registry for host-provided diagram rendering adapters.
@@ -27,7 +34,7 @@ public struct DiagramAdapterRegistry: Sendable {
         for language in DiagramLanguage.allCases {
             guard let adapter = adapters[language] else { continue }
             hasher.combine(language.rawValue)
-            hasher.combine(String(reflecting: type(of: adapter)))
+            adapter.cacheFingerprint(into: &hasher)
         }
         return hasher.finalize()
     }

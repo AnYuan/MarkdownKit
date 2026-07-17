@@ -26,8 +26,15 @@ The `AsyncCodeView` component introduces OS-level actions overlaying the asynchr
 - Code blocks with language identifiers now render a compact uppercase language label (`SWIFT`, `PYTHON`, etc.) above highlighted content.
 
 ## 5. Dynamic Theme Transitions
-When OS-level appearances change (e.g. User transitions from Light to Dark mode), evaluating dynamic colors captured within the `NSAttributedString` object cache must be violently purged.
-`MarkdownCollectionViewThemeDelegate` safely delegates `traitCollectionDidChange` signals for instantaneous foreground invalidation and background re-computation without leaking memory.
+`MarkdownAppearance` makes light/dark selection an explicit input to
+`LayoutSolver` and `MarkdownKitEngine.layout`. Dynamic platform colors are
+resolved to concrete values before detached layout and rasterization.
+
+SwiftUI `MarkdownView` reads `colorScheme` and includes appearance, theme,
+plugins, diagram adapters, image policy, parser limits, text, and width in its
+render identity. Layout and bitmap caches use separate appearance-aware render
+fingerprints, while collection views retain semantic node identity and
+reconfigure only rows whose rendered variant changed.
 
 ## 6. GitHub-Style Collapsed Sections (`<details>/<summary>`)
 - `DetailsExtractionPlugin` converts raw HTML details syntax into dedicated `DetailsNode` and `SummaryNode` models, preserving optional `open` state.

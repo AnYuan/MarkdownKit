@@ -12,4 +12,28 @@ public protocol ASTPlugin {
     /// - Parameter nodes: The current array of sibling nodes.
     /// - Returns: The modified array of nodes after the plugin has executed its transformations.
     func visit(_ nodes: [MarkdownNode]) -> [MarkdownNode]
+
+    /// Mixes configuration that changes this plugin's output into `hasher`.
+    ///
+    /// Stateless plugins can use the default type-based implementation. Stateful
+    /// plugins should override this method so live SwiftUI views rerender when
+    /// their configuration changes.
+    func cacheFingerprint(into hasher: inout Hasher)
+}
+
+public extension ASTPlugin {
+    func cacheFingerprint(into hasher: inout Hasher) {
+        hasher.combine(String(reflecting: type(of: self)))
+    }
+}
+
+enum ASTPluginFingerprint {
+    static func make(for plugins: [ASTPlugin]) -> Int {
+        var hasher = Hasher()
+        hasher.combine(plugins.count)
+        for plugin in plugins {
+            plugin.cacheFingerprint(into: &hasher)
+        }
+        return hasher.finalize()
+    }
 }

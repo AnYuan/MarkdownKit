@@ -32,6 +32,38 @@ final class AsyncTextViewRenderTests: XCTestCase {
         XCTAssertNotNil(view.layer.contents, "renderImage() should produce a CGImage in layer.contents")
     }
 
+    func testBitmapCacheKeyUsesFullRenderFingerprint() {
+        let size = CGSize(width: 300, height: 40)
+        let lightKey = AsyncTextView.imageCacheKey(
+            renderFingerprint: 1,
+            appearance: .light,
+            size: size,
+            scale: 2
+        )
+        let darkKey = AsyncTextView.imageCacheKey(
+            renderFingerprint: 2,
+            appearance: .dark,
+            size: size,
+            scale: 2
+        )
+
+        XCTAssertNotEqual(lightKey, darkKey)
+        XCTAssertNotEqual(
+            AsyncTextView.imageCacheKey(
+                renderFingerprint: 1,
+                appearance: .light,
+                size: size,
+                scale: 2
+            ),
+            AsyncTextView.imageCacheKey(
+                renderFingerprint: 1,
+                appearance: .dark,
+                size: size,
+                scale: 2
+            )
+        )
+    }
+
     func testConfigureWithNilStringClearsContents() async throws {
         let node = TextNode(range: nil, text: "")
         let layout = LayoutResult(node: node, size: CGSize(width: 200, height: 50), attributedString: nil)

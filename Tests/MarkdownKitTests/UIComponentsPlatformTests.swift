@@ -61,6 +61,24 @@ final class UIComponentsPlatformTests: XCTestCase {
         XCTAssertEqual(textView?.frame.origin.y, 16)
     }
 
+    func testAsyncCodeViewResolvesRetainedThemeForLayoutAppearance() {
+        let node = CodeBlockNode(range: nil, language: "swift", code: "let value = 1")
+        let layout = LayoutResult(
+            node: node,
+            size: CGSize(width: 300, height: 100),
+            attributedString: NSAttributedString(string: node.code),
+            appearance: .dark
+        )
+        let view = AsyncCodeView(frame: CGRect(origin: .zero, size: layout.size))
+
+        view.configure(with: layout)
+
+        XCTAssertEqual(
+            view.backgroundColor,
+            Theme.default.resolved(for: .dark).colors.codeColor.background
+        )
+    }
+
     // MARK: - AsyncTextView
 
     func testAsyncTextViewConfigureWithNilString() {

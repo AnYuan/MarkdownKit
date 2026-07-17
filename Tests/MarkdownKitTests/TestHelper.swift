@@ -26,10 +26,11 @@ enum TestHelper {
         width: CGFloat = 400.0,
         theme: Theme = .default,
         plugins: [ASTPlugin] = [],
-        imageLoadingPolicy: ImageLoadingPolicy = .default
+        imageLoadingPolicy: ImageLoadingPolicy = .default,
+        appearance: MarkdownAppearance = .light
     ) async -> LayoutResult {
         let doc = parse(markdown, plugins: plugins)
-        let solver = LayoutSolver(theme: theme, imageLoadingPolicy: imageLoadingPolicy)
+        let solver = LayoutSolver(theme: theme, imageLoadingPolicy: imageLoadingPolicy, appearance: appearance)
         return await solver.solve(node: doc, constrainedToWidth: width)
     }
 

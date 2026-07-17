@@ -2,17 +2,17 @@
 
 > 最近更新: 2026-07-17
 > 生成方式: `python3 scripts/generate_test_coverage_report.py [--run-tests|--from-log <path>]`
-> 生成时间: 2026-07-17 09:44:08
+> 生成时间: 2026-07-17 16:27:49
 
 ## 1. 总览
 
 | 指标 | 当前值 | 说明 |
 | --- | ---: | --- |
-| 源码文件数 (`Sources/MarkdownKit/*.swift`) | 79 | 不含 Demo target |
-| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 67 | 含基准/夹具/辅助文件 |
-| 含 `test*` 方法的测试文件 | 59 | 静态扫描结果 |
-| 静态扫描 `test*` 方法总数 | 455 | 受编译条件影响，可能高于可执行测试数 |
-| 可发现测试数 (`swift test list`) | 377 | 当前平台可执行测试 |
+| 源码文件数 (`Sources/MarkdownKit/*.swift`) | 82 | 不含 Demo target |
+| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 69 | 含基准/夹具/辅助文件 |
+| 含 `test*` 方法的测试文件 | 61 | 静态扫描结果 |
+| 静态扫描 `test*` 方法总数 | 477 | 受编译条件影响，可能高于可执行测试数 |
+| 可发现测试数 (`swift test list`) | 397 | 当前平台可执行测试 |
 | 全量执行结果 (`swift test`) | 未提供 | 未执行或未提供日志 |
 
 ## 2. 本次执行状态
@@ -25,11 +25,12 @@
 | --- | ---: |
 | `ASTPluginTests.swift` | 13 |
 | `ASTTransformTests.swift` | 6 |
+| `AppearanceAwareLayoutTests.swift` | 17 |
 | `ArithmeticTextCalculatorTests.swift` | 25 |
 | `AsyncCodeViewCopyTests.swift` | 7 |
 | `AsyncImageViewLoadingTests.swift` | 6 |
 | `AsyncTextViewInteractionTests.swift` | 5 |
-| `AsyncTextViewRenderTests.swift` | 6 |
+| `AsyncTextViewRenderTests.swift` | 7 |
 | `AttributedStringBuilderEquivalenceTests.swift` | 9 |
 | `BenchmarkBaseline.swift` | 0 |
 | `BenchmarkCacheTests.swift` | 2 |
@@ -59,6 +60,7 @@
 | `MacOSUIComponentsTests.swift` | 10 |
 | `MarkdownKitBenchmarkTests.swift` | 4 |
 | `MarkdownKitTests.swift` | 5 |
+| `MarkdownRenderInputTests.swift` | 3 |
 | `MathCacheTests.swift` | 3 |
 | `MathExtractionPluginTests.swift` | 16 |
 | `MathSVGPreprocessorTests.swift` | 9 |
@@ -82,7 +84,7 @@
 | `TextKitHitTesterTests.swift` | 6 |
 | `ThemeAndTokenTests.swift` | 10 |
 | `ThemeCustomizationTests.swift` | 15 |
-| `UIComponentsPlatformTests.swift` | 11 |
+| `UIComponentsPlatformTests.swift` | 12 |
 | `UIComponentsTests.swift` | 2 |
 | `URLSanitizerTests.swift` | 8 |
 | `VirtualizationTests.swift` | 1 |

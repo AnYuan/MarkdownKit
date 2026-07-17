@@ -335,6 +335,29 @@ public struct Theme: Equatable {
         self.thematicBreak = thematicBreak
     }
     
+    #if canImport(AppKit)
+    private static let defaultTableForegroundColor = dynamicTableColor(
+        name: NSColor.Name("com.markdownkit.table.foreground"),
+        alpha: 0.15
+    )
+    private static let defaultTableBackgroundColor = dynamicTableColor(
+        name: NSColor.Name("com.markdownkit.table.background"),
+        alpha: 0.04
+    )
+
+    private static func dynamicTableColor(name: NSColor.Name, alpha: CGFloat) -> NSColor {
+        NSColor(name: name) { appearance in
+            let match = appearance.bestMatch(from: [.aqua, .darkAqua])
+            return NSColor(
+                srgbRed: match == .darkAqua ? 1 : 0,
+                green: match == .darkAqua ? 1 : 0,
+                blue: match == .darkAqua ? 1 : 0,
+                alpha: alpha
+            )
+        }
+    }
+    #endif
+
     /// The default cross-platform theme for MarkdownKit.
     public static var `default`: Theme {
         let h1 = TypographyToken(font: Font.boldSystemFont(ofSize: 32))
@@ -367,8 +390,8 @@ public struct Theme: Equatable {
             background: NSColor.controlAccentColor.withAlphaComponent(0.22)
         )
         let tableC = ColorToken(
-            foreground: NSColor.labelColor.withAlphaComponent(0.15),
-            background: NSColor.labelColor.withAlphaComponent(0.04)
+            foreground: defaultTableForegroundColor,
+            background: defaultTableBackgroundColor
         )
 #endif
         

@@ -202,7 +202,9 @@ final class CrossPlatformLayoutTests: XCTestCase {
             XCTFail("No foreground color on language label")
             return
         }
-        XCTAssertEqual(color, Color.platformSecondaryLabel,
+        XCTAssertEqual(
+            color,
+            AppearanceColorResolver.resolveColor(.platformSecondaryLabel, for: .light),
                        "Language label should use platformSecondaryLabel color")
     }
 

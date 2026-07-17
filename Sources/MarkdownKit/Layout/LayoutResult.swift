@@ -48,6 +48,20 @@ public struct LayoutResult {
     /// for checkbox detection.
     public let accessibility: AccessibilityMetadata
 
+    /// The explicit appearance under which this layout was produced.
+    /// `.light` by default for results created outside a `LayoutSolver`.
+    public let appearance: MarkdownAppearance
+
+    /// A rendering / cache variant fingerprint combining the node's content
+    /// fingerprint with the solver's theme+appearance variant hash.
+    ///
+    /// Use this value to detect whether a cached bitmap is stale: two results
+    /// with the same `stableIdentity` but different `renderFingerprint` values
+    /// must be re-rendered (e.g. light ↔ dark switch). This fingerprint is
+    /// distinct from `StableNodeIdentity` — it does not affect diffable data
+    /// source semantics.
+    public let renderFingerprint: Int
+
     public init(
         node: MarkdownNode,
         size: CGSize,
@@ -55,7 +69,9 @@ public struct LayoutResult {
         children: [LayoutResult] = [],
         customDraw: (@Sendable (CGContext, CGSize) -> Void)? = nil,
         stableIdentity: StableNodeIdentity? = nil,
-        accessibility: AccessibilityMetadata? = nil
+        accessibility: AccessibilityMetadata? = nil,
+        appearance: MarkdownAppearance = .light,
+        renderFingerprint: Int? = nil
     ) {
         self.node = node
         self.size = size
@@ -68,11 +84,14 @@ public struct LayoutResult {
             ?? StableNodeIdentity(contentFingerprint: node.contentFingerprint, pathHash: 0)
         self.accessibility = accessibility
             ?? AccessibilityMetadata.make(for: node, attributedString: attributedString)
+        self.appearance = appearance
+        self.renderFingerprint = renderFingerprint ?? node.contentFingerprint
     }
 
     /// Returns a copy of this result with its `stableIdentity` replaced. Used
     /// by `LayoutSolver` to stamp the correct document-position hash onto
-    /// otherwise-cached results.
+    /// otherwise-cached results. Both `appearance` and `renderFingerprint` are
+    /// preserved unchanged.
     public func withStableIdentity(_ identity: StableNodeIdentity) -> LayoutResult {
         LayoutResult(
             node: node,
@@ -81,7 +100,25 @@ public struct LayoutResult {
             children: children,
             customDraw: customDraw,
             stableIdentity: identity,
-            accessibility: accessibility
+            accessibility: accessibility,
+            appearance: appearance,
+            renderFingerprint: renderFingerprint
         )
+    }
+}
+
+enum LayoutResultVariantDiff {
+    static func changedStableIdentities(
+        previous: [StableNodeIdentity: LayoutResult],
+        next: [LayoutResult]
+    ) -> [StableNodeIdentity] {
+        next.compactMap { layout in
+            guard let oldLayout = previous[layout.stableIdentity],
+                  oldLayout.renderFingerprint != layout.renderFingerprint
+                    || oldLayout.appearance != layout.appearance else {
+                return nil
+            }
+            return layout.stableIdentity
+        }
     }
 }

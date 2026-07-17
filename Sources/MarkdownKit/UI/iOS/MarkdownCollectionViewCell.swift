@@ -72,13 +72,13 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
         case is CodeBlockNode, is DiagramNode:
             if let codeView = hostedView as? AsyncCodeView {
                 codeView.frame = CGRect(origin: .zero, size: layout.size)
-                codeView.configure(with: layout)
+                codeView.configure(with: layout, theme: theme)
             } else {
                 hostedView?.removeFromSuperview()
                 let codeView = AsyncCodeView(frame: CGRect(origin: .zero, size: layout.size), theme: theme)
                 self.contentView.addSubview(codeView)
                 self.hostedView = codeView
-                codeView.configure(with: layout)
+                codeView.configure(with: layout, theme: theme)
             }
 
         default:

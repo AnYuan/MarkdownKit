@@ -156,7 +156,7 @@ public class MarkdownItemView: NSCollectionViewItem {
         textView.setAccessibilityElement(true)
         if layout.node is CodeBlockNode || layout.node is DiagramNode {
             textView.drawsBackground = true
-            textView.backgroundColor = NSColor.controlBackgroundColor
+            textView.backgroundColor = theme.resolved(for: layout.appearance).colors.codeColor.background
             textView.wantsLayer = true
             textView.layer?.cornerRadius = theme.codeBlock.macOSCornerRadius
             textView.textContainerInset = theme.codeBlock.macOSTextContainerInset

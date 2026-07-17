@@ -182,15 +182,7 @@ extension Color {
     }
 }
 
-// MARK: - MathRenderingAdapter / DiagramAdapterRegistry / ImageLoadingPolicy
-
-extension MathRenderingAdapter {
-    /// Default implementation hashes the conformer's type name. Custom adapters
-    /// with their own internal configuration can override this method.
-    func cacheFingerprint(into hasher: inout Hasher) {
-        hasher.combine(String(reflecting: type(of: self)))
-    }
-}
+// MARK: - DiagramAdapterRegistry / ImageLoadingPolicy
 
 extension DiagramAdapterRegistry {
     func cacheFingerprint(into hasher: inout Hasher) {

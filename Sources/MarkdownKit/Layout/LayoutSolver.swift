@@ -22,29 +22,40 @@ public final class LayoutSolver: @unchecked Sendable {
     private let cache: LayoutCache
     private let builder: AttributedStringBuilder
     private let cacheVariantHash: Int
+    /// The explicit appearance this solver was initialised with. Stored so that
+    /// every `LayoutResult` it creates carries the correct appearance value.
+    private let appearance: MarkdownAppearance
     
     public init(
         theme: Theme = .default,
         cache: LayoutCache = LayoutCache(),
         diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry(),
         mathAdapter: (any MathRenderingAdapter)? = nil,
-        imageLoadingPolicy: ImageLoadingPolicy = .default
+        imageLoadingPolicy: ImageLoadingPolicy = .default,
+        appearance: MarkdownAppearance = .light
     ) {
         self.textCalculator = TextKitCalculator()
         self.arithmeticCalculator = ArithmeticTextCalculator()
         self.cache = cache
+        self.appearance = appearance
+        // Resolve every appearance-sensitive color in the theme once, up front.
+        // Downstream builders and the highlighter receive only concrete colors so
+        // no ambient UITraitCollection / NSAppearance state is read during layout.
+        let resolvedTheme = theme.resolved(for: appearance)
+        let resolvedMathAdapter = mathAdapter ?? DefaultMathRenderingAdapter()
         self.cacheVariantHash = Self.makeCacheVariantHash(
-            theme: theme,
+            theme: resolvedTheme,
             diagramRegistry: diagramRegistry,
-            mathAdapter: mathAdapter ?? DefaultMathRenderingAdapter(),
-            imageLoadingPolicy: imageLoadingPolicy
+            mathAdapter: resolvedMathAdapter,
+            imageLoadingPolicy: imageLoadingPolicy,
+            appearance: appearance
         )
-        let highlighter = SplashHighlighter(theme: theme)
+        let highlighter = SplashHighlighter(theme: resolvedTheme)
         self.builder = AttributedStringBuilder(
-            theme: theme,
+            theme: resolvedTheme,
             highlighter: highlighter,
             diagramRegistry: diagramRegistry,
-            mathAdapter: mathAdapter ?? DefaultMathRenderingAdapter(),
+            mathAdapter: resolvedMathAdapter,
             imageLoadingPolicy: imageLoadingPolicy
         )
     }
@@ -53,17 +64,27 @@ public final class LayoutSolver: @unchecked Sendable {
         theme: Theme,
         diagramRegistry: DiagramAdapterRegistry,
         mathAdapter: any MathRenderingAdapter,
-        imageLoadingPolicy: ImageLoadingPolicy
+        imageLoadingPolicy: ImageLoadingPolicy,
+        appearance: MarkdownAppearance
     ) -> Int {
-        // Delegates to `cacheFingerprint(into:)` defined per type in
-        // `Layout/CacheFingerprinting.swift`. This file previously held 146
-        // lines of hand-rolled hashing; it now stays focused on layout
-        // dispatch and is ~190 lines shorter.
+        // `appearance` is included explicitly so a dark-appearance solver never
+        // reuses entries produced by a light-appearance solver, even when the
+        // resolved theme colors happen to be identical (e.g. static color themes).
         var hasher = Hasher()
         theme.cacheFingerprint(into: &hasher)
         diagramRegistry.cacheFingerprint(into: &hasher)
         mathAdapter.cacheFingerprint(into: &hasher)
         imageLoadingPolicy.cacheFingerprint(into: &hasher)
+        hasher.combine(appearance)
+        return hasher.finalize()
+    }
+
+    /// Combines the node's content fingerprint with the solver's cache-variant
+    /// hash to produce a rendering fingerprint for use in `LayoutResult`.
+    private func makeRenderFingerprint(for node: MarkdownNode) -> Int {
+        var hasher = Hasher()
+        hasher.combine(node.contentFingerprint)
+        hasher.combine(cacheVariantHash)
         return hasher.finalize()
     }
 
@@ -101,45 +122,50 @@ public final class LayoutSolver: @unchecked Sendable {
 
 
         // 1. Convert AST to styled NSAttributedString based on Theme
-        let styledString: NSAttributedString
+        let rawString: NSAttributedString
         var size: CGSize
 
         // Special handling for nodes that have internal padding in their UI representation
         if let code = node as? CodeBlockNode {
-            styledString = builder.buildCodeBlockAttributedString(from: code)
+            rawString = builder.buildCodeBlockAttributedString(from: code)
 
             // TextKit needs to know that we inset the container 8pts horizontally by the UI view
             // to accurately wrap the string if it's too long.
             let totalInset = builder.theme.codeBlock.layoutTotalInset
             let insets = CGSize(width: totalInset, height: totalInset)
             size = textCalculator.calculateSize(
-                for: styledString,
+                for: rawString,
                 constrainedToWidth: max(0, maxWidth - insets.width)
             )
             size.width += insets.width
             size.height += insets.height
 
         } else if let diagram = node as? DiagramNode {
-            styledString = await builder.buildDiagramAttributedString(from: diagram)
+            rawString = await builder.buildDiagramAttributedString(from: diagram)
 
             let totalInset = builder.theme.codeBlock.layoutTotalInset
             let insets = CGSize(width: totalInset, height: totalInset)
             size = textCalculator.calculateSize(
-                for: styledString,
+                for: rawString,
                 constrainedToWidth: max(0, maxWidth - insets.width)
             )
             size.width += insets.width
             size.height += insets.height
 
         } else {
-            styledString = await builder.buildString(for: node, constrainedToWidth: maxWidth)
+            rawString = await builder.buildString(for: node, constrainedToWidth: maxWidth)
             
-            if shouldUseArithmeticLayout(for: node, styledString: styledString) {
-                size = arithmeticCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
+            if shouldUseArithmeticLayout(for: node, styledString: rawString) {
+                size = arithmeticCalculator.calculateSize(for: rawString, constrainedToWidth: maxWidth)
             } else {
-                size = textCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
+                size = textCalculator.calculateSize(for: rawString, constrainedToWidth: maxWidth)
             }
         }
+
+        // Resolve any remaining dynamic colors (e.g. platform secondary-label
+        // used for code-block language labels, or colors from math/diagram adapters)
+        // to concrete values for the explicit appearance.
+        let styledString = AppearanceColorResolver.resolveColors(in: rawString, for: appearance)
 
         // 3. Recurse down children (if they represent separate visual block elements)
         // For basic implementation, we assume paragraphs/headers handle their own inline children.
@@ -158,7 +184,9 @@ public final class LayoutSolver: @unchecked Sendable {
             node: node,
             size: size,
             attributedString: styledString,
-            children: childLayouts
+            children: childLayouts,
+            appearance: appearance,
+            renderFingerprint: makeRenderFingerprint(for: node)
         )
 
         // Memoize the result
@@ -189,28 +217,30 @@ public final class LayoutSolver: @unchecked Sendable {
         }
         #endif
 
-        let styledString: NSAttributedString
+        let rawString: NSAttributedString
         var size: CGSize
 
         if let code = node as? CodeBlockNode {
-            styledString = builder.buildCodeBlockAttributedString(from: code)
+            rawString = builder.buildCodeBlockAttributedString(from: code)
             let totalInset = builder.theme.codeBlock.layoutTotalInset
             let insets = CGSize(width: totalInset, height: totalInset)
             size = textCalculator.calculateSize(
-                for: styledString,
+                for: rawString,
                 constrainedToWidth: max(0, maxWidth - insets.width)
             )
             size.width += insets.width
             size.height += insets.height
         } else {
-            styledString = builder.buildStringSync(for: node, constrainedToWidth: maxWidth)
+            rawString = builder.buildStringSync(for: node, constrainedToWidth: maxWidth)
             
-            if shouldUseArithmeticLayout(for: node, styledString: styledString) {
-                size = arithmeticCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
+            if shouldUseArithmeticLayout(for: node, styledString: rawString) {
+                size = arithmeticCalculator.calculateSize(for: rawString, constrainedToWidth: maxWidth)
             } else {
-                size = textCalculator.calculateSize(for: styledString, constrainedToWidth: maxWidth)
+                size = textCalculator.calculateSize(for: rawString, constrainedToWidth: maxWidth)
             }
         }
+
+        let styledString = AppearanceColorResolver.resolveColors(in: rawString, for: appearance)
 
         var childLayouts: [LayoutResult] = []
         if let doc = node as? DocumentNode {
@@ -224,7 +254,9 @@ public final class LayoutSolver: @unchecked Sendable {
             node: node,
             size: size,
             attributedString: styledString,
-            children: childLayouts
+            children: childLayouts,
+            appearance: appearance,
+            renderFingerprint: makeRenderFingerprint(for: node)
         )
         cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
         return result
@@ -253,6 +285,8 @@ public final class LayoutSolver: @unchecked Sendable {
         let totalHeight = paddingTop + dividerHeight + paddingBottom
         let totalSize = CGSize(width: maxWidth, height: totalHeight)
 
+        // The theme was resolved for the explicit appearance in init, so .cgColor
+        // is already a concrete value — no ambient trait collection is read here.
         let resolvedColor = builder.theme.colors.thematicBreakColor.foreground.cgColor
 
         let customDraw: @Sendable (CGContext, CGSize) -> Void = { context, size in
@@ -268,7 +302,9 @@ public final class LayoutSolver: @unchecked Sendable {
             size: totalSize,
             attributedString: nil,
             children: [],
-            customDraw: customDraw
+            customDraw: customDraw,
+            appearance: appearance,
+            renderFingerprint: makeRenderFingerprint(for: node)
         )
     }
     #endif
@@ -286,7 +322,9 @@ public final class LayoutSolver: @unchecked Sendable {
             constrainedToWidth: maxWidth
         )
 
-        // Resolve UIColor -> CGColor on the current thread (which has trait collection context).
+        // The theme stored in `builder` was resolved for the explicit appearance in init,
+        // so every color token already contains concrete RGB values — no ambient trait
+        // collection is read here.
         let resolvedColors = TableCardRenderer.ResolvedColors.resolve(from: builder.theme)
 
         let customDraw: @Sendable (CGContext, CGSize) -> Void = { context, size in
@@ -303,7 +341,9 @@ public final class LayoutSolver: @unchecked Sendable {
             size: layout.totalSize,
             attributedString: nil,
             children: [],
-            customDraw: customDraw
+            customDraw: customDraw,
+            appearance: appearance,
+            renderFingerprint: makeRenderFingerprint(for: table)
         )
     }
     #endif

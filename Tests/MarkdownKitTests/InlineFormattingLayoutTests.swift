@@ -92,7 +92,9 @@ final class InlineFormattingLayoutTests: XCTestCase {
         var foundGray = false
         attrStr.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attrStr.length)) { value, _, _ in
             guard let color = value as? Color else { return }
-            if color == Color.gray { foundGray = true }
+            if color == AppearanceColorResolver.resolveColor(.gray, for: .light) {
+                foundGray = true
+            }
         }
         XCTAssertTrue(foundGray, "Block quote text should use gray foreground color")
     }
@@ -110,7 +112,9 @@ final class InlineFormattingLayoutTests: XCTestCase {
         var foundBlue = false
         attrStr.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attrStr.length)) { value, range, _ in
             let substring = (attrStr.string as NSString).substring(with: range)
-            if substring.contains("┃"), let color = value as? Color, color == Color.systemBlue {
+            if substring.contains("┃"),
+               let color = value as? Color,
+               color == AppearanceColorResolver.resolveColor(.systemBlue, for: .light) {
                 foundBlue = true
             }
         }
@@ -136,7 +140,10 @@ final class InlineFormattingLayoutTests: XCTestCase {
         // Verify gray color
         var foundGray = false
         attrStr.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attrStr.length)) { value, _, _ in
-            if let color = value as? Color, color == Color.gray { foundGray = true }
+            if let color = value as? Color,
+               color == AppearanceColorResolver.resolveColor(.gray, for: .light) {
+                foundGray = true
+            }
         }
         XCTAssertTrue(foundGray, "Thematic break should use gray foreground color")
     }
@@ -450,7 +457,8 @@ final class InlineFormattingLayoutTests: XCTestCase {
         var foundLinkURL = false
 
         attrStr.enumerateAttributes(in: NSRange(location: 0, length: attrStr.length)) { attrs, _, _ in
-            if let color = attrs[.foregroundColor] as? Color, color == Color.systemBlue {
+            if let color = attrs[.foregroundColor] as? Color,
+               color == AppearanceColorResolver.resolveColor(.systemBlue, for: .light) {
                 foundBlue = true
             }
             if let style = attrs[.underlineStyle] as? Int, style == NSUnderlineStyle.single.rawValue {
@@ -481,7 +489,8 @@ final class InlineFormattingLayoutTests: XCTestCase {
 
         var foundSecondaryColor = false
         attrStr.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attrStr.length)) { value, _, _ in
-            if let color = value as? Color, color == Color.platformSecondaryLabel {
+            if let color = value as? Color,
+               color == AppearanceColorResolver.resolveColor(.platformSecondaryLabel, for: .light) {
                 foundSecondaryColor = true
             }
         }

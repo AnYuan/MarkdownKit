@@ -57,13 +57,15 @@ public enum MarkdownKitEngine {
         theme: Theme = .default,
         cache: LayoutCache = LayoutCache(),
         diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry(),
-        imageLoadingPolicy: ImageLoadingPolicy = .default
+        imageLoadingPolicy: ImageLoadingPolicy = .default,
+        appearance: MarkdownAppearance = .light
     ) -> LayoutSolver {
         LayoutSolver(
             theme: theme,
             cache: cache,
             diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy
+            imageLoadingPolicy: imageLoadingPolicy,
+            appearance: appearance
         )
     }
 
@@ -74,14 +76,17 @@ public enum MarkdownKitEngine {
     ///   - constrainedToWidth: Container width for wrapping and sizing
     ///   - parser: Optional parser instance. If omitted, a default parser is used.
     ///   - solver: Optional solver instance. If omitted, a default solver is used.
+    ///   - appearance: Appearance used when constructing the default solver.
+    ///     Ignored when `solver` is supplied.
     public static func layout(
         markdown: String,
         constrainedToWidth width: CGFloat,
         parser: MarkdownParser? = nil,
-        solver: LayoutSolver? = nil
+        solver: LayoutSolver? = nil,
+        appearance: MarkdownAppearance = .light
     ) async -> LayoutResult {
         let resolvedParser = parser ?? makeParser()
-        let resolvedSolver = solver ?? makeLayoutSolver()
+        let resolvedSolver = solver ?? makeLayoutSolver(appearance: appearance)
         let document = resolvedParser.parse(markdown)
         return await resolvedSolver.solve(node: document, constrainedToWidth: width)
     }

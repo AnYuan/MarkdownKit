@@ -128,6 +128,8 @@ public class MarkdownCollectionView: UIView {
     // MARK: - Snapshot application
 
     private func applyLayouts(_ layouts: [LayoutResult]) {
+        let previousLookup = layoutsByIdentity
+
         // Build the lookup before applying the snapshot — the data source's
         // cell provider may immediately try to resolve identities.
         var lookup: [StableNodeIdentity: LayoutResult] = [:]
@@ -140,6 +142,12 @@ public class MarkdownCollectionView: UIView {
         var snapshot = NSDiffableDataSourceSnapshot<Section, StableNodeIdentity>()
         snapshot.appendSections([.main])
         snapshot.appendItems(layouts.map(\.stableIdentity), toSection: .main)
+        let existingIdentities = Set(dataSource.snapshot().itemIdentifiers)
+        let changedIdentities = LayoutResultVariantDiff.changedStableIdentities(
+            previous: previousLookup,
+            next: layouts
+        ).filter(existingIdentities.contains)
+        snapshot.reconfigureItems(changedIdentities)
         // animatingDifferences: false — streaming updates would otherwise
         // flicker. Hosts that want animations can tweak this later.
         dataSource.apply(snapshot, animatingDifferences: false)

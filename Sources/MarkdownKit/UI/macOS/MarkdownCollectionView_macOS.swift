@@ -128,6 +128,7 @@ public class MarkdownCollectionView: NSView {
     // MARK: - Snapshot application
 
     private func applyLayouts(_ layouts: [LayoutResult]) {
+        let previousLookup = layoutsByIdentity
         var lookup: [StableNodeIdentity: LayoutResult] = [:]
         lookup.reserveCapacity(layouts.count)
         for layout in layouts {
@@ -138,6 +139,12 @@ public class MarkdownCollectionView: NSView {
         var snapshot = NSDiffableDataSourceSnapshot<Section, StableNodeIdentity>()
         snapshot.appendSections([.main])
         snapshot.appendItems(layouts.map(\.stableIdentity), toSection: .main)
+        let existingIdentities = Set(dataSource.snapshot().itemIdentifiers)
+        let changedIdentities = LayoutResultVariantDiff.changedStableIdentities(
+            previous: previousLookup,
+            next: layouts
+        ).filter(existingIdentities.contains)
+        snapshot.reloadItems(changedIdentities)
         dataSource.apply(snapshot, animatingDifferences: false)
     }
 
