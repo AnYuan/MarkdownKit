@@ -7,16 +7,36 @@ public struct MathExtractionPlugin: ASTPlugin {
     public init() {}
 
     public func visit(_ nodes: [MarkdownNode]) -> [MarkdownNode] {
-        // First pass: merge block math ($$..$$) that spans multiple top-level
-        // paragraphs. This is a sibling-level operation only applicable at the
-        // document root.
-        let merged = mergeBlockMath(nodes)
+        // First pass: merge document-root siblings, converting a same-paragraph
+        // standalone `$$..$$` directly into a `MathNode` sibling (no wrapping
+        // ParagraphNode). This is the pre-Q09 root behavior and must not
+        // change: top-level `$$x$$` has always become a direct MathNode.
+        let rootMerged = mergeBlockMath(nodes, mergeStandalone: true)
 
-        // Second pass: walk the tree, converting math fences and splitting
-        // TextNodes whose content contains inline `$..$` or `$$..$$` math.
-        // `AST.transform` centralizes the per-container recursion; the visitor
-        // only describes the per-node decisions.
-        return AST.transform(merged) { node in
+        // Second pass: recurse into every *nested* sibling list (list items,
+        // blockquotes, details bodies, table cells, etc.), merging
+        // multi-paragraph delimiter/interior/delimiter spans there too.
+        // Standalone same-paragraph `$$x$$` nested inside a container is
+        // intentionally left as a ParagraphNode here — that shape has always
+        // flowed through `extractInlineMath`'s "block math within a paragraph"
+        // branch below (see e.g. inside list items), preserving
+        // `container -> ParagraphNode -> MathNode` and its paragraph spacing.
+        // Running with a no-op per-node visitor lets `AST.transform` drive
+        // the recursion; this postprocessor also runs once more at the root,
+        // which is a no-op there since root standalone spans were already
+        // converted above.
+        let blockMerged = AST.transform(
+            rootMerged,
+            postProcessSiblings: { self.mergeBlockMath($0, mergeStandalone: false) },
+            visit: { _ in .unchanged }
+        )
+
+        // Third pass: walk the block-merged tree, converting math fences and
+        // splitting TextNodes whose content contains inline `$..$` or
+        // same-paragraph `$$..$$` math. `AST.transform` centralizes the
+        // per-container recursion; the visitor only describes the per-node
+        // decisions.
+        return AST.transform(blockMerged) { node in
             if let code = node as? CodeBlockNode, isMathFence(language: code.language) {
                 let equation = code.code.trimmingCharacters(in: .whitespacesAndNewlines)
                 return .replace(MathNode(range: code.range, style: .block, equation: equation))
@@ -34,15 +54,34 @@ public struct MathExtractionPlugin: ASTPlugin {
         }
     }
 
-    /// Scans top-level nodes for `$$` patterns that span across paragraphs.
+    /// Scans a sibling list for `$$` patterns that span across paragraphs.
     /// e.g., `Paragraph("$$"), Paragraph("\frac{1}{2}"), Paragraph("$$")` →
-    /// a single `MathNode(.block)`.
+    /// a single `MathNode(.block)`. Called directly at the document root, and
+    /// also runs as `AST.transform`'s `postProcessSiblings` hook so it fires
+    /// on every *nested* sibling list in the tree (blockquotes, list items,
+    /// details bodies, table cells, etc).
     ///
     /// Two-pass O(N): the first pass classifies each node; the second pairs
     /// delimiter spans into block math, leaving unrelated nodes verbatim.
     /// The earlier inner-loop variant could degrade toward O(N²) when many
     /// unterminated `$$` opener paragraphs preceded long tails.
-    private func mergeBlockMath(_ nodes: [MarkdownNode]) -> [MarkdownNode] {
+    ///
+    /// Pairing is strict: only a contiguous run of plain-text `.interior`
+    /// paragraphs between two `.delimiter` markers is mergeable. Encountering
+    /// `.other` (a non-plain-text node) or `.standalone` (a self-contained
+    /// `$$..$$` paragraph) while searching for a closer aborts that match —
+    /// the opener is preserved verbatim and the interrupting node is left for
+    /// normal processing, so no content is ever silently dropped.
+    ///
+    /// `mergeStandalone` controls whether a `.standalone` single-paragraph
+    /// `$$..$$` is converted directly into a `MathNode` sibling (`true`, used
+    /// only for the document root, matching pre-Q09 behavior) or left as the
+    /// original `ParagraphNode` (`false`, used for every nested sibling list,
+    /// so `container -> ParagraphNode -> MathNode` is preserved and
+    /// `extractInlineMath`'s same-paragraph block-math branch handles it).
+    private func mergeBlockMath(_ nodes: [MarkdownNode], mergeStandalone: Bool) -> [MarkdownNode] {
+        guard nodes.contains(where: { $0 is ParagraphNode }) else { return nodes }
+
         // --- Pass 1: classify ---
         enum Kind {
             case other                            // not a math delimiter
@@ -83,40 +122,48 @@ public struct MathExtractionPlugin: ASTPlugin {
         while index < nodes.count {
             switch kinds[index] {
             case .standalone(let equation):
-                result.append(MathNode(range: nil, style: .block, equation: equation))
+                if mergeStandalone {
+                    result.append(MathNode(range: nil, style: .block, equation: equation))
+                } else {
+                    // Nested standalone `$$x$$`: leave the ParagraphNode as-is
+                    // so `extractInlineMath` converts it below, keeping the
+                    // node wrapped in its original ParagraphNode container.
+                    result.append(nodes[index])
+                }
                 index += 1
 
             case .delimiter:
-                // Look ahead for a closing `.delimiter`. Worst case still scans
-                // forward, but we only do it once per opener (no
-                // pre-classification overhead per look).
+                // Look ahead for a closing `.delimiter`, but only through a
+                // contiguous run of `.interior` entries. Worst case still
+                // scans forward once per opener (no pre-classification
+                // overhead per look), and aborts immediately on `.other` or
+                // `.standalone` so we never lose their content.
                 var closer: Int? = nil
+                var equationParts: [String] = []
                 var search = index + 1
-                while search < nodes.count {
-                    if case .delimiter = kinds[search] {
+                searchLoop: while search < nodes.count {
+                    switch kinds[search] {
+                    case .interior(let text):
+                        equationParts.append(text)
+                        search += 1
+                    case .delimiter:
                         closer = search
-                        break
+                        break searchLoop
+                    case .other, .standalone:
+                        break searchLoop
                     }
-                    search += 1
                 }
 
                 if let closer {
-                    var equationParts: [String] = []
-                    for inner in (index + 1)..<closer {
-                        if case .interior(let text) = kinds[inner] {
-                            equationParts.append(text)
-                        } else {
-                            // A non-interior between two delimiters — emit it
-                            // verbatim so we don't lose content.
-                            equationParts.append("")
-                        }
-                    }
                     let equation = equationParts.joined(separator: "\n")
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     result.append(MathNode(range: nil, style: .block, equation: equation))
                     index = closer + 1
                 } else {
-                    // No closer found: keep the opener verbatim, advance.
+                    // No valid closer found — either the end of the sibling
+                    // list was reached, or a non-plain-text node interrupted
+                    // the span. Keep the opener verbatim; the interrupting
+                    // node (if any) is emitted normally on a later iteration.
                     result.append(nodes[index])
                     index += 1
                 }
@@ -130,15 +177,21 @@ public struct MathExtractionPlugin: ASTPlugin {
         return result
     }
 
-    /// Extracts all plain text from a node's inline children.
+    /// Extracts all plain text from a node's inline children. Returns `nil`
+    /// unless the node is a `ParagraphNode` whose children are *all*
+    /// `TextNode`s — any formatting (e.g. `StrongNode`) or non-paragraph
+    /// container makes the node ineligible for delimiter/interior
+    /// classification, so `mergeBlockMath` treats it as `.other` rather than
+    /// silently discarding its structure.
     private func extractPlainText(from node: MarkdownNode) -> String? {
-        if let para = node as? ParagraphNode {
-            return para.children.compactMap { child -> String? in
-                if let text = child as? TextNode { return text.text }
-                return nil
-            }.joined()
+        guard let para = node as? ParagraphNode else { return nil }
+        var fragments: [String] = []
+        fragments.reserveCapacity(para.children.count)
+        for child in para.children {
+            guard let textNode = child as? TextNode else { return nil }
+            fragments.append(textNode.text)
         }
-        return nil
+        return fragments.joined()
     }
 
     private func extractInlineMath(from textNode: TextNode) -> [MarkdownNode] {

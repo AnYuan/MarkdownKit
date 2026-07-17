@@ -38,7 +38,7 @@
 
 - API facade 已存在: `Sources/MarkdownKit/MarkdownKit.swift`
 - 当前测试文件数量: `find Tests/MarkdownKitTests -maxdepth 1 -type f -name '*.swift' | wc -l`（当前为 67）
-- 当前可发现测试数: `swift test list`（369）；`TestCoverage` 本次未提供全量执行日志: `docs/TestCoverage.md`
+- 当前可发现测试数: `swift test list`（377）；`TestCoverage` 本次未提供全量执行日志: `docs/TestCoverage.md`
 - Benchmark 文档事实源: `Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json`；生成一致性检查: `python3 scripts/render_benchmark_baseline.py --check`
 - 严格文档新鲜度门禁: `bash scripts/check_doc_freshness.sh`
 - `evaluation_report` 已改为当前风险基线: `docs/evaluation_report.md`

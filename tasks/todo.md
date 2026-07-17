@@ -255,8 +255,20 @@ review the complete diff, then commit and push before starting the next stage.
   read-only root-cause investigations, main-agent code review, and
   `git diff --check` all pass; iOS logs contain no process restarts or private
   system-font fallback diagnostics.
-- [ ] `fix: transform nested block math uniformly`
-  Run sibling block-math merging at every AST nesting level through shared recursion.
+- [x] `fix: transform nested block math uniformly`
+  Run sibling block-math merging at every AST nesting level through shared
+  recursion. Review: the plugin preserves its historical root-level standalone
+  shape, then uses a no-op `AST.transform` sibling pass to merge
+  delimiter/interior/delimiter sequences in nested containers before the
+  existing inline/fence transform. Nested same-paragraph math keeps its
+  `ParagraphNode` wrapper, no-op trees preserve identity, and non-plain or
+  unclosed spans retain all content instead of consuming intervening nodes.
+  Validation: focused math extraction tests (16/16), strict documentation
+  freshness (377 discoverable tests), the discovery-driven macOS gate
+  (44 suites / 360 tests), the iOS Simulator gate (414 tests), four independent
+  root-cause investigations, four read-only quality reviews, main-agent review,
+  and `git diff --check` all pass; iOS logs contain no process restarts or
+  private system-font fallback diagnostics.
 - [ ] `fix: make rendering appearance-aware`
   Thread appearance through render input, layout environment, and cache identity.
 - [ ] `refactor: split host resolver and interaction contracts`
