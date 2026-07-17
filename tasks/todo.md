@@ -242,8 +242,19 @@ review the complete diff, then commit and push before starting the next stage.
   iOS Simulator gate (402 tests), four read-only quality reviews, and
   `git diff --check` all pass; iOS logs contain no process restarts or private
   system-font fallback diagnostics.
-- [ ] `fix: reject numeric commit-autolink false positives`
-  Preserve issue references while leaving ordinary long numeric identifiers as text.
+- [x] `fix: reject numeric commit-autolink false positives`
+  Preserve issue references while leaving ordinary long numeric identifiers as
+  text. Review: commit candidates keep the existing lowercase hexadecimal,
+  7...40-character, and token-boundary rules but must now contain at least one
+  `a...f`; all-decimal candidates fall through the no-match path with their
+  original `TextNode` identity. Numeric `#issue` and `owner/repo#issue`
+  references, delegate resolution, and inline-code commit display remain
+  unchanged. Validation: focused autolink tests (8/8), strict documentation
+  freshness (369 discoverable tests), the discovery-driven macOS gate
+  (44 suites / 352 tests), the iOS Simulator gate (406 tests), four independent
+  read-only root-cause investigations, main-agent code review, and
+  `git diff --check` all pass; iOS logs contain no process restarts or private
+  system-font fallback diagnostics.
 - [ ] `fix: transform nested block math uniformly`
   Run sibling block-math merging at every AST nesting level through shared recursion.
 - [ ] `fix: make rendering appearance-aware`

@@ -108,6 +108,9 @@ public struct GitHubAutolinkPlugin: ASTPlugin {
             commitRegex.enumerateMatches(in: string, options: [], range: fullRange) { result, _, _ in
                 if let result = result {
                     let matched = nsString.substring(with: result.range)
+                    // Decimal identifiers also satisfy the hex regex, so require at least
+                    // one a-f letter before classifying the candidate as a commit SHA.
+                    guard matched.contains(where: { $0.isLetter }) else { return }
                     matches.append((result.range, .commit, matched, matched))
                 }
             }

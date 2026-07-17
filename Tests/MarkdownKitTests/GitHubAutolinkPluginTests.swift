@@ -109,4 +109,64 @@ final class GitHubAutolinkPluginTests: XCTestCase {
         XCTAssertEqual((p.children[5] as? LinkNode)?.destination, "https://github.com/owner/repo/commit/f81d4fa")
         XCTAssertEqual((p.children[6] as? TextNode)?.text, "!")
     }
+
+    // Bare all-decimal runs must never be autolinked as commit SHAs, even though decimal
+    // digits are a subset of the hex-digit character class the commit regex matches on.
+    // This is checked at both boundary lengths (7 and 40) of the commit pattern.
+    func testAllDecimalSevenDigitRunIsNotAutolinkedAsCommit() {
+        let textNode = TextNode(range: nil, text: "Order 1234567 shipped")
+        let delegate = MockMarkdownContextDelegate()
+        let plugin = GitHubAutolinkPlugin(delegate: delegate)
+
+        let result = plugin.visit([textNode])
+
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual((result[0] as? TextNode)?.text, "Order 1234567 shipped")
+        XCTAssertEqual(result[0].id, textNode.id) // original node identity preserved
+    }
+
+    func testAllDecimalFortyDigitRunIsNotAutolinkedAsCommit() {
+        let fortyDigits = String(repeating: "1234567890", count: 4)
+        XCTAssertEqual(fortyDigits.count, 40)
+        let textNode = TextNode(range: nil, text: "ID \(fortyDigits) done")
+        let delegate = MockMarkdownContextDelegate()
+        let plugin = GitHubAutolinkPlugin(delegate: delegate)
+
+        let result = plugin.visit([textNode])
+
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual((result[0] as? TextNode)?.text, "ID \(fortyDigits) done")
+        XCTAssertEqual(result[0].id, textNode.id) // original node identity preserved
+    }
+
+    func testSevenCharacterLetterContainingSHAStillAutolinks() {
+        let textNode = TextNode(range: nil, text: "Merge commit f81d4fa done")
+        let delegate = MockMarkdownContextDelegate()
+        let plugin = GitHubAutolinkPlugin(delegate: delegate)
+
+        let result = plugin.visit([textNode])
+
+        XCTAssertEqual(result.count, 3) // "Merge commit ", Link, " done"
+        let link = result[1] as? LinkNode
+        XCTAssertNotNil(link)
+        XCTAssertEqual(link?.destination, "https://github.com/owner/repo/commit/f81d4fa")
+        XCTAssertTrue(link?.children.first is InlineCodeNode)
+        XCTAssertEqual((link?.children.first as? InlineCodeNode)?.code, "f81d4fa")
+    }
+
+    func testLongNumericIssueReferenceStillResolvesAsReference() {
+        let textNode = TextNode(range: nil, text: "Fixes #1234567 and apple/swift#1234567")
+        let delegate = MockMarkdownContextDelegate()
+        let plugin = GitHubAutolinkPlugin(delegate: delegate)
+
+        let result = plugin.visit([textNode])
+
+        XCTAssertEqual(result.count, 4) // "Fixes ", Link(#1234567), " and ", Link(apple/swift#1234567)
+
+        let link1 = result[1] as? LinkNode
+        XCTAssertEqual(link1?.destination, "https://github.com/owner/repo/issues/1234567")
+
+        let link2 = result[3] as? LinkNode
+        XCTAssertEqual(link2?.destination, "https://github.com/apple/swift#1234567")
+    }
 }
