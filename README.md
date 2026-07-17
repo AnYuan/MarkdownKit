@@ -60,6 +60,9 @@ Direct layout APIs use a deterministic `.light` appearance by default. Pass
 dark output. SwiftUI `MarkdownView` follows the environment `colorScheme`
 automatically.
 
+SwiftUI hosts should import both `MarkdownKit` and `SwiftUI`; MarkdownKit does not re-export
+SwiftUI. Syntax highlighting is an implementation detail and Splash is not re-exported.
+
 ## Markdown Images
 
 Markdown images are inline content. During layout, `ImageAttachmentBuilder` asks the unified
@@ -76,6 +79,9 @@ Image I/O is opt-in:
 Configure the policy on the layout/render surface:
 
 ```swift
+import MarkdownKit
+import SwiftUI
+
 let solver = MarkdownKitEngine.makeLayoutSolver(imageLoadingPolicy: .remoteHTTPS)
 let layout = await MarkdownKitEngine.layout(
     markdown: "Logo: ![MarkdownKit](https://example.com/logo.png)",

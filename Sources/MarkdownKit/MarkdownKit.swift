@@ -1,13 +1,6 @@
 import Foundation
 import CoreGraphics
 
-#if canImport(SwiftUI)
-@_exported import SwiftUI
-#endif
-
-// Re-export splash so users can customize formatting if they want
-@_exported import Splash
-
 /// Convenience entry points for constructing parser/layout pipelines with sensible defaults.
 public enum MarkdownKitEngine {
 

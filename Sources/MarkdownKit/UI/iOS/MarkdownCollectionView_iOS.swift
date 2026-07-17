@@ -14,8 +14,9 @@ public protocol MarkdownCollectionViewThemeDelegate: AnyObject {
 /// explicitly for extremely high-performance vertically scrolling text blocks.
 ///
 /// Cell management goes through a `UICollectionViewDiffableDataSource` keyed
-/// by `StableNodeIdentity`, so streaming updates (e.g. ChatGPT token-by-token)
-/// trigger insert / delete / move diffs instead of full `reloadData()`.
+/// by a module-owned stable item identity, so streaming updates (e.g. ChatGPT
+/// token-by-token) trigger insert / delete / move diffs instead of full
+/// `reloadData()`.
 public class MarkdownCollectionView: UIView {
 
     public weak var themeDelegate: MarkdownCollectionViewThemeDelegate?
@@ -118,29 +119,41 @@ public class MarkdownCollectionView: UIView {
     // MARK: - Snapshot application
 
     private func applyLayouts(_ layouts: [LayoutResult]) {
+        let positionedLayouts = LayoutResult.positionedTopLevelLayouts(layouts)
         let previousLookup = layoutsByIdentity
 
         // Build the lookup before applying the snapshot — the data source's
         // cell provider may immediately try to resolve identities.
         var lookup: [StableNodeIdentity: LayoutResult] = [:]
-        lookup.reserveCapacity(layouts.count)
-        for layout in layouts {
+        lookup.reserveCapacity(positionedLayouts.count)
+        for layout in positionedLayouts {
             lookup[layout.stableIdentity] = layout
         }
         layoutsByIdentity = lookup
 
         var snapshot = NSDiffableDataSourceSnapshot<Section, StableNodeIdentity>()
         snapshot.appendSections([.main])
-        snapshot.appendItems(layouts.map(\.stableIdentity), toSection: .main)
+        snapshot.appendItems(positionedLayouts.map(\.stableIdentity), toSection: .main)
         let existingIdentities = Set(dataSource.snapshot().itemIdentifiers)
         let changedIdentities = LayoutResultVariantDiff.changedStableIdentities(
             previous: previousLookup,
-            next: layouts
+            next: positionedLayouts
         ).filter(existingIdentities.contains)
+        let hasExistingSizeChange = positionedLayouts.contains { layout in
+            guard existingIdentities.contains(layout.stableIdentity),
+                  let previous = previousLookup[layout.stableIdentity] else {
+                return false
+            }
+            return previous.size != layout.size
+        }
         snapshot.reconfigureItems(changedIdentities)
         // animatingDifferences: false — streaming updates would otherwise
         // flicker. Hosts that want animations can tweak this later.
-        dataSource.apply(snapshot, animatingDifferences: false)
+        dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+            if hasExistingSizeChange {
+                self?.flowLayout.invalidateLayout()
+            }
+        }
     }
 
     private func reconfigureVisibleItems() {

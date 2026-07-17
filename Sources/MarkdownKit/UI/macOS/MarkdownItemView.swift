@@ -76,15 +76,15 @@ private final class InteractiveTextView: NSTextView {
 }
 
 /// A highly reusable, recycled view cell managed by `NSCollectionView`.
-public class MarkdownItemView: NSCollectionViewItem {
+class MarkdownItemView: NSCollectionViewItem {
 
-    public static let reuseIdentifier = NSUserInterfaceItemIdentifier("MarkdownItemView")
+    static let reuseIdentifier = NSUserInterfaceItemIdentifier("MarkdownItemView")
 
     private var hostedView: InteractiveTextView?
     var preferredContainerWidth: CGFloat?
     var textInteractionMode: MarkdownTextInteractionMode = .asyncReadOnly
 
-    public override func loadView() {
+    override func loadView() {
         self.view = NSView()
         self.view.wantsLayer = true
         
@@ -106,7 +106,7 @@ public class MarkdownItemView: NSCollectionViewItem {
         self.hostedView = textView
     }
 
-    public override func prepareForReuse() {
+    override func prepareForReuse() {
         super.prepareForReuse()
         if let textView = hostedView {
             resetNonTextState(textView)
@@ -116,7 +116,7 @@ public class MarkdownItemView: NSCollectionViewItem {
         preferredContainerWidth = nil
     }
 
-    public func configure(
+    func configure(
         with layout: LayoutResult,
         theme: Theme = .default,
         textInteractionMode: MarkdownTextInteractionMode = .asyncReadOnly,

@@ -18,13 +18,13 @@ import os
 ///
 /// On AppKit we intentionally mirror the `NSTextView` renderer with TextKit 1 so
 /// complex attributed content such as `NSTextTable` measures the same way it draws.
-public final class TextKitCalculator {
+final class TextKitCalculator {
     
     // CoreText's internal glyph fallback dictionaries randomly fail under high concurrency
     // so we serialize the actual layout fragment pipeline to maintain safety.
     private static nonisolated(unsafe) var layoutLock = os_unfair_lock_s()
     
-    public init() {}
+    init() {}
     
     /// Calculates the exact bounding size for a given attributed string constrained to a width.
     ///
@@ -34,7 +34,7 @@ public final class TextKitCalculator {
     ///   - attributedString: The dynamically typed and themed string to measure.
     ///   - maxWidth: The maximum width of the containing viewport (e.g., the device screen width).
     /// - Returns: The precise `CGSize` necessary to display the text without clipping.
-    public func calculateSize(for attributedString: NSAttributedString, constrainedToWidth maxWidth: CGFloat) -> CGSize {
+    func calculateSize(for attributedString: NSAttributedString, constrainedToWidth maxWidth: CGFloat) -> CGSize {
         guard attributedString.length > 0 else { return .zero }
 
         // Force layout resolution inside a safety lock to avoid CoreText NSFont proxy crashes.

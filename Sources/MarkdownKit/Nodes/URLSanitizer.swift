@@ -4,10 +4,10 @@ import Foundation
 /// Production-grade markdown parsers must never pass `javascript:` or `vbscript:`
 /// strings directly to native UI components when generating `NSAttributedString` hyperlinks or
 /// loading network images.
-public struct URLSanitizer {
+struct URLSanitizer {
 
     /// The default set of allowed URL schemes.
-    public static let defaultAllowedSchemes: Set<String> = [
+    static let defaultAllowedSchemes: Set<String> = [
         "http", "https", "mailto", "tel", "sms", "ftp", "ftps", "file", "x-apple-reminder",
         "x-mention", "x-reference", "x-commit"
     ]
@@ -29,9 +29,8 @@ public struct URLSanitizer {
         return c
     }()
 
-    /// Drops all cached sanitize results. Hosts can call this on memory
-    /// warnings or after changing the allow-list policy.
-    public static func clearCache() {
+    /// Drops all cached sanitize results.
+    static func clearCache() {
         cache.removeAllObjects()
     }
 
@@ -56,7 +55,7 @@ public struct URLSanitizer {
     ///   - urlString: The raw URL string parsed from the markdown document.
     ///   - allowedSchemes: A set of explicitly allowed schemes. Defaults to `defaultAllowedSchemes`.
     /// - Returns: The original string if it is deemed safe, or `nil` if it contains a rejected/hostile scheme.
-    public static func sanitize(_ urlString: String?, allowedSchemes: Set<String> = defaultAllowedSchemes) -> String? {
+    static func sanitize(_ urlString: String?, allowedSchemes: Set<String> = defaultAllowedSchemes) -> String? {
         guard let urlString = urlString else { return nil }
         let key = cacheKey(urlString, allowedSchemes: allowedSchemes)
 

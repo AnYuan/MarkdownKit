@@ -65,8 +65,8 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **502** discoverable tests
-- `swift test`: **502 tests passed** on 2026-07-18
+- `swift test list`: **516** discoverable tests
+- `swift test`: **516 tests passed** on 2026-07-18
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -77,11 +77,11 @@ Pipeline:
 2. Parse boundary uses `MarkdownParseKey` (`text` + `resourceLimits` + ordered plugin fingerprint); only matching keys can reuse cached raw AST.
 3. On parse misses, task-confined `MarkdownParser` + plugin chain produce a fresh internal `DocumentNode`.
 4. Details disclosure overrides are reapplied to the latest configuration before layout.
-5. `LayoutSolver.solve(node:width:)` builds attributed content + measured sizes (`TextKitCalculator`). Parser-produced images remain inline: `ImageAttachmentBuilder` loads through `ImageResourceLoader`, builds a bounded thumbnail attachment, or emits bracketed secondary-color alt text.
+5. `LayoutSolver.solve(node:width:)` builds attributed content + measured sizes through the internal `TextKitCalculator`. Parser-produced images remain inline: `ImageAttachmentBuilder` loads through `ImageResourceLoader`, builds a bounded thumbnail attachment, or emits bracketed secondary-color alt text.
 6. Each `LayoutResult` caches accessibility label, value, hint, role, and task-checkbox state during layout so UIKit/AppKit cells apply metadata without re-scanning attributed strings.
 7. `LayoutCache` memoizes `(node.contentFingerprint, optional interaction fingerprint, rounded width, solver variant hash)` results, including image-policy inputs.
 8. UI containers mount top-level `LayoutResult` rows (`MarkdownCollectionView` iOS/macOS).
-9. `AsyncTextView` rasterizes attributed strings, including inline image attachments, off-main; `AsyncCodeView` handles code rows.
+9. Internal hosted views rasterize attributed strings, including inline image attachments, off-main; `AsyncCodeView` handles code rows.
 
 Core goal: move parse/layout cost off the main thread and keep cell sizing effectively O(1) during scrolling.
 
@@ -106,7 +106,7 @@ Key facts:
 ### 4.2 Nodes and security boundary
 
 - Node model is structured and UUID-addressable (`DocumentNode`, `ParagraphNode`, `Table*`, `DetailsNode`, `DiagramNode`, `MathNode`, etc.).
-- `LinkNode` and `ImageNode` sanitize URL input through `URLSanitizer` on initialization.
+- `LinkNode` and `ImageNode` sanitize URL input through the internal `URLSanitizer` on initialization.
 - Image source sanitization does not grant I/O permission; `ImageLoadingPolicy` is enforced separately during layout.
 
 ### 4.3 Layout/styling
@@ -132,12 +132,12 @@ Key facts:
 - `LayoutCache` keys are `node.contentFingerprint` + optional interaction fingerprint + rounded width + solver variant hash (theme/diagram/math/image policy/appearance inputs). The separate interaction identity covers source ranges and URLs captured by checkbox/details callbacks without changing semantic stable identity or pixel-render identity.
 - `AttributedStringBuilder` classifies block and inline structure once into an invocation-local flat operation program. Sequential async/sync materializers share structural behavior while keeping image, math, and diagram mode differences explicit.
 - `LayoutSolver` performs cache lookup before classifying a node into a shallow recipe, then shares immediate output, measurement, color resolution, and `LayoutResult` assembly across its explicit async/sync envelopes.
-- `ArithmeticTextCalculator` is the pure-text routing/cache facade. Width-independent preparation streams UTF-16 spans through dedicated scanner, localized classifier/merger, and CoreText measurer value types; `ArithmeticTextLineBreaker` separately owns fit-versus-paint widths, indents, hard breaks, soft hyphens, and oversized-token fallback.
+- The internal `ArithmeticTextCalculator` is the pure-text routing/cache facade. Width-independent preparation streams UTF-16 spans through dedicated scanner, localized classifier/merger, and CoreText measurer value types; `ArithmeticTextLineBreaker` separately owns fit-versus-paint widths, indents, hard breaks, soft hyphens, and oversized-token fallback.
 - `TableLayoutShared` owns the immutable canonical rectangular table grid (cell text/display text, alignment, row role/body index) and sanitized uniform column geometry. Three thin adapters intentionally preserve platform-specific visuals: AppKit native `NSTextTableBlock`, UIKit nested attributed tab/narrow fallback, and UIKit top-level `TableCardRenderer` cards drawn through `CGContext`.
 - `ImageResourceLoader` is the sole production owner of image source resolution, policy gating, file/`URLSession` loading, pre-follow redirect policy, HTTP status, MIME, expected-byte-count, streamed final-byte limits, and typed rejection.
 - `ImageAttachmentBuilder` uses ImageIO to create an oriented, width-constrained thumbnail. Its decoded cache is keyed by policy/source/rounded target width, bounded by count and total cost, and rejects any decoded image above 64 MiB.
 - Parser-produced Markdown images are inline attachments only. There is no top-level/block-image layout or visible-cell image loader.
-- `TextKitCalculator` safely isolates layout passes to avoid concurrent `NSLayoutManager` data dictionary deadlocks via tight locks.
+- The internal `TextKitCalculator` safely isolates layout passes to avoid concurrent `NSLayoutManager` data dictionary deadlocks via tight locks.
 - Code blocks support optional language badges, Splash tokenization for Swift,
   and regex-based keyword highlighting for the supported non-Swift language
   families. Generic highlighting reuses bounded, theme-independent compiled
@@ -160,7 +160,7 @@ Primary files:
 - macOS: `UI/macOS/MarkdownCollectionView_macOS.swift`, `UI/macOS/MarkdownItemView.swift`
 
 Key facts:
-- `MarkdownCollectionViewCell` (iOS) and `MarkdownItemView` (macOS) natively implement Texture-style view layer recycling, maintaining `AsyncView` allocations and CALayers across high-speed lists.
+- The internal `MarkdownCollectionViewCell` (iOS) and `MarkdownItemView` (macOS) implement Texture-style view layer recycling, maintaining hosted-view allocations and CALayers across high-speed lists.
 - Image-policy changes trigger relayout and inline attachment rebuilding; cells do not independently load images when they become visible.
 - macOS resize updates are coalesced through effective-content-width reporting plus the SwiftUI coordinator's 200ms debounce/latest-request replacement path.
 

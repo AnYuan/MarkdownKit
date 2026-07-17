@@ -9,18 +9,25 @@ actor; callers still choose the executor.
 
 ### `LayoutResult` 
 An immutable, tree-structured model holding:
-1. The exact bounding box (`CGSize`) for an element relative to a parent width constrain.
+1. The exact bounding box (`CGSize`) for an element relative to a parent width constraint.
 2. The pre-styled `NSAttributedString` generated from the `Theme`.
 3. An array of children `LayoutResult` objects.
 
 By keeping `LayoutResult` completely detached from UI layers (like `UIView` or `CALayer`), tree traversal and measurement can run in the background without touching UIKit/AppKit state. This describes the architecture, not a benchmarked bound on document size.
 
 ### `TextKitCalculator`
-At its core, `TextKitCalculator` wraps Apple's new `TextKit 2` engine (using `NSTextLayoutManager`).
-We inject the styled string and a mathematical width boundary `(e.g. 400pt wide)`, and `TextKit 2` generates the precise `usageBoundsForTextContainer` which corresponds to the exact pixel footprint the text will consume when rendered.
+The internal `TextKitCalculator` uses the platform's TextKit 1
+`NSLayoutManager`/`NSTextContainer` pipeline so measurement matches the hosted text renderers.
+It applies the styled string and width boundary (for example, 400 points) and reports the used
+layout bounds.
 
 ### Arithmetic text pipeline
-`ArithmeticTextCalculator` remains the pure-text profile, prepared-cache, and public measurement facade. Width-independent preparation is split into internal value types: `ArithmeticTextScanner` streams raw UTF-16 boundaries without buffering spans, `ArithmeticTextSegmentClassifierMerger` applies localized word boundaries and sticky-token merge rules, and `ArithmeticTextMeasurer` resolves platform fonts, line metrics, cached segment widths, and the aligned `PreparedText` payload.
+The internal `ArithmeticTextCalculator` remains the pure-text routing and prepared-cache facade.
+Width-independent preparation is split into internal value types:
+`ArithmeticTextScanner` streams raw UTF-16 boundaries without buffering spans,
+`ArithmeticTextSegmentClassifierMerger` applies localized word boundaries and sticky-token merge
+rules, and `ArithmeticTextMeasurer` resolves platform fonts, line metrics, cached segment widths,
+and the aligned `PreparedText` payload.
 
 `ArithmeticTextLineBreaker` consumes that width-independent payload for each viewport width, preserving separate fit and paint advances, paragraph indents, hard breaks, discretionary soft hyphens, and CoreText grapheme fallback for oversized tokens. Unsupported scripts and attachment-bearing strings continue to route through `TextKitCalculator`.
 

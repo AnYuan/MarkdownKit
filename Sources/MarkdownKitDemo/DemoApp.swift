@@ -262,13 +262,15 @@ enum SyntaxPage: String, CaseIterable, Hashable {
         case .codeBlock:
             return """
             ```swift
-            struct MarkdownParser {
-                func parse(_ text: String) -> DocumentNode {
-                    let document = Document(parsing: text)
-                    var visitor = MarkdownKitVisitor()
-                    let nodes = visitor.defaultVisit(document)
-                    return DocumentNode(range: nil, children: nodes)
-                }
+            let parser = MarkdownParser()
+            let outcome = parser.parseOutcome("# Hello, MarkdownKit")
+
+            switch outcome {
+            case .parsed(let document, let diagnostics):
+                print(document.children.count)
+                print(diagnostics)
+            case .rejected(let diagnostic):
+                print(diagnostic)
             }
             ```
 

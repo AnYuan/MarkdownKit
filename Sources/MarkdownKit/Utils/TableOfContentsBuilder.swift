@@ -1,14 +1,14 @@
 import Foundation
 
 /// A utility that extracts a heading-based table of contents from a `DocumentNode`.
-public struct TableOfContentsBuilder {
+struct TableOfContentsBuilder {
 
     /// A single entry in the table of contents.
-    public struct Entry: Sendable {
+    struct Entry: Sendable {
         /// The heading level (1–6).
-        public let level: Int
+        let level: Int
         /// The plain-text content of the heading.
-        public let text: String
+        let text: String
     }
 
     /// Walks the document's top-level children and extracts all `HeaderNode` entries
@@ -16,7 +16,7 @@ public struct TableOfContentsBuilder {
     ///
     /// - Parameter document: The root document node to scan.
     /// - Returns: An ordered list of heading entries.
-    public static func build(from document: DocumentNode) -> [Entry] {
+    static func build(from document: DocumentNode) -> [Entry] {
         var entries: [Entry] = []
         for child in document.children {
             collectHeadings(from: child, into: &entries)

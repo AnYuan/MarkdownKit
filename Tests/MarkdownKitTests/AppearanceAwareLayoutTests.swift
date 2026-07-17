@@ -270,13 +270,57 @@ final class AppearanceAwareLayoutTests: XCTestCase {
         XCTAssertEqual(stamped.stableIdentity, newIdentity)
     }
 
-    // MARK: - 8. LayoutResult default appearance and renderFingerprint
+    // MARK: - 8. Public LayoutResult defaults and render payload hashing
 
-    func testLayoutResultDefaultsToLightAndContentFingerprint() {
+    func testLayoutResultDefaultsToLightAppearanceAndHashesSize() {
         let node = DocumentNode(range: nil, children: [])
         let result = LayoutResult(node: node, size: .zero)
+        let resized = LayoutResult(node: node, size: CGSize(width: 1, height: 0))
         XCTAssertEqual(result.appearance, .light)
-        XCTAssertEqual(result.renderFingerprint, node.contentFingerprint)
+        XCTAssertNotEqual(result.renderFingerprint, resized.renderFingerprint)
+    }
+
+    func testPublicInitializerRenderFingerprintTracksAttributedPayloadAndVariantDiff() {
+        let node = ParagraphNode(range: nil, children: [TextNode(range: nil, text: "same node")])
+        let first = LayoutResult(
+            node: node,
+            size: CGSize(width: 100, height: 20),
+            attributedString: NSAttributedString(string: "first")
+        )
+        let second = LayoutResult(
+            node: node,
+            size: CGSize(width: 100, height: 20),
+            attributedString: NSAttributedString(string: "second")
+        )
+        let normalizedFirst = LayoutResult.positionedTopLevelLayouts([first])
+        let normalizedSecond = LayoutResult.positionedTopLevelLayouts([second])
+        let previous = [normalizedFirst[0].stableIdentity: normalizedFirst[0]]
+
+        XCTAssertEqual(normalizedFirst[0].stableIdentity, normalizedSecond[0].stableIdentity)
+        XCTAssertNotEqual(normalizedFirst[0].renderFingerprint, normalizedSecond[0].renderFingerprint)
+        XCTAssertEqual(
+            LayoutResultVariantDiff.changedStableIdentities(
+                previous: previous,
+                next: normalizedSecond
+            ),
+            [normalizedFirst[0].stableIdentity]
+        )
+    }
+
+    func testPublicInitializerCustomDrawGetsFreshRenderVariant() {
+        let node = ParagraphNode(range: nil, children: [TextNode(range: nil, text: "drawn")])
+        let first = LayoutResult(
+            node: node,
+            size: CGSize(width: 100, height: 20),
+            customDraw: { _, _ in }
+        )
+        let second = LayoutResult(
+            node: node,
+            size: CGSize(width: 100, height: 20),
+            customDraw: { _, _ in }
+        )
+
+        XCTAssertNotEqual(first.renderFingerprint, second.renderFingerprint)
     }
 
     // MARK: - 9. Attributed string colors are concrete after solving
@@ -368,6 +412,12 @@ final class AppearanceAwareLayoutTests: XCTestCase {
             stableIdentity: original.stableIdentity,
             renderFingerprint: 2
         )
+        let sizeChanged = LayoutResult(
+            node: node,
+            size: CGSize(width: original.size.width, height: original.size.height + 1),
+            stableIdentity: original.stableIdentity,
+            renderFingerprint: 1
+        )
         let unchanged = LayoutResult(
             node: node,
             size: original.size,
@@ -393,6 +443,13 @@ final class AppearanceAwareLayoutTests: XCTestCase {
             LayoutResultVariantDiff.changedStableIdentities(
                 previous: previous,
                 next: [renderVariantChanged, inserted]
+            ),
+            [original.stableIdentity]
+        )
+        XCTAssertEqual(
+            LayoutResultVariantDiff.changedStableIdentities(
+                previous: previous,
+                next: [sizeChanged, inserted]
             ),
             [original.stableIdentity]
         )

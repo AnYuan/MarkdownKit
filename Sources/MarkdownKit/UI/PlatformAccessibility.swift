@@ -6,28 +6,28 @@ import UIKit
 import AppKit
 #endif
 
-/// A cross-platform helper struct to easily extract standard accessibility
-/// roles and string representations from a given `LayoutResult`.
+/// A cross-platform helper struct that maps cached layout accessibility
+/// metadata into platform-native accessibility output for hosted views.
 ///
 /// The expensive work — checkbox enumeration, role-hint derivation — happens
 /// once on the background layout thread in `LayoutResult.accessibility`.
 /// This struct just maps those cached values into platform-specific traits.
-public struct PlatformAccessibility {
+struct PlatformAccessibility {
 
-    public static func accessibilityLabel(for layout: LayoutResult) -> String? {
+    static func accessibilityLabel(for layout: LayoutResult) -> String? {
         layout.accessibility.label
     }
 
-    public static func accessibilityValue(for layout: LayoutResult) -> String? {
+    static func accessibilityValue(for layout: LayoutResult) -> String? {
         layout.accessibility.value
     }
 
-    public static func accessibilityHint(for layout: LayoutResult) -> String? {
+    static func accessibilityHint(for layout: LayoutResult) -> String? {
         layout.accessibility.hint
     }
 
     #if canImport(UIKit)
-    public static func accessibilityTraits(for layout: LayoutResult) -> UIAccessibilityTraits {
+    static func accessibilityTraits(for layout: LayoutResult) -> UIAccessibilityTraits {
         var traits: UIAccessibilityTraits = .staticText
         switch layout.accessibility.nodeRoleHint {
         case .details, .link:
@@ -88,7 +88,7 @@ public struct PlatformAccessibility {
         )
     }
 
-    public static func accessibilityRole(for layout: LayoutResult) -> NSAccessibility.Role {
+    static func accessibilityRole(for layout: LayoutResult) -> NSAccessibility.Role {
         appKitProjection(for: layout).role
     }
     #endif

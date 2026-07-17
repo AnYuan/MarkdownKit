@@ -20,7 +20,7 @@ This document defines the current thread/actor boundaries for parsing, layout, w
     entries. Request identifiers reject late callbacks from older renders.
 11. Inline Markdown image work belongs to the layout task. `ImageResourceLoader.load` is `@concurrent`, rejects disallowed redirects before following them, streams remote bytes under the policy cap, and owns final-response validation plus typed rejection; `ImageAttachmentBuilder` synchronously decodes the returned bytes with ImageIO in the calling layout task.
 12. `ImageAttachmentBuilder` stores decoded, width-constrained thumbnails in a thread-safe `NSCache` keyed by policy/source/rounded target width. Cache entries and each decoded image are bounded; canceled layout tasks do not publish new entries.
-13. `AsyncTextView` rasterizes attributed strings, including `NSTextAttachment` images, off-main; callers must still invoke `configure(with:)` from UI context and final layer mounting remains UI-owned.
+13. The internal `AsyncTextView` rasterizes attributed strings, including `NSTextAttachment` images, off-main; MarkdownKit's collection-view layer invokes `configure(with:)` from UI context and keeps final layer mounting UI-owned.
 14. UI interactions (`onLinkTap`, checkbox/detail closures, platform gesture handlers) remain UI-owned and are executed from view layer contexts, not from parser/resolver callbacks.
 
 ## 2. Rules for New Code

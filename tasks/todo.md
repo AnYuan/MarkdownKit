@@ -455,9 +455,38 @@ review the complete diff, then commit and push before starting the next stage.
   macOS tests, 485 macOS fast-gate tests, 502 discoverable-test documentation
   checks, visual and determinism snapshot gates (4/4 each), 535 iOS Simulator
   tests, and the complete benchmark gate all pass.
-- [ ] `refactor: curate the pre-1.0 public API`
+- [x] `refactor: curate the pre-1.0 public API`
   Internalize implementation details, remove unnecessary re-exports, and document
   the remaining supported surface.
+  Q19 scope: lock stable and advanced workflows with normal-import smoke tests;
+  remove transitive SwiftUI/Splash exports; internalize visitor, sanitizer,
+  calculators/highlighter, cache fingerprint/diagnostic operations, native-image
+  alias, TOC helper, hosted platform views/cells, platform accessibility, stable
+  diff identity, and cached accessibility metadata. Keep parser/engine/solver,
+  SwiftUI and direct collection-view integration, Theme/tokens/image policy,
+  built-in nodes/plugins, AST rewrite helpers, autolink migration shims, and
+  diagram/math adapters public. Slim public `LayoutResult` construction to the
+  render payload instead of allowing callers to fabricate internal identity,
+  cache-variant, or accessibility-cache state.
+  - [x] Q19-A lock supported normal-import workflows, document API tiers, and
+    remove SwiftUI/Splash re-exports.
+  - [x] Q19-B internalize core calculators, sanitizer, highlighter, image alias,
+    TOC helper, cache operations/diagnostics, and theme fingerprint helpers.
+  - [x] Q19-C internalize the swift-markdown visitor and move demo/AST guidance
+    to `MarkdownParser`.
+  - [x] Q19-D internalize platform render plumbing and slim `LayoutResult`.
+  - [x] Q19-E measure/review/validate the final public contract, then commit and
+    push atomically.
+  Review: normal-import consumers retain the documented stable and advanced
+  workflows, while implementation-only symbols are absent from the public
+  symbol graph. Review passes caught and fixed duplicate manual-row identities,
+  stale host-built render payloads, size-only row refresh, and UIKit flow-layout
+  invalidation without re-exposing internal identity or cache-variant controls.
+  Validation: direct source `public`/`open` declarations fell from 553 to 420;
+  the public graph has 452 symbols and zero deny-listed leaks. Full macOS (516)
+  and iOS Simulator (550) tests, the fast gate, both 4-test snapshot gates,
+  documentation freshness at 516 discoverable tests, and the complete benchmark
+  gate all pass.
 - [ ] `chore: establish release and repository hygiene`
   Pin moving dependencies, add license/notices/changelog, adopt valid SemVer tags,
   record vendored resource provenance, and remove orphan generated artifacts.

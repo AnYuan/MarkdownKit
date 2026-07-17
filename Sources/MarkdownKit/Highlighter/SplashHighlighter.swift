@@ -15,15 +15,15 @@ import AppKit
 /// A thread-safe utility wrapper around the `Splash` syntax highlighter.
 /// This executes efficiently on background queues to generate fully styled `NSAttributedString`s
 /// before the LayoutSolver measures them.
-public struct SplashHighlighter {
+struct SplashHighlighter {
 
     /// Languages that Splash can tokenize correctly (Swift grammar only).
-    public static let swiftFamilyLanguages: Set<String> = [
+    static let swiftFamilyLanguages: Set<String> = [
         "swift", "swift5", "swift6", "swiftlang"
     ]
 
     /// All languages with any highlighting support (Swift + generic keyword).
-    public static let supportedLanguages: Set<String> = {
+    static let supportedLanguages: Set<String> = {
         var set = swiftFamilyLanguages
         set.formUnion(GenericKeywordHighlighter.supportedLanguages)
         return set
@@ -39,7 +39,7 @@ public struct SplashHighlighter {
         ]
     }
 
-    public init(theme: Theme = .default) {
+    init(theme: Theme = .default) {
         self.theme = theme
 
         // Map our global Theme's typography to Splash's specific Font format
@@ -84,7 +84,7 @@ public struct SplashHighlighter {
     ///   - language: Optional language identifier (e.g. "swift").
     ///     Swift-family languages use Splash tokenization, known non-Swift languages
     ///     use generic keyword highlighting, and unknown languages fall back to plain styling.
-    public func highlight(_ code: String, language: String? = nil) -> NSAttributedString {
+    func highlight(_ code: String, language: String? = nil) -> NSAttributedString {
         guard let normalizedLanguage = normalizedLanguage(language) else {
             return NSAttributedString(string: code, attributes: plainCodeAttributes)
         }

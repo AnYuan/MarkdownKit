@@ -14,37 +14,37 @@ import UIKit
 ///
 /// Interaction is handled via TextKit 1 hit-testing on the original `NSAttributedString`
 /// (same approach as Texture's ASTextNode2), with a highlight overlay CALayer for pressed state.
-public class AsyncTextView: UIView {
+class AsyncTextView: UIView {
 
     /// The theme controlling highlight style and other visual parameters.
-    public var theme: Theme = .default
+    var theme: Theme = .default
 
     /// When `true` (the default), text is rasterized on a background executor and
     /// mounted to `layer.contents` asynchronously — identical to Texture's display pipeline.
     /// Set to `false` to render synchronously on the main thread, which is useful for
     /// snapshot testing and small-content previews.
-    public var displaysAsynchronously: Bool = true
+    var displaysAsynchronously: Bool = true
 
     // MARK: - Interaction Callbacks
 
     /// Called when the user taps a link. If nil, links open via `UIApplication.shared.open()`.
-    public var onLinkTap: ((URL) -> Void)?
+    var onLinkTap: ((URL) -> Void)?
 
     /// Called when the user taps a checkbox prefix.
-    public var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
+    var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
 
     /// Set of custom attribute keys that should trigger tap callbacks.
-    public var customInteractiveAttributes: Set<NSAttributedString.Key> = []
+    var customInteractiveAttributes: Set<NSAttributedString.Key> = []
 
     /// Called when a tap lands on a character with a registered custom interactive attribute.
-    public var onCustomAttributeTap: ((NSAttributedString.Key, Any) -> Void)?
+    var onCustomAttributeTap: ((NSAttributedString.Key, Any) -> Void)?
 
     // MARK: - Private State
 
     private var currentDrawTask: Task<Void, Never>?
 
-    /// Retained for hit-testing after rasterization. Public read for content-change detection.
-    public private(set) var currentAttributedString: NSAttributedString?
+    /// Retained for hit-testing after rasterization and internal content-change checks.
+    private(set) var currentAttributedString: NSAttributedString?
     private var currentSize: CGSize = .zero
 
     /// Custom CGContext drawing closure from `LayoutResult.customDraw`.
@@ -90,9 +90,8 @@ public class AsyncTextView: UIView {
         init(_ image: CGImage) { self.image = image }
     }
 
-    /// Drops all cached rasterized bitmaps. Hosts can call this from
-    /// memory-warning handlers; the cache also auto-evicts under pressure.
-    public static func clearImageCache() {
+    /// Drops all cached rasterized bitmaps. The cache also auto-evicts under pressure.
+    static func clearImageCache() {
         imageCache.removeAllObjects()
     }
 
@@ -112,7 +111,7 @@ public class AsyncTextView: UIView {
     ///
     /// Caller is responsible for retaining the returned `Task` so it can be
     /// cancelled in `cancelPrefetchingForItemsAt` when scrolling reverses.
-    public static func preheat(_ layout: LayoutResult, scale: CGFloat = 2) -> Task<Void, Never> {
+    static func preheat(_ layout: LayoutResult, scale: CGFloat = 2) -> Task<Void, Never> {
         let size = layout.size
         let appearance = layout.appearance
         let cacheKey = imageCacheKey(
@@ -165,7 +164,7 @@ public class AsyncTextView: UIView {
 
     // MARK: - Init
 
-    public override init(frame: CGRect) {
+    override init(frame: CGRect) {
         super.init(frame: frame)
         setup()
     }
@@ -192,7 +191,7 @@ public class AsyncTextView: UIView {
         addGestureRecognizer(pressGesture)
     }
 
-    public override func didMoveToWindow() {
+    override func didMoveToWindow() {
         super.didMoveToWindow()
         // When the view enters a new window (e.g. moved to an external
         // display) the display scale may change. Refresh to keep rasterized
@@ -220,7 +219,7 @@ public class AsyncTextView: UIView {
     /// Resets internal state so the view can be reused by a recycling cell.
     /// Does **not** remove the view from its superview — the caller keeps the
     /// instance alive across cell recycles to amortize allocation cost.
-    public func prepareForReuse() {
+    func prepareForReuse() {
         currentDrawTask?.cancel()
         currentDrawTask = nil
         currentAttributedString = nil
@@ -238,7 +237,7 @@ public class AsyncTextView: UIView {
     // MARK: - Configure
 
     /// Binds the `LayoutResult` constraint to the view, launching an asynchronous drawing operation.
-    public func configure(with layout: LayoutResult) {
+    func configure(with layout: LayoutResult) {
         // Cancel any pending draw operation if this view was recycled quickly
         currentDrawTask?.cancel()
         hitTester = nil // Invalidate stale hit-tester on reconfigure
@@ -594,14 +593,14 @@ public class AsyncTextView: UIView {
 
 /// A read-only native text surface that keeps MarkdownKit styling while enabling
 /// system text selection, copy, and edit-menu behavior.
-public final class SelectableTextView: UITextView {
+final class SelectableTextView: UITextView {
 
-    public var onLinkTap: ((URL) -> Void)?
-    public var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
-    public var customInteractiveAttributes: Set<NSAttributedString.Key> = []
-    public var onCustomAttributeTap: ((NSAttributedString.Key, Any) -> Void)?
+    var onLinkTap: ((URL) -> Void)?
+    var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
+    var customInteractiveAttributes: Set<NSAttributedString.Key> = []
+    var onCustomAttributeTap: ((NSAttributedString.Key, Any) -> Void)?
 
-    public private(set) var currentAttributedString: NSAttributedString?
+    private(set) var currentAttributedString: NSAttributedString?
 
     private lazy var interactionTapGesture: UITapGestureRecognizer = {
         let gesture = UITapGestureRecognizer(target: self, action: #selector(handleInteractionTap(_:)))
@@ -610,16 +609,16 @@ public final class SelectableTextView: UITextView {
         return gesture
     }()
 
-    public convenience init(frame: CGRect) {
+    convenience init(frame: CGRect) {
         self.init(frame: frame, textContainer: nil)
     }
 
-    public override init(frame: CGRect, textContainer: NSTextContainer?) {
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
         setup()
     }
 
-    public required init?(coder: NSCoder) {
+    required init?(coder: NSCoder) {
         super.init(coder: coder)
         setup()
     }
@@ -638,7 +637,7 @@ public final class SelectableTextView: UITextView {
         addGestureRecognizer(interactionTapGesture)
     }
 
-    public func configure(with layout: LayoutResult) {
+    func configure(with layout: LayoutResult) {
         frame.size = layout.size
         textContainer.size = layout.size
 
@@ -654,7 +653,7 @@ public final class SelectableTextView: UITextView {
     }
 
     /// Resets selectable state so the view can be reused by a recycling cell.
-    public func prepareForReuse() {
+    func prepareForReuse() {
         currentAttributedString = nil
         attributedText = nil
     }
@@ -706,7 +705,7 @@ public final class SelectableTextView: UITextView {
 }
 
 extension SelectableTextView: UITextViewDelegate {
-    public func textView(
+    func textView(
         _ textView: UITextView,
         shouldInteractWith url: URL,
         in characterRange: NSRange,
@@ -722,7 +721,7 @@ extension SelectableTextView: UITextViewDelegate {
 }
 
 extension SelectableTextView: UIGestureRecognizerDelegate {
-    public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         interactionHit(at: touch.location(in: self)) != nil
     }
 }

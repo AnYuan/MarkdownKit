@@ -9,22 +9,22 @@ import UIKit
 /// A highly reusable, recycled view cell managed by `UICollectionView`.
 /// Its sole responsibility is mounting the pre-calculated `LayoutResult`
 /// and displaying the dynamically generated background `CGImage` or `CGContext` snapshots.
-public class MarkdownCollectionViewCell: UICollectionViewCell {
+class MarkdownCollectionViewCell: UICollectionViewCell {
 
-    public static let reuseIdentifier = "MarkdownCollectionViewCell"
+    static let reuseIdentifier = "MarkdownCollectionViewCell"
 
     /// The specific view container responsible for rendering the assigned AST element.
     private var hostedView: UIView?
 
     // MARK: - Interaction Callbacks (set by collection view before configure)
 
-    public var onLinkTap: ((URL) -> Void)?
-    public var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
-    public var onDetailsTap: ((DetailsNode) -> Void)?
-    public var theme: Theme = .default
-    public var textInteractionMode: MarkdownTextInteractionMode = .asyncReadOnly
+    var onLinkTap: ((URL) -> Void)?
+    var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
+    var onDetailsTap: ((DetailsNode) -> Void)?
+    var theme: Theme = .default
+    var textInteractionMode: MarkdownTextInteractionMode = .asyncReadOnly
 
-    public override func prepareForReuse() {
+    override func prepareForReuse() {
         super.prepareForReuse()
         // Keep the hosted code/text view alive across recycles and reset its
         // state in place so cell pooling also reuses the expensive inner view.
@@ -50,7 +50,7 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
     }
 
     /// Mounts the pre-calculated `LayoutResult` onto the main thread.
-    public func configure(with layout: LayoutResult) {
+    func configure(with layout: LayoutResult) {
         switch layout.node {
         case is CodeBlockNode, is DiagramNode:
             if let codeView = hostedView as? AsyncCodeView {

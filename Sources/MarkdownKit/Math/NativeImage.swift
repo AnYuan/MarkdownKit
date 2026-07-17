@@ -9,8 +9,8 @@
 
 #if canImport(UIKit)
 import UIKit
-public typealias NativeImage = UIImage
+typealias NativeImage = UIImage
 #elseif canImport(AppKit)
 import AppKit
-public typealias NativeImage = NSImage
+typealias NativeImage = NSImage
 #endif

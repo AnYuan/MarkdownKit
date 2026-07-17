@@ -1,67 +1,118 @@
 # Getting Started with MarkdownKit
 
-Learn how to integrate responsive, off-main-thread Markdown rendering into your iOS and macOS apps.
+Learn the supported ways to parse, lay out, and render MarkdownKit content in iOS and macOS apps.
 
 ## Overview
 
-Unlike traditional web-view based renderers, MarkdownKit calculates sizes and text attributes asynchronously using native APIs (TextKit 2), then mounts components only as they enter the visible bounds of your `NSCollectionView` or `UICollectionView`.
+MarkdownKit is centered on native parsing plus off-main layout. Prefer ``MarkdownKitEngine`` for app code, use ``MarkdownParser`` and ``LayoutSolver`` explicitly when you need pipeline control, and inspect typed parse outcomes for untrusted content. ``MarkdownView`` is the primary SwiftUI rendering surface; direct ``MarkdownCollectionView`` use is an advanced integration path for host-owned virtualization.
 
-### Basic Rendering Pipeline
+### One-call Layout
 
-1. **Parse**: Convert a raw markdown string into a native AST using `MarkdownParser`.
-2. **Solve**: Pass the AST to `LayoutSolver.solve(node:constrainedToWidth:)` to compute sizes asynchronously.
-3. **Display**: Update the `MarkdownCollectionView` with the resulting `[LayoutResult]` array.
+Use ``MarkdownKitEngine/layout(markdown:constrainedToWidth:parser:solver:appearance:)`` when you need a single immutable ``LayoutResult`` tree.
 
 ```swift
-let markdownString = "# Getting Started\nThis is a highly optimized engine."
-let ast = MarkdownParser().parse(markdownString)
+import MarkdownKit
 
-Task {
-    // Solve layout on a background thread
-    let layoutEngine = LayoutSolver()
-    let layoutResult = await layoutEngine.solve(node: ast, constrainedToWidth: view.bounds.width)
-    
-    // Switch to main thread to instruct the CollectionView to render
-    await MainActor.run {
-        markdownCollectionView.layouts = [layoutResult]
-    }
-}
+let layout = await MarkdownKitEngine.layout(
+    markdown: "# Getting Started\nThis is a native MarkdownKit layout.",
+    constrainedToWidth: 640
+)
+
+print(layout.children.count)
 ```
 
-`MarkdownParser.parse(_:)` above is a lossy compatibility convenience: it logs diagnostics and
-returns an empty (or partially-truncated) document instead of surfacing rejection. `MarkdownParser`
-itself is synchronous and not `Sendable`, so keep a configured parser (and its plugins) confined
-to a single task rather than sharing it across concurrent tasks; the example above stays on the
-calling task until `parse(_:)` returns, then hops onto the `Task` for layout.
+Direct layout APIs use `.light` appearance by default. Pass `appearance: .dark` or a custom solver when you need deterministic dark output.
 
-### Handling Untrusted Input
+### Explicit Parser and Solver
 
-When rendering content you don't control (e.g. user-generated Markdown), inspect the typed
-`parseOutcome(_:)` result instead of the lossy `parse(_:)` convenience:
+Use explicit construction when you need custom plugins, a shared cache, theme selection, diagram adapters, math adapters, or image-loading policy.
 
 ```swift
-let parser = MarkdownParser() // default limits: 1,048,576 UTF-8 bytes, 50 levels of AST-mapping recursion
+import MarkdownKit
+
+let parser = MarkdownKitEngine.makeParser(
+    includeGitHubAutolinks: true
+)
+let solver = MarkdownKitEngine.makeLayoutSolver(
+    theme: .default,
+    imageLoadingPolicy: .remoteHTTPS
+)
+
+let document = parser.parse(markdownString)
+let layout = await solver.solve(node: document, constrainedToWidth: 640)
+```
+
+`parse(_:)` is a lossy compatibility convenience: it logs diagnostics and returns an empty or partially truncated document instead of surfacing rejection. Keep configured parser/plugin instances task-confined; plugins are not required to be `Sendable`.
+
+### Resource Limits and Typed Outcomes
+
+For untrusted or unbounded content, inspect ``MarkdownParser/parseOutcome(_:)`` and configure ``MarkdownParser/ResourceLimits`` for the host surface.
+
+```swift
+import MarkdownKit
+
+let parser = MarkdownKitEngine.makeParser(
+    resourceLimits: .init(maximumInputBytes: 1_000_000, maximumNestingDepth: 50)
+)
 
 switch parser.parseOutcome(untrustedMarkdown) {
 case .parsed(let document, let diagnostics):
-    // `diagnostics` may include `.maximumNestingDepthExceeded` if a deeply nested
-    // subtree was truncated during native-AST mapping; the document is still usable.
-    let layoutResult = await LayoutSolver().solve(node: document, constrainedToWidth: view.bounds.width)
+    let layout = await MarkdownKitEngine.makeLayoutSolver().solve(
+        node: document,
+        constrainedToWidth: 640
+    )
+    render(layout, diagnostics: diagnostics)
 case .rejected(let diagnostic):
-    // Input's UTF-8 byte count exceeded `limits.maximumInputBytes` before any
-    // swift-markdown parsing occurred.
     presentRejection(diagnostic)
 }
 ```
 
-`parseOutcome(_:)` never logs; it's the API to use when you need to distinguish rejected input
-from a document that parsed successfully with no content, or need programmatic access to
-diagnostics.
+The input byte limit is enforced before `swift-markdown` parsing. The nesting-depth limit bounds only native-AST mapping, not layout depth.
 
-### Extending with Plugins
+### SwiftUI Rendering
 
-MarkdownKit’s AST is fully manipulable. You can write your own `ASTPlugin` to transform specific nodes before the layout engine calculates styling. For example, replacing a custom directive `::: info :::` into a custom stylized Quote block.
+SwiftUI hosts must import SwiftUI explicitly; MarkdownKit does not re-export it.
 
-### Accessibility
+```swift
+import MarkdownKit
+import SwiftUI
 
-MarkdownKit handles standard accessibility properties mapping automatically, but for customized interactive views, it leans on built-in Apple APIs. All virtualized blocks natively expose corresponding `UIAccessibilityElement` or `NSAccessibilityElement` roles to maintain VoiceOver purity.
+struct MarkdownArticleView: View {
+    let markdown: String
+
+    var body: some View {
+        MarkdownView(
+            text: markdown,
+            imageLoadingPolicy: .remoteHTTPS
+        )
+        .textInteractionMode(.selectableNative)
+        .onLinkTap { url in
+            open(url)
+        }
+        .onCheckboxToggle { checkbox in
+            updateTask(isChecked: checkbox.isChecked)
+        }
+    }
+}
+```
+
+``MarkdownView`` coordinates parse/layout work with cancellation, reuses layout caches while inputs stay compatible, follows the SwiftUI color scheme, and keeps UI interactions in host-owned callbacks.
+
+### Advanced Collection View Integration
+
+Use ``MarkdownCollectionView`` directly only when you own the UIKit/AppKit container and want to feed precomputed layouts yourself.
+
+```swift
+import MarkdownKit
+import UIKit
+
+let collectionView = MarkdownCollectionView(frame: view.bounds)
+collectionView.textInteractionMode = .asyncReadOnly
+collectionView.layouts = layout.children
+```
+
+On macOS, import AppKit instead of UIKit. Keep UIKit/AppKit mutation on the main actor and keep sizing O(1) by using precomputed ``LayoutResult/size`` values.
+
+### Extending the Pipeline
+
+Write ``ASTPlugin`` implementations for AST rewrites, register ``DiagramRenderingAdapter`` values with ``DiagramAdapterRegistry``, inject ``MathRenderingAdapter`` implementations into ``LayoutSolver``, and customize output with ``Theme``, ``TypographyToken``, ``ColorToken``, ``MarkdownAppearance``, and ``ImageLoadingPolicy``. See <doc:PublicAPI> for the supported surface.

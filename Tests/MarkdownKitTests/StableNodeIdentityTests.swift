@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 @testable import MarkdownKit
 
 /// Verifies `LayoutResult.stableIdentity` is correctly assigned by
@@ -98,6 +99,58 @@ final class StableNodeIdentityTests: XCTestCase {
             layout.children[0].stableIdentity,
             layout.children[1].stableIdentity,
             "Different positions → distinct stableIdentity"
+        )
+    }
+
+    func testManualTopLevelNormalizationDisambiguatesIdenticalSiblingRows() {
+        let node = ParagraphNode(range: nil, children: [TextNode(range: nil, text: "manual row")])
+        let first = LayoutResult(
+            node: node,
+            size: CGSize(width: 320, height: 44),
+            attributedString: NSAttributedString(string: "manual row")
+        )
+        let second = LayoutResult(
+            node: node,
+            size: CGSize(width: 320, height: 44),
+            attributedString: NSAttributedString(string: "manual row")
+        )
+
+        XCTAssertEqual(first.stableIdentity, second.stableIdentity)
+
+        let normalized = LayoutResult.positionedTopLevelLayouts([first, second])
+
+        XCTAssertNotEqual(normalized[0].stableIdentity, normalized[1].stableIdentity)
+        XCTAssertEqual(
+            normalized[0].stableIdentity,
+            StableNodeIdentity(
+                contentFingerprint: node.contentFingerprint,
+                pathHash: StableNodeIdentity.pathHash(for: [0])
+            )
+        )
+        XCTAssertEqual(
+            normalized[1].stableIdentity,
+            StableNodeIdentity(
+                contentFingerprint: node.contentFingerprint,
+                pathHash: StableNodeIdentity.pathHash(for: [1])
+            )
+        )
+    }
+
+    func testTopLevelNormalizationMatchesSolverAssignedIdentity() async {
+        let parser = MarkdownParser()
+        let solver = LayoutSolver()
+        let result = await solver.solve(
+            node: parser.parse("""
+            Paragraph one.
+
+            Paragraph two.
+            """),
+            constrainedToWidth: 320
+        )
+
+        XCTAssertEqual(
+            LayoutResult.positionedTopLevelLayouts(result.children).map(\.stableIdentity),
+            result.children.map(\.stableIdentity)
         )
     }
 }

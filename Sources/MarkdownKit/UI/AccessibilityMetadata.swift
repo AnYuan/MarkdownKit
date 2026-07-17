@@ -10,20 +10,20 @@
 
 import Foundation
 
-public struct AccessibilityMetadata: Sendable {
+struct AccessibilityMetadata: Sendable {
     /// VoiceOver-spoken text. May be `nil` when the node has no spoken value
     /// (e.g. a `ThematicBreakNode`).
-    public let label: String?
+    let label: String?
 
     /// Generic value string for states like "Expanded" / "Checked".
-    public let value: String?
+    let value: String?
 
     /// VoiceOver hint describing the interaction model, if any.
-    public let hint: String?
+    let hint: String?
 
     /// Stable, platform-agnostic role discriminator. `PlatformAccessibility`
     /// translates this to `UIAccessibilityTraits` / `NSAccessibility.Role`.
-    public enum NodeRoleHint: Sendable {
+    enum NodeRoleHint: Sendable {
         case staticText
         case details
         case link
@@ -33,13 +33,13 @@ public struct AccessibilityMetadata: Sendable {
         case math
     }
 
-    public let nodeRoleHint: NodeRoleHint
+    let nodeRoleHint: NodeRoleHint
 
     /// Task-list state used by platform adapters to expose native checkbox
     /// semantics without re-scanning the rendered attributed string.
-    public let taskCheckboxState: CheckboxState
+    let taskCheckboxState: CheckboxState
 
-    public init(
+    init(
         label: String?,
         value: String?,
         hint: String?,

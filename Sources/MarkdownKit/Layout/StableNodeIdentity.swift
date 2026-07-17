@@ -17,24 +17,24 @@
 
 import Foundation
 
-public struct StableNodeIdentity: Hashable, Sendable {
+struct StableNodeIdentity: Hashable, Sendable {
     /// The node's content fingerprint (type + own props + children fingerprints).
-    public let contentFingerprint: Int
+    let contentFingerprint: Int
 
     /// A hash of the index path from the document root to this node.
     /// A leading top-level block has `pathHash` derived from `[i]`; a nested
-    /// block has `pathHash` derived from `[i, j, …]`. The exact integers don't
-    /// leak via the public API — we only expose the final folded hash.
-    public let pathHash: Int
+    /// block has `pathHash` derived from `[i, j, …]`. The exact integers are
+    /// intentionally hidden — we only expose the final folded hash internally.
+    let pathHash: Int
 
-    public init(contentFingerprint: Int, pathHash: Int) {
+    init(contentFingerprint: Int, pathHash: Int) {
         self.contentFingerprint = contentFingerprint
         self.pathHash = pathHash
     }
 
     /// Folds an `[Int]` index path into a single hash. Use during recursive
     /// layout building.
-    public static func pathHash(for indexPath: [Int]) -> Int {
+    static func pathHash(for indexPath: [Int]) -> Int {
         var hasher = Hasher()
         for index in indexPath {
             hasher.combine(index)

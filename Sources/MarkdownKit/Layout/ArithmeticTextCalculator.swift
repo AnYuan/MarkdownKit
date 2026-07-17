@@ -22,7 +22,7 @@ import AppKit
 /// - Important: This class should only be used for pure-text nodes that do
 ///   NOT contain inline attachments (e.g. math formulas, images) or
 ///   complex text shaping requirements (e.g. Arabic, Thai ligatures).
-public final class ArithmeticTextCalculator {
+final class ArithmeticTextCalculator {
 
     struct PreparedTextProfile {
         var containsUnsupportedScript = false
@@ -173,7 +173,7 @@ public final class ArithmeticTextCalculator {
         }
     }
 
-    public init() {}
+    init() {}
 
     static func preparedTextCacheHitsForTesting() -> Int {
         testCounterLock.lock()
@@ -226,7 +226,7 @@ public final class ArithmeticTextCalculator {
     ///   - attributedString: The pure-text themed string to measure.
     ///   - maxWidth: The maximum width of the containing viewport.
     /// - Returns: The precise `CGSize` necessary to display the text without clipping.
-    public func calculateSize(for attributedString: NSAttributedString, constrainedToWidth maxWidth: CGFloat) -> CGSize {
+    func calculateSize(for attributedString: NSAttributedString, constrainedToWidth maxWidth: CGFloat) -> CGSize {
         guard attributedString.length > 0 else { return .zero }
 
         let preparedText = prepare(attributedString: attributedString)

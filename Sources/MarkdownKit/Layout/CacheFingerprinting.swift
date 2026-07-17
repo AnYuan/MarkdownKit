@@ -27,7 +27,7 @@ extension Theme {
     /// Mixes every theme-derived value the layout cache must invalidate on
     /// into the supplied hasher. Used by `LayoutSolver` when constructing the
     /// `cacheVariantHash` it threads through every `LayoutCache` key.
-    public func cacheFingerprint(into hasher: inout Hasher) {
+    func cacheFingerprint(into hasher: inout Hasher) {
         typography.header1.cacheFingerprint(into: &hasher)
         typography.header2.cacheFingerprint(into: &hasher)
         typography.header3.cacheFingerprint(into: &hasher)
@@ -73,7 +73,7 @@ extension Theme {
 }
 
 extension TypographyToken {
-    public func cacheFingerprint(into hasher: inout Hasher) {
+    func cacheFingerprint(into hasher: inout Hasher) {
         font.cacheFingerprint(into: &hasher)
         hasher.combine(Double(lineHeightMultiple))
         hasher.combine(Double(paragraphSpacing))
@@ -81,14 +81,14 @@ extension TypographyToken {
 }
 
 extension ColorToken {
-    public func cacheFingerprint(into hasher: inout Hasher) {
+    func cacheFingerprint(into hasher: inout Hasher) {
         foreground.cacheFingerprint(into: &hasher)
         background.cacheFingerprint(into: &hasher)
     }
 }
 
 extension Theme.CodeBlockStyle {
-    public func cacheFingerprint(into hasher: inout Hasher) {
+    func cacheFingerprint(into hasher: inout Hasher) {
         hasher.combine(Double(cornerRadius))
         hasher.combine(Double(layoutTotalInset))
         hasher.combine(Double(viewPadding))
@@ -107,7 +107,7 @@ extension Theme.CodeBlockStyle {
 }
 
 extension Theme.TableStyle {
-    public func cacheFingerprint(into hasher: inout Hasher) {
+    func cacheFingerprint(into hasher: inout Hasher) {
         hasher.combine(Double(cornerRadius))
         hasher.combine(Double(borderWidth))
         hasher.combine(Double(cellPaddingH))
@@ -126,7 +126,7 @@ extension Theme.TableStyle {
 }
 
 extension Theme.SyntaxColors {
-    public func cacheFingerprint(into hasher: inout Hasher) {
+    func cacheFingerprint(into hasher: inout Hasher) {
         keyword.cacheFingerprint(into: &hasher)
         string.cacheFingerprint(into: &hasher)
         type.cacheFingerprint(into: &hasher)

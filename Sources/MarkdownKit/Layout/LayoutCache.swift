@@ -67,19 +67,19 @@ public final class LayoutCache: @unchecked Sendable {
     private var hitCountStorage: Int = 0
     private var missCountStorage: Int = 0
 
-    public var hitCountForTesting: Int {
+    var hitCountForTesting: Int {
         statsLock.lock()
         defer { statsLock.unlock() }
         return hitCountStorage
     }
 
-    public var missCountForTesting: Int {
+    var missCountForTesting: Int {
         statsLock.lock()
         defer { statsLock.unlock() }
         return missCountStorage
     }
 
-    public func resetStatsForTesting() {
+    func resetStatsForTesting() {
         statsLock.lock()
         hitCountStorage = 0
         missCountStorage = 0
@@ -100,13 +100,13 @@ public final class LayoutCache: @unchecked Sendable {
         cache.countLimit = countLimit
     }
 
-    // MARK: - Public API
+    // MARK: - Cache Operations
 
     /// Retrieve a pre-calculated layout if it exists for the given node and container width.
     ///
     /// O(1) with respect to subtree size: content and interaction fingerprints
     /// were computed once at parse time, so no recursive tree walk happens here.
-    public func getLayout(
+    func getLayout(
         for node: MarkdownNode,
         constrainedToWidth width: CGFloat,
         variantHash: Int = 0
@@ -129,7 +129,7 @@ public final class LayoutCache: @unchecked Sendable {
     }
 
     /// Store a freshly computed layout frame.
-    public func setLayout(
+    func setLayout(
         _ result: LayoutResult,
         constrainedToWidth width: CGFloat,
         variantHash: Int = 0

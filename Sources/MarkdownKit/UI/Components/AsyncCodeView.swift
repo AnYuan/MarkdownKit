@@ -9,13 +9,13 @@ import UIKit
 /// A Texture-inspired asynchronous native view specifically tailored for Code Blocks.
 /// It wraps an `AsyncTextView` to perform actual text rendering, but manages its own
 /// background layer for the block's background color and corner radius.
-public class AsyncCodeView: UIView {
+class AsyncCodeView: UIView {
     
     private let textView = AsyncTextView(frame: .zero)
     private let copyButton = UIButton(type: .system)
 
     /// Forwards to the inner `AsyncTextView.displaysAsynchronously`.
-    public var displaysAsynchronously: Bool {
+    var displaysAsynchronously: Bool {
         get { textView.displaysAsynchronously }
         set { textView.displaysAsynchronously = newValue }
     }
@@ -35,7 +35,7 @@ public class AsyncCodeView: UIView {
 
     private var padding: CGFloat { theme.codeBlock.viewPadding }
     
-    public init(frame: CGRect, theme: Theme = .default) {
+    init(frame: CGRect, theme: Theme = .default) {
         self.theme = theme
         super.init(frame: frame)
         setup()
@@ -112,7 +112,7 @@ public class AsyncCodeView: UIView {
         copyButton.tintColor = .secondaryLabel
     }
     
-    public override func layoutSubviews() {
+    override func layoutSubviews() {
         super.layoutSubviews()
         // Pin the internal async text view with padding
         textView.frame = bounds.insetBy(dx: padding, dy: padding)
@@ -129,14 +129,14 @@ public class AsyncCodeView: UIView {
     }
     
     /// Resets internal state so the view can be reused by a recycling cell.
-    public func prepareForReuse() {
+    func prepareForReuse() {
         resetCopyFeedback()
         rawCode = ""
         textView.prepareForReuse()
     }
 
     /// Binds the `LayoutResult` constraint to the view.
-    public func configure(with layout: LayoutResult, theme: Theme? = nil) {
+    func configure(with layout: LayoutResult, theme: Theme? = nil) {
         resetCopyFeedback()
         let sourceTheme = theme ?? lastConfiguredTheme ?? self.theme
         if lastConfiguredTheme != sourceTheme || lastConfiguredAppearance != layout.appearance {

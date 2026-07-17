@@ -3,8 +3,8 @@ import Markdown
 
 /// A visitor that traverses the `swift-markdown` syntax tree and converts Apple's C-backed
 /// syntax structures into our highly stabilized, thread-safe, and asynchronous-ready `MarkdownNode` models.
-public struct MarkdownKitVisitor: MarkupVisitor {
-    public typealias Result = [MarkdownNode]
+struct MarkdownKitVisitor: MarkupVisitor {
+    typealias Result = [MarkdownNode]
     
     /// The maximum native-AST container nesting retained beneath a root document.
     /// A boundary container remains mapped while its descendants are omitted.
@@ -15,15 +15,15 @@ public struct MarkdownKitVisitor: MarkupVisitor {
     /// children that were therefore omitted from the mapped tree. Reset at the start of
     /// each top-level traversal so a reused visitor reports only the most recent traversal's
     /// truncation state.
-    public private(set) var didTruncateAtMaximumDepth: Bool = false
+    private(set) var didTruncateAtMaximumDepth: Bool = false
 
-    public init(maxDepth: Int = 50) {
+    init(maxDepth: Int = 50) {
         self.maxDepth = max(1, maxDepth)
     }
     
     // MARK: - Core Entry Point
     
-    public mutating func defaultVisit(_ markup: Markup) -> [MarkdownNode] {
+    mutating func defaultVisit(_ markup: Markup) -> [MarkdownNode] {
         if currentDepth == 0 {
             didTruncateAtMaximumDepth = false
         }
@@ -49,7 +49,7 @@ public struct MarkdownKitVisitor: MarkupVisitor {
         return children
     }
     
-    public mutating func visitDocument(_ document: Document) -> [MarkdownNode] {
+    mutating func visitDocument(_ document: Document) -> [MarkdownNode] {
         let children = defaultVisit(document)
         let node = DocumentNode(range: document.range, children: children)
         return [node]
@@ -57,105 +57,105 @@ public struct MarkdownKitVisitor: MarkupVisitor {
     
     // MARK: - Basic Nodes
     
-    public mutating func visitHeading(_ heading: Heading) -> [MarkdownNode] {
+    mutating func visitHeading(_ heading: Heading) -> [MarkdownNode] {
         HeadingMapper().map(heading, visitor: &self)
     }
     
-    public mutating func visitParagraph(_ paragraph: Paragraph) -> [MarkdownNode] {
+    mutating func visitParagraph(_ paragraph: Paragraph) -> [MarkdownNode] {
         ParagraphMapper().map(paragraph, visitor: &self)
     }
     
-    public mutating func visitText(_ text: Markdown.Text) -> [MarkdownNode] {
+    mutating func visitText(_ text: Markdown.Text) -> [MarkdownNode] {
         TextMapper().map(text, visitor: &self)
     }
     
     // MARK: - Complex Nodes
     
-    public mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> [MarkdownNode] {
+    mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> [MarkdownNode] {
         CodeBlockMapper().map(codeBlock, visitor: &self)
     }
     
-    public mutating func visitInlineCode(_ inlineCode: InlineCode) -> [MarkdownNode] {
+    mutating func visitInlineCode(_ inlineCode: InlineCode) -> [MarkdownNode] {
         InlineCodeMapper().map(inlineCode, visitor: &self)
     }
     
-    public mutating func visitImage(_ image: Markdown.Image) -> [MarkdownNode] {
+    mutating func visitImage(_ image: Markdown.Image) -> [MarkdownNode] {
         ImageMapper().map(image, visitor: &self)
     }
     
-    public mutating func visitLink(_ link: Markdown.Link) -> [MarkdownNode] {
+    mutating func visitLink(_ link: Markdown.Link) -> [MarkdownNode] {
         LinkMapper().map(link, visitor: &self)
     }
     
     // MARK: - Lists
     
-    public mutating func visitOrderedList(_ orderedList: OrderedList) -> [MarkdownNode] {
+    mutating func visitOrderedList(_ orderedList: OrderedList) -> [MarkdownNode] {
         OrderedListMapper().map(orderedList, visitor: &self)
     }
     
-    public mutating func visitUnorderedList(_ unorderedList: UnorderedList) -> [MarkdownNode] {
+    mutating func visitUnorderedList(_ unorderedList: UnorderedList) -> [MarkdownNode] {
         UnorderedListMapper().map(unorderedList, visitor: &self)
     }
     
-    public mutating func visitListItem(_ listItem: ListItem) -> [MarkdownNode] {
+    mutating func visitListItem(_ listItem: ListItem) -> [MarkdownNode] {
         ListItemMapper().map(listItem, visitor: &self)
     }
     
     // MARK: - Tables (GFM)
     
-    public mutating func visitTable(_ table: Markdown.Table) -> [MarkdownNode] {
+    mutating func visitTable(_ table: Markdown.Table) -> [MarkdownNode] {
         TableMapper().map(table, visitor: &self)
     }
     
-    public mutating func visitTableHead(_ tableHead: Markdown.Table.Head) -> [MarkdownNode] {
+    mutating func visitTableHead(_ tableHead: Markdown.Table.Head) -> [MarkdownNode] {
         TableHeadMapper().map(tableHead, visitor: &self)
     }
     
-    public mutating func visitTableBody(_ tableBody: Markdown.Table.Body) -> [MarkdownNode] {
+    mutating func visitTableBody(_ tableBody: Markdown.Table.Body) -> [MarkdownNode] {
         TableBodyMapper().map(tableBody, visitor: &self)
     }
     
-    public mutating func visitTableRow(_ tableRow: Markdown.Table.Row) -> [MarkdownNode] {
+    mutating func visitTableRow(_ tableRow: Markdown.Table.Row) -> [MarkdownNode] {
         TableRowMapper().map(tableRow, visitor: &self)
     }
     
-    public mutating func visitTableCell(_ tableCell: Markdown.Table.Cell) -> [MarkdownNode] {
+    mutating func visitTableCell(_ tableCell: Markdown.Table.Cell) -> [MarkdownNode] {
         TableCellMapper().map(tableCell, visitor: &self)
     }
     
     // MARK: - Inline Formatting
 
-    public mutating func visitEmphasis(_ emphasis: Emphasis) -> [MarkdownNode] {
+    mutating func visitEmphasis(_ emphasis: Emphasis) -> [MarkdownNode] {
         EmphasisMapper().map(emphasis, visitor: &self)
     }
 
-    public mutating func visitStrong(_ strong: Strong) -> [MarkdownNode] {
+    mutating func visitStrong(_ strong: Strong) -> [MarkdownNode] {
         StrongMapper().map(strong, visitor: &self)
     }
 
-    public mutating func visitStrikethrough(_ strikethrough: Strikethrough) -> [MarkdownNode] {
+    mutating func visitStrikethrough(_ strikethrough: Strikethrough) -> [MarkdownNode] {
         StrikethroughMapper().map(strikethrough, visitor: &self)
     }
 
     // MARK: - Block Elements
 
-    public mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> [MarkdownNode] {
+    mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> [MarkdownNode] {
         BlockQuoteMapper().map(blockQuote, visitor: &self)
     }
 
-    public mutating func visitThematicBreak(_ thematicBreak: ThematicBreak) -> [MarkdownNode] {
+    mutating func visitThematicBreak(_ thematicBreak: ThematicBreak) -> [MarkdownNode] {
         ThematicBreakMapper().map(thematicBreak, visitor: &self)
     }
 
-    public mutating func visitHTMLBlock(_ html: HTMLBlock) -> [MarkdownNode] {
+    mutating func visitHTMLBlock(_ html: HTMLBlock) -> [MarkdownNode] {
         HTMLBlockMapper().map(html, visitor: &self)
     }
 
-    public mutating func visitSoftBreak(_ softBreak: SoftBreak) -> [MarkdownNode] {
+    mutating func visitSoftBreak(_ softBreak: SoftBreak) -> [MarkdownNode] {
         SoftBreakMapper().map(softBreak, visitor: &self)
     }
 
-    public mutating func visitLineBreak(_ lineBreak: LineBreak) -> [MarkdownNode] {
+    mutating func visitLineBreak(_ lineBreak: LineBreak) -> [MarkdownNode] {
         LineBreakMapper().map(lineBreak, visitor: &self)
     }
 
@@ -164,7 +164,7 @@ public struct MarkdownKitVisitor: MarkupVisitor {
     /// swift-markdown does not support native `Math` elements by default in standard CommonMark.
     /// To support ChatGPT parity (`$$` and `$`), our Custom AST Middleware will usually attach these later by finding specific `TextNode` string patterns.
     /// However, if an extension is added to `swift-markdown` or inline HTML block evaluates to math, we intercept it here.
-    public mutating func visitInlineHTML(_ inlineHTML: InlineHTML) -> [MarkdownNode] {
+    mutating func visitInlineHTML(_ inlineHTML: InlineHTML) -> [MarkdownNode] {
         InlineHTMLMapper().map(inlineHTML, visitor: &self)
     }
 }

@@ -14,8 +14,8 @@ public protocol MarkdownCollectionViewThemeDelegate: AnyObject {
 /// explicitly for extremely high-performance vertically scrolling text blocks.
 ///
 /// Cell management goes through an `NSCollectionViewDiffableDataSource` keyed
-/// by `StableNodeIdentity`, so streaming updates trigger insert / delete /
-/// move diffs instead of full `reloadData()`.
+/// by a module-owned stable item identity, so streaming updates trigger insert
+/// / delete / move diffs instead of full `reloadData()`.
 public class MarkdownCollectionView: NSView {
 
     public weak var themeDelegate: MarkdownCollectionViewThemeDelegate?
@@ -128,21 +128,22 @@ public class MarkdownCollectionView: NSView {
     // MARK: - Snapshot application
 
     private func applyLayouts(_ layouts: [LayoutResult]) {
+        let positionedLayouts = LayoutResult.positionedTopLevelLayouts(layouts)
         let previousLookup = layoutsByIdentity
         var lookup: [StableNodeIdentity: LayoutResult] = [:]
-        lookup.reserveCapacity(layouts.count)
-        for layout in layouts {
+        lookup.reserveCapacity(positionedLayouts.count)
+        for layout in positionedLayouts {
             lookup[layout.stableIdentity] = layout
         }
         layoutsByIdentity = lookup
 
         var snapshot = NSDiffableDataSourceSnapshot<Section, StableNodeIdentity>()
         snapshot.appendSections([.main])
-        snapshot.appendItems(layouts.map(\.stableIdentity), toSection: .main)
+        snapshot.appendItems(positionedLayouts.map(\.stableIdentity), toSection: .main)
         let existingIdentities = Set(dataSource.snapshot().itemIdentifiers)
         let changedIdentities = LayoutResultVariantDiff.changedStableIdentities(
             previous: previousLookup,
-            next: layouts
+            next: positionedLayouts
         ).filter(existingIdentities.contains)
         snapshot.reloadItems(changedIdentities)
         dataSource.apply(snapshot, animatingDifferences: false)

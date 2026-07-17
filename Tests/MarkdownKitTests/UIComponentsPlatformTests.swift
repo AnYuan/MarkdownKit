@@ -59,6 +59,38 @@ final class UIComponentsPlatformTests: XCTestCase {
 
     // MARK: - MarkdownCollectionViewCell Routing
 
+    func testCollectionViewRecalculatesExistingRowHeight() async throws {
+        let node = ParagraphNode(range: nil, children: [TextNode(range: nil, text: "Resizable")])
+        let view = MarkdownCollectionView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        let initial = LayoutResult(node: node, size: CGSize(width: 320, height: 40))
+        let resized = LayoutResult(node: node, size: CGSize(width: 320, height: 80))
+
+        view.layouts = [initial]
+        await Task.yield()
+        view.layoutIfNeeded()
+
+        let collectionView = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+        collectionView.layoutIfNeeded()
+        XCTAssertEqual(
+            collectionView.collectionViewLayout.layoutAttributesForItem(
+                at: IndexPath(item: 0, section: 0)
+            )?.size.height,
+            40
+        )
+
+        view.layouts = [resized]
+        await Task.yield()
+        view.layoutIfNeeded()
+        collectionView.layoutIfNeeded()
+
+        XCTAssertEqual(
+            collectionView.collectionViewLayout.layoutAttributesForItem(
+                at: IndexPath(item: 0, section: 0)
+            )?.size.height,
+            80
+        )
+    }
+
     func testCellRoutesCodeBlockToAsyncCodeView() {
         let codeNode = CodeBlockNode(range: nil, language: "swift", code: "let x = 1")
         let layout = LayoutResult(node: codeNode, size: CGSize(width: 320, height: 100))

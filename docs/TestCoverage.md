@@ -2,23 +2,23 @@
 
 > 最近更新: 2026-07-18
 > 生成方式: `python3 scripts/generate_test_coverage_report.py [--run-tests|--from-log <path>]`
-> 生成时间: 2026-07-18 05:28:08
+> 生成时间: 2026-07-18 06:52:38
 
 ## 1. 总览
 
 | 指标 | 当前值 | 说明 |
 | --- | ---: | --- |
 | 源码文件数 (`Sources/MarkdownKit/*.swift`) | 87 | 不含 Demo target |
-| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 74 | 含基准/夹具/辅助文件 |
-| 含 `test*` 方法的测试文件 | 66 | 静态扫描结果 |
-| 静态扫描 `test*` 方法总数 | 587 | 受编译条件影响，可能高于可执行测试数 |
-| 可发现测试数 (`swift test list`) | 502 | 当前平台可执行测试 |
-| 全量执行结果 (`swift test`) | 502 执行 / 0 跳过 / 0 失败 | 当前基线已通过 |
+| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 75 | 含基准/夹具/辅助文件 |
+| 含 `test*` 方法的测试文件 | 67 | 静态扫描结果 |
+| 静态扫描 `test*` 方法总数 | 603 | 受编译条件影响，可能高于可执行测试数 |
+| 可发现测试数 (`swift test list`) | 516 | 当前平台可执行测试 |
+| 全量执行结果 (`swift test`) | 516 执行 / 0 跳过 / 0 失败 | 当前基线已通过 |
 
 ## 2. 本次执行状态
 
 - 执行命令: `swift test`
-- 执行: 502
+- 执行: 516
 - 跳过: 0
 - 失败: 0
 
@@ -28,7 +28,7 @@
 | --- | ---: |
 | `ASTPluginTests.swift` | 13 |
 | `ASTTransformTests.swift` | 6 |
-| `AppearanceAwareLayoutTests.swift` | 17 |
+| `AppearanceAwareLayoutTests.swift` | 19 |
 | `ArithmeticTextCalculatorTests.swift` | 29 |
 | `AsyncCodeViewCopyTests.swift` | 7 |
 | `AsyncTextViewInteractionTests.swift` | 5 |
@@ -79,10 +79,11 @@
 | `PerformanceBaselineContractTests.swift` | 10 |
 | `PerformanceProfilerTests.swift` | 2 |
 | `PlatformAccessibilityTests.swift` | 8 |
+| `PublicAPISmokeTests.swift` | 11 |
 | `SendableTests.swift` | 3 |
 | `SnapshotTestHelper.swift` | 0 |
 | `SnapshotTests.swift` | 4 |
-| `StableNodeIdentityTests.swift` | 4 |
+| `StableNodeIdentityTests.swift` | 6 |
 | `SyntaxMatrixTests.swift` | 1 |
 | `TableAttributedStringBuilderTests.swift` | 8 |
 | `TableLayoutSharedTests.swift` | 12 |
@@ -92,7 +93,7 @@
 | `TextKitHitTesterTests.swift` | 6 |
 | `ThemeAndTokenTests.swift` | 10 |
 | `ThemeCustomizationTests.swift` | 15 |
-| `UIComponentsPlatformTests.swift` | 8 |
+| `UIComponentsPlatformTests.swift` | 9 |
 | `UIComponentsTests.swift` | 2 |
 | `URLSanitizerTests.swift` | 8 |
 | `VirtualizationTests.swift` | 1 |
