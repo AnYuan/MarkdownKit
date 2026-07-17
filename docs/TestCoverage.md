@@ -2,17 +2,17 @@
 
 > 最近更新: 2026-07-18
 > 生成方式: `python3 scripts/generate_test_coverage_report.py [--run-tests|--from-log <path>]`
-> 生成时间: 2026-07-18 02:33:44
+> 生成时间: 2026-07-18 03:36:45
 
 ## 1. 总览
 
 | 指标 | 当前值 | 说明 |
 | --- | ---: | --- |
 | 源码文件数 (`Sources/MarkdownKit/*.swift`) | 83 | 不含 Demo target |
-| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 72 | 含基准/夹具/辅助文件 |
-| 含 `test*` 方法的测试文件 | 64 | 静态扫描结果 |
-| 静态扫描 `test*` 方法总数 | 544 | 受编译条件影响，可能高于可执行测试数 |
-| 可发现测试数 (`swift test list`) | 472 | 当前平台可执行测试 |
+| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 74 | 含基准/夹具/辅助文件 |
+| 含 `test*` 方法的测试文件 | 66 | 静态扫描结果 |
+| 静态扫描 `test*` 方法总数 | 573 | 受编译条件影响，可能高于可执行测试数 |
+| 可发现测试数 (`swift test list`) | 488 | 当前平台可执行测试 |
 | 全量执行结果 (`swift test`) | 未提供 | 未执行或未提供日志 |
 
 ## 2. 本次执行状态
@@ -41,7 +41,7 @@
 | `BenchmarkTieredFixtures.swift` | 0 |
 | `CommonMarkSpecTests.swift` | 2 |
 | `ConcurrencyStressTests.swift` | 4 |
-| `CrossPlatformLayoutTests.swift` | 10 |
+| `CrossPlatformLayoutTests.swift` | 11 |
 | `DepthLimitTests.swift` | 3 |
 | `DetailsExtractionPluginTests.swift` | 4 |
 | `DiagramExtractionPluginTests.swift` | 3 |
@@ -81,6 +81,8 @@
 | `SnapshotTests.swift` | 4 |
 | `StableNodeIdentityTests.swift` | 4 |
 | `SyntaxMatrixTests.swift` | 1 |
+| `TableAttributedStringBuilderTests.swift` | 8 |
+| `TableLayoutSharedTests.swift` | 12 |
 | `TableOfContentsBuilderTests.swift` | 4 |
 | `TestHelper.swift` | 0 |
 | `TextKitCalculatorTests.swift` | 4 |
@@ -93,7 +95,7 @@
 | `VirtualizationTests.swift` | 1 |
 | `iOSAccessibilityTests.swift` | 8 |
 | `iOSSnapshotTests.swift` | 6 |
-| `iOSTableLayoutTests.swift` | 14 |
+| `iOSTableLayoutTests.swift` | 22 |
 | `iOSThemeDelegateTests.swift` | 4 |
 
 ## 4. 辅助/夹具文件（无 `test*` 方法）

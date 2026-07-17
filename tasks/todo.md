@@ -380,8 +380,27 @@ review the complete diff, then commit and push before starting the next stage.
   Validation: 149 focused integration tests, 455 macOS correctness tests, 472
   discoverable-test documentation checks, visual and determinism snapshot gates
   (4/4 each), 495 iOS Simulator tests, and the complete benchmark gate all pass.
-- [ ] `refactor: share table geometry across renderers`
-  Keep platform renderers thin over one normalization and sizing model.
+- [x] `refactor: share table geometry across renderers`
+  - [x] Q16-A add one immutable canonical table grid and uniform column geometry
+    model, with focused empty/ragged/direct-cell/alignment/width tests.
+  - [x] Q16-B migrate the AppKit native table and UIKit attributed fallback
+    adapters without changing their fonts, widths, truncation, separators,
+    blocks, backgrounds, or multiline behavior.
+  - [x] Q16-C migrate the UIKit card renderer without changing its custom-draw
+    contract, visual metrics, wrapping, or no-zebra presentation.
+  - [x] Q16-D add cross-renderer contracts, correct stale documentation, run
+    review and all focused/full/snapshot/benchmark gates, then commit and push
+    atomically.
+  Review: all three adapters now consume one immutable rectangular grid and one
+  uniform column-allocation implementation while retaining their intentional
+  AppKit native-table, UIKit attributed-fallback, and UIKit card-drawing
+  boundaries. Reuse/simplification, Swift 6.2 concurrency, and four-way final
+  reviews found no remaining material issue after sanitizing card metrics,
+  bounding generated fallback content, and demand-materializing geometry arrays.
+  Validation: 33 focused macOS table tests, 48 focused iOS table contracts, 5
+  UIKit attributed safety tests, 471 macOS correctness tests, 488
+  discoverable-test documentation checks, visual and determinism snapshot gates
+  (4/4 each), 521 iOS Simulator tests, and the complete benchmark gate all pass.
 - [ ] `refactor: decompose arithmetic text preparation`
   Separate scanning, segment classification/merging, measurement, and line breaking.
 - [ ] `perf: cache repeated highlighter and diagram work`

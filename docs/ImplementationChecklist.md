@@ -54,15 +54,16 @@ It focuses on closing known gaps with low-risk, test-first, atomic commits.
 
 - Objective: ensure table text does not collapse vertically and remains readable at narrow widths.
 - Problem:
-  - iOS path is tab-stop emulation; long cells can degrade readability.
+  - At the time of C3, the UIKit attributed table path relied on tab-stop emulation, where long cells could degrade readability.
 - Files:
   - `Sources/MarkdownKit/Layout/LayoutSolver.swift`
   - `Tests/MarkdownKitTests/iOSTableLayoutTests.swift`
   - `Tests/MarkdownKitTests/CrossPlatformLayoutTests.swift`
   - `Tests/MarkdownKitTests/iOSSnapshotTests.swift` (if snapshot needs refresh)
 - Change:
-  - Tune paragraph style/tab-stop spacing and wrap strategy for narrow widths.
+  - Historically tuned paragraph style/tab-stop spacing and wrap strategy for narrow widths.
   - Keep the 8pt horizontal inset behavior.
+  - Current architecture retains that path as the nested attributed fallback; top-level iOS tables use the `TableCardRenderer` `CGContext` card adapter.
 - DoD:
   - No column text collapse in constrained widths.
   - New regression test reproduces prior broken case and passes.

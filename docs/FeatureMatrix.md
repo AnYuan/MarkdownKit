@@ -6,7 +6,7 @@ This document traces the advanced parsing and layout features (defined in Phase 
 | Feature | Status | Covered By Unit/Snapshot Tests |
 | :--- | :---: | :--- |
 | CommonMark Compliance | ✅ | `CommonMarkSpecTests.swift` |
-| Native `NSTextTable` Rendering (macOS) / Tab-stop emulation (iOS) | ✅ | `SnapshotTests.testTableRendering`, `iOSTableLayoutTests` |
+| Shared canonical table grid with native `NSTextTable` blocks (macOS), top-level `CGContext` cards (iOS), and nested UIKit attributed fallback | ✅ | `TableLayoutSharedTests`, `TableAttributedStringBuilderTests`, `CrossPlatformLayoutTests`, `iOSTableLayoutTests`, `SnapshotTests.testTableRendering` |
 | GitHub Table Styling & Alignment | ✅ | `ParserLinkListTableTests.testTableWithColumnAlignments` |
 | Fenced Math Blocks (````math``) | ✅ | `SnapshotTests.testMathRendering` |
 | Inline Math (`$...$`) | ✅ | `MathExtractionPluginTests.testMathPluginReplacesBlocksAndInlineNodes` |

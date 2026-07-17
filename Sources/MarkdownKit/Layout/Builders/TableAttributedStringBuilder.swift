@@ -18,23 +18,18 @@ struct TableAttributedStringBuilder {
         theme: Theme,
         constrainedToWidth maxWidth: CGFloat
     ) -> NSAttributedString {
-        let allRows = normalizedTableRows(from: table)
-        let columnCount = allRows.map(\.cells.count).max() ?? 0
-        guard columnCount > 0 else { return NSAttributedString() }
+        let grid = TableLayoutShared.Grid(table: table)
+        guard grid.columnCount > 0 else { return NSAttributedString() }
 
         #if canImport(AppKit) && !targetEnvironment(macCatalyst)
         return buildTableAttributedString_AppKit(
-            allRows: allRows,
-            columnCount: columnCount,
-            table: table,
+            grid: grid,
             theme: theme,
             constrainedToWidth: maxWidth
         )
         #else
         return buildTableAttributedString_UIKit(
-            allRows: allRows,
-            columnCount: columnCount,
-            table: table,
+            grid: grid,
             theme: theme,
             constrainedToWidth: maxWidth
         )
@@ -43,9 +38,7 @@ struct TableAttributedStringBuilder {
 
     #if canImport(AppKit) && !targetEnvironment(macCatalyst)
     private static func buildTableAttributedString_AppKit(
-        allRows: [(cells: [String], isHead: Bool)],
-        columnCount: Int,
-        table: TableNode,
+        grid: TableLayoutShared.Grid,
         theme: Theme,
         constrainedToWidth maxWidth: CGFloat
     ) -> NSAttributedString {
@@ -54,37 +47,33 @@ struct TableAttributedStringBuilder {
         let headerFont = FontTraitResolver.adding(.bold, to: cellFont)
 
         let textTable = NSTextTable()
-        textTable.numberOfColumns = columnCount
+        textTable.numberOfColumns = grid.columnCount
         textTable.layoutAlgorithm = .automaticLayoutAlgorithm
         textTable.collapsesBorders = true
         textTable.hidesEmptyCells = false
 
         let tableStyle = theme.table
-        let availableTableWidth = max(160, maxWidth - tableStyle.appKitHorizontalPadding)
-        let perColumnWidth = max(72, floor(availableTableWidth / CGFloat(columnCount)))
-        let horizontalPadding = tableStyle.appKitHorizontalPadding
-        let borderAllowance = tableStyle.appKitBorderAllowance
-        let contentWidth = max(48, perColumnWidth - horizontalPadding - borderAllowance)
+        let geometry = TableLayoutShared.UniformColumnPolicy.appKit(
+            horizontalPadding: tableStyle.appKitHorizontalPadding,
+            borderAllowance: tableStyle.appKitBorderAllowance
+        ).geometry(
+            columnCount: grid.columnCount,
+            constrainedToWidth: maxWidth
+        )
 
-        var bodyRowIndex = 0
-        for (rowIndex, row) in allRows.enumerated() {
+        for (rowIndex, row) in grid.rows.enumerated() {
             let rowBackground = tableRowBackgroundColor(
-                isHeader: row.isHead,
-                bodyRowIndex: bodyRowIndex,
+                role: row.role,
                 theme: theme
             )
-            if !row.isHead {
-                bodyRowIndex += 1
-            }
 
-            let cells = normalizedCells(for: row.cells, columnCount: columnCount)
-            for columnIndex in 0..<columnCount {
+            for cell in row.cells {
                 let block = configuredTableBlock(
                     table: textTable,
                     row: rowIndex,
-                    column: columnIndex,
+                    column: cell.column,
                     backgroundColor: rowBackground,
-                    contentWidth: contentWidth,
+                    contentWidth: geometry.contentWidth,
                     theme: theme
                 )
 
@@ -92,17 +81,16 @@ struct TableAttributedStringBuilder {
                 paragraphStyleMut.textBlocks = [block]
                 paragraphStyleMut.paragraphSpacing = 0
                 paragraphStyleMut.paragraphSpacingBefore = 0
-                paragraphStyleMut.alignment = tableTextAlignment(for: table, column: columnIndex)
+                paragraphStyleMut.alignment = cell.alignment.textAlignment
                 let paragraphStyle = paragraphStyleMut.copy() as! NSParagraphStyle
 
                 let attrs: [NSAttributedString.Key: Any] = [
-                    .font: row.isHead ? headerFont : cellFont,
+                    .font: row.isHeader ? headerFont : cellFont,
                     .paragraphStyle: paragraphStyle,
                     .foregroundColor: theme.colors.textColor.foreground
                 ]
 
-                let cellText = cells[columnIndex].isEmpty ? " " : cells[columnIndex]
-                result.append(NSAttributedString(string: cellText, attributes: attrs))
+                result.append(NSAttributedString(string: cell.displayText, attributes: attrs))
                 result.append(NSAttributedString(string: "\n", attributes: attrs))
             }
         }
@@ -136,27 +124,29 @@ struct TableAttributedStringBuilder {
         return block
     }
 
-    private static func tableRowBackgroundColor(isHeader: Bool, bodyRowIndex: Int, theme: Theme) -> Color {
-        if isHeader {
+    private static func tableRowBackgroundColor(
+        role: TableLayoutShared.RowRole,
+        theme: Theme
+    ) -> Color {
+        switch role {
+        case .header:
             return theme.colors.tableColor.background
-        }
-
-        if bodyRowIndex.isMultiple(of: 2) {
+        case let .body(index) where index.isMultiple(of: 2):
             return .clear
+        case .body:
+            let bg = theme.colors.tableColor.background
+            var alpha: CGFloat = 1.0
+            bg.usingColorSpace(.deviceRGB)?.getRed(nil, green: nil, blue: nil, alpha: &alpha)
+            return bg.withAlphaComponent(alpha * theme.table.alternatingRowAlpha)
         }
-
-        let bg = theme.colors.tableColor.background
-        var alpha: CGFloat = 1.0
-        bg.usingColorSpace(.deviceRGB)?.getRed(nil, green: nil, blue: nil, alpha: &alpha)
-        return bg.withAlphaComponent(alpha * theme.table.alternatingRowAlpha)
     }
     #endif
 
     #if canImport(UIKit)
+    private static let maximumGeneratedCharactersPerCell = 4_096
+
     private static func buildTableAttributedString_UIKit(
-        allRows: [(cells: [String], isHead: Bool)],
-        columnCount: Int,
-        table: TableNode,
+        grid: TableLayoutShared.Grid,
         theme: Theme,
         constrainedToWidth maxWidth: CGFloat
     ) -> NSAttributedString {
@@ -165,15 +155,19 @@ struct TableAttributedStringBuilder {
         let headerFont = FontTraitResolver.adding(.bold, to: cellFont)
 
         let tableStyle = theme.table
-        let horizontalInset = tableStyle.uiKitHorizontalInset
-        let availableWidth = max(160, maxWidth - horizontalInset * 2)
-        let rawColumnWidth = floor(availableWidth / CGFloat(columnCount))
+        let geometry = TableLayoutShared.UniformColumnPolicy.uiKitAttributed(
+            horizontalInset: tableStyle.uiKitHorizontalInset
+        ).geometry(
+            columnCount: grid.columnCount,
+            constrainedToWidth: maxWidth
+        )
+        let rawColumnWidth = geometry.columnWidth
+        let leadingColumnOrigin = geometry.columnOrigin(at: 0)
 
         if rawColumnWidth < tableStyle.minimumReadableColumnWidth {
             return buildTableAttributedString_UIKitNarrowFallback(
-                allRows: allRows,
-                columnCount: columnCount,
-                horizontalInset: horizontalInset,
+                grid: grid,
+                horizontalInset: leadingColumnOrigin,
                 headerFont: headerFont,
                 cellFont: cellFont,
                 theme: theme
@@ -181,36 +175,31 @@ struct TableAttributedStringBuilder {
         }
 
         let columnWidth = rawColumnWidth
-        var bodyRowIndex = 0
 
-        for (rowIndex, row) in allRows.enumerated() {
-            let cells = normalizedCells(for: row.cells, columnCount: columnCount)
-            let isLastRow = rowIndex == allRows.count - 1
+        for (rowIndex, row) in grid.rows.enumerated() {
+            let isLastRow = rowIndex == grid.rows.count - 1
             let rowBackground = tableRowBackgroundColorUIKit(
-                isHeader: row.isHead,
-                bodyRowIndex: bodyRowIndex,
+                role: row.role,
                 theme: theme
             )
-            if !row.isHead {
-                bodyRowIndex += 1
-            }
 
-            var tabStops: [NSTextTab] = []
-            for col in 0..<columnCount {
-                let alignment = tableTextAlignment(for: table, column: col)
-                tabStops.append(NSTextTab(textAlignment: alignment, location: horizontalInset + columnWidth * CGFloat(col)))
+            let tabStops = row.cells.map { cell in
+                NSTextTab(
+                    textAlignment: cell.alignment.textAlignment,
+                    location: geometry.columnOrigin(at: cell.column)
+                )
             }
 
             let paragraphStyleMut = NSMutableParagraphStyle()
             paragraphStyleMut.tabStops = tabStops
-            paragraphStyleMut.firstLineHeadIndent = horizontalInset
-            paragraphStyleMut.headIndent = horizontalInset
-            paragraphStyleMut.alignment = tableTextAlignment(for: table, column: 0)
+            paragraphStyleMut.firstLineHeadIndent = leadingColumnOrigin
+            paragraphStyleMut.headIndent = leadingColumnOrigin
+            paragraphStyleMut.alignment = row.cells[0].alignment.textAlignment
             paragraphStyleMut.lineHeightMultiple = theme.typography.paragraph.lineHeightMultiple
             paragraphStyleMut.paragraphSpacing = tableStyle.cellParagraphSpacing
             let paragraphStyle = paragraphStyleMut.copy() as! NSParagraphStyle
 
-            let font = row.isHead ? headerFont : cellFont
+            let font = row.isHeader ? headerFont : cellFont
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .paragraphStyle: paragraphStyle,
@@ -218,9 +207,13 @@ struct TableAttributedStringBuilder {
                 .backgroundColor: rowBackground
             ]
 
-            let maxCharsPerCell = max(4, Int(columnWidth / 8))
-            let rowText = cells.map { cell -> String in
-                let text = cell.isEmpty ? " " : cell
+            let maxCharsPerCell = boundedCharacterCount(
+                for: columnWidth,
+                divisor: 8,
+                minimum: 4
+            )
+            let rowText = row.cells.map { cell -> String in
+                let text = cell.displayText
                 if text.count > maxCharsPerCell {
                     return String(text.prefix(maxCharsPerCell - 1)) + "\u{2026}"
                 }
@@ -228,11 +221,11 @@ struct TableAttributedStringBuilder {
             }.joined(separator: "\t")
             result.append(NSAttributedString(string: rowText, attributes: attrs))
 
-            if row.isHead {
+            if row.isHeader {
                 let separatorStyleMut = NSMutableParagraphStyle()
                 separatorStyleMut.tabStops = tabStops
-                separatorStyleMut.firstLineHeadIndent = horizontalInset
-                separatorStyleMut.headIndent = horizontalInset
+                separatorStyleMut.firstLineHeadIndent = leadingColumnOrigin
+                separatorStyleMut.headIndent = leadingColumnOrigin
                 separatorStyleMut.paragraphSpacing = tableStyle.cellParagraphSpacing
                 let separatorStyle = separatorStyleMut.copy() as! NSParagraphStyle
 
@@ -243,15 +236,22 @@ struct TableAttributedStringBuilder {
                 ]
 
                 let dashes = Array(
-                    repeating: String(repeating: "─", count: max(3, Int(columnWidth / 8))),
-                    count: columnCount
+                    repeating: String(
+                        repeating: "─",
+                        count: boundedCharacterCount(
+                            for: columnWidth,
+                            divisor: 8,
+                            minimum: 3
+                        )
+                    ),
+                    count: grid.columnCount
                 )
                 result.append(NSAttributedString(string: "\n" + dashes.joined(separator: "\t"), attributes: sepAttrs))
             } else if !isLastRow {
                 let separatorStyleMut = NSMutableParagraphStyle()
                 separatorStyleMut.tabStops = tabStops
-                separatorStyleMut.firstLineHeadIndent = horizontalInset
-                separatorStyleMut.headIndent = horizontalInset
+                separatorStyleMut.firstLineHeadIndent = leadingColumnOrigin
+                separatorStyleMut.headIndent = leadingColumnOrigin
                 separatorStyleMut.paragraphSpacing = tableStyle.cellParagraphSpacing
                 let separatorStyle = separatorStyleMut.copy() as! NSParagraphStyle
 
@@ -262,13 +262,20 @@ struct TableAttributedStringBuilder {
                 ]
 
                 let dashes = Array(
-                    repeating: String(repeating: "─", count: max(3, Int(columnWidth / 10))),
-                    count: columnCount
+                    repeating: String(
+                        repeating: "─",
+                        count: boundedCharacterCount(
+                            for: columnWidth,
+                            divisor: 10,
+                            minimum: 3
+                        )
+                    ),
+                    count: grid.columnCount
                 )
                 result.append(NSAttributedString(string: "\n" + dashes.joined(separator: "\t"), attributes: sepAttrs))
             }
 
-            if rowIndex < allRows.count - 1 {
+            if rowIndex < grid.rows.count - 1 {
                 result.append(NSAttributedString(string: "\n", attributes: attrs))
             }
         }
@@ -276,19 +283,24 @@ struct TableAttributedStringBuilder {
         return result
     }
 
-    private static func tableRowBackgroundColorUIKit(isHeader: Bool, bodyRowIndex: Int, theme: Theme) -> Color {
-        if isHeader {
+    private static func tableRowBackgroundColorUIKit(
+        role: TableLayoutShared.RowRole,
+        theme: Theme
+    ) -> Color {
+        switch role {
+        case .header:
             return theme.colors.tableColor.background
-        }
-        if bodyRowIndex.isMultiple(of: 2) {
+        case let .body(index) where index.isMultiple(of: 2):
             return .clear
+        case .body:
+            return theme.colors.tableColor.background.withAlphaComponent(
+                theme.table.alternatingRowAlpha
+            )
         }
-        return theme.colors.tableColor.background.withAlphaComponent(theme.table.alternatingRowAlpha)
     }
 
     private static func buildTableAttributedString_UIKitNarrowFallback(
-        allRows: [(cells: [String], isHead: Bool)],
-        columnCount: Int,
+        grid: TableLayoutShared.Grid,
         horizontalInset: CGFloat,
         headerFont: Font,
         cellFont: Font,
@@ -303,13 +315,11 @@ struct TableAttributedStringBuilder {
         paragraphStyleMut.paragraphSpacing = 3
         paragraphStyleMut.lineBreakMode = .byWordWrapping
         let paragraphStyle = paragraphStyleMut.copy() as! NSParagraphStyle
+        let maxCharsNarrow = max(1, theme.table.narrowFallbackMaxChars)
 
-        let maxCharsNarrow = theme.table.narrowFallbackMaxChars
-
-        for (rowIndex, row) in allRows.enumerated() {
-            let cells = normalizedCells(for: row.cells, columnCount: columnCount)
-            let rowText = cells.map { cell -> String in
-                let text = cell.isEmpty ? " " : cell
+        for (rowIndex, row) in grid.rows.enumerated() {
+            let rowText = row.cells.map { cell -> String in
+                let text = cell.displayText
                 if text.count > maxCharsNarrow {
                     return String(text.prefix(maxCharsNarrow - 1)) + "\u{2026}"
                 }
@@ -317,17 +327,17 @@ struct TableAttributedStringBuilder {
             }.joined(separator: "  |  ")
 
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: row.isHead ? headerFont : cellFont,
+                .font: row.isHeader ? headerFont : cellFont,
                 .paragraphStyle: paragraphStyle,
                 .foregroundColor: theme.colors.textColor.foreground
             ]
 
             result.append(NSAttributedString(string: rowText, attributes: attrs))
 
-            if row.isHead {
+            if row.isHeader {
                 let separator = Array(
                     repeating: String(repeating: "─", count: 5),
-                    count: columnCount
+                    count: grid.columnCount
                 ).joined(separator: "  |  ")
                 let separatorAttrs: [NSAttributedString.Key: Any] = [
                     .font: cellFont,
@@ -337,30 +347,26 @@ struct TableAttributedStringBuilder {
                 result.append(NSAttributedString(string: "\n" + separator, attributes: separatorAttrs))
             }
 
-            if rowIndex < allRows.count - 1 {
+            if rowIndex < grid.rows.count - 1 {
                 result.append(NSAttributedString(string: "\n", attributes: attrs))
             }
         }
 
         return result
     }
+
+    private static func boundedCharacterCount(
+        for columnWidth: CGFloat,
+        divisor: CGFloat,
+        minimum: Int
+    ) -> Int {
+        let scaled = floor(columnWidth / divisor)
+        let bounded = min(
+            max(scaled, CGFloat(minimum)),
+            CGFloat(maximumGeneratedCharactersPerCell)
+        )
+        return Int(bounded)
+    }
     #endif
-
-    // Table-parsing helpers (normalizedTableRows / normalizedCells /
-    // tableCellText / flattenInlineText / tableTextAlignment) live in
-    // `TableLayoutShared` so `TableCardRenderer` can share them. Call those
-    // through the `TableLayoutShared` enum below.
-
-    private static func normalizedTableRows(from table: TableNode) -> [(cells: [String], isHead: Bool)] {
-        TableLayoutShared.normalizedTableRows(from: table)
-    }
-
-    private static func normalizedCells(for cells: [String], columnCount: Int) -> [String] {
-        TableLayoutShared.normalizedCells(for: cells, columnCount: columnCount)
-    }
-
-    private static func tableTextAlignment(for table: TableNode, column: Int) -> NSTextAlignment {
-        TableLayoutShared.tableTextAlignment(for: table, column: column)
-    }
 
 }

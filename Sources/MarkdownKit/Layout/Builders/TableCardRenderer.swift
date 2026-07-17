@@ -26,6 +26,7 @@ struct TableCardRenderer {
 
     struct TableLayout: @unchecked Sendable {
         let rows: [RowLayout]
+        let columnOrigins: [CGFloat]
         let columnWidths: [CGFloat]
         let totalSize: CGSize
         let cornerRadius: CGFloat
@@ -46,6 +47,7 @@ struct TableCardRenderer {
         let text: NSAttributedString
         let xOffset: CGFloat
         let width: CGFloat
+        let contentWidth: CGFloat
         let alignment: NSTextAlignment
     }
 
@@ -59,50 +61,60 @@ struct TableCardRenderer {
         constrainedToWidth maxWidth: CGFloat
     ) -> TableLayout {
         let tableStyle = theme.table
-        let cornerRadius = tableStyle.cornerRadius
-        let borderWidth = tableStyle.borderWidth
-        let cellPaddingH = tableStyle.cellPaddingH
-        let cellPaddingV = tableStyle.cellPaddingV
-        let dividerHeight = tableStyle.dividerHeight
+        let cornerRadius = TableLayoutShared.finiteNonnegative(tableStyle.cornerRadius)
+        let borderWidth = TableLayoutShared.finiteNonnegative(tableStyle.borderWidth)
+        let cellPaddingH = TableLayoutShared.finiteNonnegative(tableStyle.cellPaddingH)
+        let cellPaddingV = TableLayoutShared.finiteNonnegative(tableStyle.cellPaddingV)
+        let dividerHeight = TableLayoutShared.finiteNonnegative(tableStyle.dividerHeight)
+        let fontSize = TableLayoutShared.finiteNonnegative(tableStyle.fontSize)
 
-        let allRows = normalizedTableRows(from: table)
-        let columnCount = allRows.map(\.cells.count).max() ?? 0
-        guard columnCount > 0 else {
+        let grid = TableLayoutShared.Grid(table: table)
+        guard grid.columnCount > 0 else {
             return TableLayout(
-                rows: [], columnWidths: [], totalSize: .zero,
+                rows: [], columnOrigins: [], columnWidths: [], totalSize: .zero,
                 cornerRadius: cornerRadius, borderWidth: borderWidth,
                 cellPaddingH: cellPaddingH, cellPaddingV: cellPaddingV,
                 dividerHeight: dividerHeight
             )
         }
 
-        let headerFont = UIFont.systemFont(ofSize: tableStyle.fontSize, weight: .semibold)
-        let bodyFont = UIFont.systemFont(ofSize: tableStyle.fontSize, weight: .regular)
+        let headerFont = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
+        let bodyFont = UIFont.systemFont(ofSize: fontSize, weight: .regular)
         let textColor = theme.colors.textColor.foreground
+        let paragraphStyles = (
+            left: wrappingParagraphStyle(alignment: .left),
+            center: wrappingParagraphStyle(alignment: .center),
+            right: wrappingParagraphStyle(alignment: .right)
+        )
 
-        // Available width for content after border on both sides
-        let availableWidth = max(0, maxWidth - borderWidth * 2)
-        let columnWidth = floor(availableWidth / CGFloat(columnCount))
-
-        // Content width inside a cell (after horizontal padding)
-        let contentWidth = max(0, columnWidth - cellPaddingH * 2)
+        let geometry = TableLayoutShared.UniformColumnPolicy.uiKitCard(
+            borderWidth: borderWidth,
+            cellPadding: cellPaddingH
+        ).geometry(
+            columnCount: grid.columnCount,
+            constrainedToWidth: maxWidth
+        )
 
         // First pass: build cells, measure heights
         var rowLayouts: [RowLayout] = []
         var yOffset: CGFloat = borderWidth // start after top border
 
-        for (rowIndex, row) in allRows.enumerated() {
-            let cells = normalizedCells(for: row.cells, columnCount: columnCount)
-            let font = row.isHead ? headerFont : bodyFont
+        for (rowIndex, row) in grid.rows.enumerated() {
+            let font = row.isHeader ? headerFont : bodyFont
 
             var cellLayouts: [CellLayout] = []
             var maxCellHeight: CGFloat = 0
 
-            for col in 0..<columnCount {
-                let alignment = tableTextAlignment(for: table, column: col)
-                let paragraphStyle = NSMutableParagraphStyle()
-                paragraphStyle.alignment = alignment
-                paragraphStyle.lineBreakMode = .byWordWrapping
+            for cell in row.cells {
+                let alignment = cell.alignment.textAlignment
+                let paragraphStyle = switch cell.alignment {
+                case .left:
+                    paragraphStyles.left
+                case .center:
+                    paragraphStyles.center
+                case .right:
+                    paragraphStyles.right
+                }
 
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: font,
@@ -110,56 +122,62 @@ struct TableCardRenderer {
                     .paragraphStyle: paragraphStyle
                 ]
 
-                let cellText = cells[col].isEmpty ? " " : cells[col]
-                let attrString = NSAttributedString(string: cellText, attributes: attrs)
+                let attrString = NSAttributedString(string: cell.displayText, attributes: attrs)
 
                 // Measure text height
-                let boundingRect = attrString.boundingRect(
-                    with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    context: nil
-                )
-                let cellHeight = ceil(boundingRect.height)
+                let cellHeight: CGFloat
+                if geometry.contentWidth > 0 {
+                    let boundingRect = attrString.boundingRect(
+                        with: CGSize(width: geometry.contentWidth, height: .greatestFiniteMagnitude),
+                        options: [.usesLineFragmentOrigin, .usesFontLeading],
+                        context: nil
+                    )
+                    cellHeight = TableLayoutShared.finiteNonnegative(ceil(boundingRect.height))
+                } else {
+                    cellHeight = 0
+                }
                 maxCellHeight = max(maxCellHeight, cellHeight)
 
-                let xOffset = borderWidth + columnWidth * CGFloat(col)
                 cellLayouts.append(CellLayout(
                     text: attrString,
-                    xOffset: xOffset,
-                    width: columnWidth,
+                    xOffset: geometry.columnOrigin(at: cell.column),
+                    width: geometry.columnWidth,
+                    contentWidth: geometry.contentWidth,
                     alignment: alignment
                 ))
             }
 
-            let rowHeight = maxCellHeight + cellPaddingV * 2
+            let rowHeight = TableLayoutShared.saturatingSum(
+                maxCellHeight,
+                TableLayoutShared.saturatingProduct(cellPaddingV, 2)
+            )
 
             // Add divider space before this row (except first row)
             if rowIndex > 0 {
-                yOffset += dividerHeight
+                yOffset = TableLayoutShared.saturatingSum(yOffset, dividerHeight)
             }
 
             rowLayouts.append(RowLayout(
                 cells: cellLayouts,
-                isHeader: row.isHead,
+                isHeader: row.isHeader,
                 yOffset: yOffset,
                 height: rowHeight
             ))
 
-            yOffset += rowHeight
+            yOffset = TableLayoutShared.saturatingSum(yOffset, rowHeight)
         }
 
-        yOffset += borderWidth // bottom border
-
-        let totalWidth = columnWidth * CGFloat(columnCount) + borderWidth * 2
+        yOffset = TableLayoutShared.saturatingSum(yOffset, borderWidth) // bottom border
+        let columnOrigins = geometry.columnOrigins
+        let columnWidths = geometry.columnWidths
         let totalSize = CGSize(
-            width: min(totalWidth, maxWidth),
+            width: geometry.totalWidth,
             height: yOffset
         )
 
-        let columnWidths = Array(repeating: columnWidth, count: columnCount)
-
         return TableLayout(
             rows: rowLayouts,
+            columnOrigins: columnOrigins,
             columnWidths: columnWidths,
             totalSize: totalSize,
             cornerRadius: cornerRadius,
@@ -183,10 +201,19 @@ struct TableCardRenderer {
         in context: CGContext,
         size: CGSize
     ) {
-        guard !layout.rows.isEmpty else { return }
+        guard !layout.rows.isEmpty,
+              size.width.isFinite,
+              size.height.isFinite,
+              size.width > 0,
+              size.height > 0 else {
+            return
+        }
 
         let cardRect = CGRect(origin: .zero, size: size)
-        let borderInset = layout.borderWidth / 2
+        let borderInset = min(
+            TableLayoutShared.finiteNonnegative(layout.borderWidth / 2),
+            min(size.width, size.height) / 2
+        )
         let borderRect = cardRect.insetBy(dx: borderInset, dy: borderInset)
         let clipPath = UIBezierPath(roundedRect: cardRect, cornerRadius: layout.cornerRadius)
 
@@ -203,9 +230,9 @@ struct TableCardRenderer {
         for row in layout.rows where row.isHeader {
             let headerRect = CGRect(
                 x: 0,
-                y: row.yOffset,
+                y: TableLayoutShared.finiteNonnegative(row.yOffset),
                 width: size.width,
-                height: row.height
+                height: TableLayoutShared.finiteNonnegative(row.height)
             )
             context.setFillColor(resolvedColors.headerBackground)
             context.fill(headerRect)
@@ -214,18 +241,20 @@ struct TableCardRenderer {
         // Draw cell text
         for row in layout.rows {
             for cell in row.cells {
-                let textOrigin = CGPoint(
-                    x: cell.xOffset + layout.cellPaddingH,
-                    y: row.yOffset + layout.cellPaddingV
-                )
-                let textWidth = cell.width - layout.cellPaddingH * 2
                 let textRect = CGRect(
-                    x: textOrigin.x,
-                    y: textOrigin.y,
-                    width: textWidth,
-                    height: row.height - layout.cellPaddingV * 2
+                    x: TableLayoutShared.saturatingSum(cell.xOffset, layout.cellPaddingH),
+                    y: TableLayoutShared.saturatingSum(row.yOffset, layout.cellPaddingV),
+                    width: cell.contentWidth,
+                    height: TableLayoutShared.finiteNonnegative(
+                        row.height - layout.cellPaddingV * 2
+                    )
                 )
-                cell.text.draw(with: textRect, options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+                guard textRect.width > 0, textRect.height > 0 else { continue }
+                cell.text.draw(
+                    with: textRect,
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    context: nil
+                )
             }
         }
 
@@ -241,12 +270,10 @@ struct TableCardRenderer {
         }
 
         // Draw column dividers (0.5pt vertical lines between columns)
-        if layout.columnWidths.count > 1 {
-            var xAccum: CGFloat = layout.borderWidth
-            for colIndex in 0..<(layout.columnWidths.count - 1) {
-                xAccum += layout.columnWidths[colIndex]
-                context.move(to: CGPoint(x: xAccum, y: 0))
-                context.addLine(to: CGPoint(x: xAccum, y: size.height))
+        if layout.columnOrigins.count > 1 {
+            for xOrigin in layout.columnOrigins.dropFirst() {
+                context.move(to: CGPoint(x: xOrigin, y: 0))
+                context.addLine(to: CGPoint(x: xOrigin, y: size.height))
                 context.strokePath()
             }
         }
@@ -281,19 +308,13 @@ struct TableCardRenderer {
         }
     }
 
-    // Table-parsing helpers live in `TableLayoutShared`. These wrappers
-    // preserve the call-site shape without copying logic.
-
-    private static func normalizedTableRows(from table: TableNode) -> [(cells: [String], isHead: Bool)] {
-        TableLayoutShared.normalizedTableRows(from: table)
-    }
-
-    private static func normalizedCells(for cells: [String], columnCount: Int) -> [String] {
-        TableLayoutShared.normalizedCells(for: cells, columnCount: columnCount)
-    }
-
-    private static func tableTextAlignment(for table: TableNode, column: Int) -> NSTextAlignment {
-        TableLayoutShared.tableTextAlignment(for: table, column: column)
+    private static func wrappingParagraphStyle(
+        alignment: NSTextAlignment
+    ) -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.alignment = alignment
+        style.lineBreakMode = .byWordWrapping
+        return style.copy() as! NSParagraphStyle
     }
 }
 #endif

@@ -181,6 +181,88 @@ final class CrossPlatformLayoutTests: XCTestCase {
                      "Table geometry should remain finite for long cell content")
     }
 
+    func testCanonicalTableGridFeedsPlatformAdapterContract() throws {
+        let table = TableNode(
+            range: nil,
+            columnAlignments: [.left, .center, .right],
+            children: [
+                ParagraphNode(range: nil, children: [TextNode(range: nil, text: "ignored")]),
+                TableHeadNode(range: nil, children: [
+                    tableRow(["Name", "Status"])
+                ]),
+                TableBodyNode(range: nil, children: [
+                    tableRow(["Alice"]),
+                    ParagraphNode(range: nil, children: [TextNode(range: nil, text: "ignored")]),
+                    tableRow(["Bob", "", "Done"])
+                ])
+            ]
+        )
+        let grid = TableLayoutShared.Grid(table: table)
+        let expectedDisplayText = [
+            ["Name", "Status", " "],
+            ["Alice", " ", " "],
+            ["Bob", " ", "Done"]
+        ]
+
+        XCTAssertEqual(grid.columnCount, 3)
+        XCTAssertTrue(grid.rows.allSatisfy { $0.cells.count == grid.columnCount })
+        XCTAssertEqual(grid.rows.map { $0.cells.map(\.displayText) }, expectedDisplayText)
+        XCTAssertEqual(
+            grid.rows.map { $0.cells.map(\.alignment) },
+            Array(repeating: [.left, .center, .right], count: 3)
+        )
+
+        let layout = LayoutSolver().solveSync(node: table, constrainedToWidth: 400)
+
+        #if canImport(AppKit) && !targetEnvironment(macCatalyst)
+        let attributedString = try XCTUnwrap(layout.attributedString)
+        XCTAssertNil(layout.customDraw)
+
+        var nativeCells = Array(repeating: "", count: grid.rows.count * grid.columnCount)
+        attributedString.enumerateAttribute(
+            .paragraphStyle,
+            in: NSRange(location: 0, length: attributedString.length)
+        ) { value, range, _ in
+            guard
+                let style = value as? NSParagraphStyle,
+                let block = style.textBlocks.first as? NSTextTableBlock
+            else {
+                return
+            }
+
+            XCTAssertEqual(block.table.numberOfColumns, grid.columnCount)
+            let index = block.startingRow * grid.columnCount + block.startingColumn
+            nativeCells[index] = attributedString.attributedSubstring(from: range).string
+                .trimmingCharacters(in: .newlines)
+        }
+        XCTAssertEqual(nativeCells, expectedDisplayText.flatMap { $0 })
+        #elseif canImport(UIKit) && !os(watchOS)
+        XCTAssertNil(layout.attributedString)
+        XCTAssertNotNil(layout.customDraw)
+
+        let cardLayout = TableCardRenderer.computeLayout(
+            from: table,
+            theme: .default,
+            constrainedToWidth: 400
+        )
+        XCTAssertEqual(cardLayout.columnWidths.count, grid.columnCount)
+        XCTAssertEqual(
+            cardLayout.rows.map { $0.cells.map(\.text.string) },
+            expectedDisplayText
+        )
+
+        let nestedFallback = TableAttributedStringBuilder.build(
+            from: table,
+            theme: .default,
+            constrainedToWidth: 400
+        )
+        XCTAssertGreaterThan(nestedFallback.length, 0)
+        for text in ["Name", "Status", "Alice", "Bob", "Done"] {
+            XCTAssertTrue(nestedFallback.string.contains(text))
+        }
+        #endif
+    }
+
     // MARK: - Code block language label uses platformSecondaryLabel
 
     func testCodeBlockLanguageLabelColor() async throws {
@@ -223,5 +305,17 @@ final class CrossPlatformLayoutTests: XCTestCase {
             .flatMap { $0.cells.map(\.text.string) }
             .joined(separator: "\n")
         #endif
+    }
+
+    private func tableRow(_ values: [String]) -> TableRowNode {
+        TableRowNode(
+            range: nil,
+            children: values.map {
+                TableCellNode(
+                    range: nil,
+                    children: [TextNode(range: nil, text: $0)]
+                )
+            }
+        )
     }
 }

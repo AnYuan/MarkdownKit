@@ -25,6 +25,11 @@ A recursive tree solver. After cache lookup, it classifies each node into a shal
 ### `AttributedStringBuilder`
 The builder expands block and inline structure into an invocation-local flat operation program. Sequential async and sync materializers consume the same structural program; image loading, math rendering, and diagram rendering remain explicit mode-specific leaves.
 
+### Table layout
+`TableLayoutShared` is the single owner of canonical table content and uniform column geometry. It rectangularizes ragged compatible `TableNode` input into immutable rows/cells with display text, alignment, header/body role, and body-row index, then sanitizes width inputs before producing per-platform geometry.
+
+Rendering remains intentionally platform-specific through thin adapters: macOS emits native `NSTextTableBlock` content with zebra styling; nested UIKit attributed rendering uses tab stops or a narrow pipe fallback with zebra styling; top-level UIKit layout uses `TableCardRenderer` to measure wrapped theme-configured text (13pt by default) and draw a rounded `CGContext` card with borders/dividers and no zebra. `LayoutSolver` preserves the UIKit top-level contract by returning `customDraw` with a nil attributed string.
+
 ### `LayoutCache`
 An `NSCache`-backed memoization utility. 
 Because text measurement is still expensive, `LayoutCache` keys results by node
