@@ -316,6 +316,82 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
         )
     }
 
+    func testSyncAndAsyncSolverCachesAndRenderFingerprintsRemainIsolated() async throws {
+        let node = try XCTUnwrap(
+            TestHelper.parse("Envelope-specific cache entry.").children.first
+        )
+        let cache = LayoutCache()
+        let solver = LayoutSolver(cache: cache)
+        let width: CGFloat = 320
+
+        let sync = solver.solveSync(node: node, constrainedToWidth: width)
+
+        cache.resetStatsForTesting()
+        let async = await solver.solve(node: node, constrainedToWidth: width)
+        XCTAssertEqual(cache.hitCountForTesting, 0)
+        XCTAssertEqual(cache.missCountForTesting, 1)
+        XCTAssertNotEqual(sync.renderFingerprint, async.renderFingerprint)
+
+        cache.resetStatsForTesting()
+        XCTAssertEqual(
+            solver.solveSync(node: node, constrainedToWidth: width).renderFingerprint,
+            sync.renderFingerprint
+        )
+        XCTAssertEqual(cache.hitCountForTesting, 1)
+        XCTAssertEqual(cache.missCountForTesting, 0)
+
+        cache.resetStatsForTesting()
+        let asyncCached = await solver.solve(node: node, constrainedToWidth: width)
+        XCTAssertEqual(
+            asyncCached.renderFingerprint,
+            async.renderFingerprint
+        )
+        XCTAssertEqual(cache.hitCountForTesting, 1)
+        XCTAssertEqual(cache.missCountForTesting, 0)
+    }
+
+    func testAsyncCachedChildIsRestampedAtItsCurrentDocumentPosition() async {
+        let cache = LayoutCache()
+        let solver = LayoutSolver(cache: cache)
+        let cachedParagraph = paragraph("reused")
+        _ = await solver.solve(node: cachedParagraph, constrainedToWidth: 320)
+
+        let document = DocumentNode(
+            range: nil,
+            children: [paragraph("first"), paragraph("reused")]
+        )
+        let result = await solver.solve(node: document, constrainedToWidth: 320)
+
+        XCTAssertEqual(
+            result.children[1].stableIdentity,
+            StableNodeIdentity(
+                contentFingerprint: cachedParagraph.contentFingerprint,
+                pathHash: StableNodeIdentity.pathHash(for: [1])
+            )
+        )
+    }
+
+    func testSyncCachedChildIsRestampedAtItsCurrentDocumentPosition() {
+        let cache = LayoutCache()
+        let solver = LayoutSolver(cache: cache)
+        let cachedParagraph = paragraph("reused")
+        _ = solver.solveSync(node: cachedParagraph, constrainedToWidth: 320)
+
+        let document = DocumentNode(
+            range: nil,
+            children: [paragraph("first"), paragraph("reused")]
+        )
+        let result = solver.solveSync(node: document, constrainedToWidth: 320)
+
+        XCTAssertEqual(
+            result.children[1].stableIdentity,
+            StableNodeIdentity(
+                contentFingerprint: cachedParagraph.contentFingerprint,
+                pathHash: StableNodeIdentity.pathHash(for: [1])
+            )
+        )
+    }
+
     func testCacheEvictionAtCountLimit() {
         let cache = LayoutCache(countLimit: 2)
 
@@ -359,5 +435,9 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
             highlight: base.highlight,
             thematicBreak: base.thematicBreak
         )
+    }
+
+    private func paragraph(_ text: String) -> ParagraphNode {
+        ParagraphNode(range: nil, children: [TextNode(range: nil, text: text)])
     }
 }

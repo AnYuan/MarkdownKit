@@ -46,6 +46,108 @@ final class DiagramLayoutTests: XCTestCase {
 
         XCTAssertEqual(text, "[Rendered Mermaid Diagram]")
     }
+
+    func testWarmDiagramCacheHitAvoidsRepeatedAdapterWork() async throws {
+        let diagram = try XCTUnwrap(
+            TestHelper.parse(
+                "```mermaid\ngraph TD\nA-->B\n```",
+                plugins: [DiagramExtractionPlugin()]
+            ).children.first as? DiagramNode
+        )
+        let cache = LayoutCache()
+        let adapter = RecordingDiagramAdapter(output: "rendered")
+        var registry = DiagramAdapterRegistry()
+        registry.register(adapter, for: .mermaid)
+        let solver = LayoutSolver(cache: cache, diagramRegistry: registry)
+
+        let first = await solver.solve(node: diagram, constrainedToWidth: 320)
+        cache.resetStatsForTesting()
+        let second = await solver.solve(node: diagram, constrainedToWidth: 320)
+        let renderCount = await adapter.renderCount()
+
+        XCTAssertEqual(renderCount, 1)
+        XCTAssertEqual(cache.hitCountForTesting, 1)
+        XCTAssertEqual(cache.missCountForTesting, 0)
+        XCTAssertEqual(second.renderFingerprint, first.renderFingerprint)
+    }
+
+    func testCancelledDiagramLayoutIsNotPublishedAndRetryRendersAgain() async throws {
+        let diagram = try XCTUnwrap(
+            TestHelper.parse(
+                "```mermaid\ngraph TD\nA-->B\n```",
+                plugins: [DiagramExtractionPlugin()]
+            ).children.first as? DiagramNode
+        )
+        let cache = LayoutCache()
+        let adapter = BlockingDiagramAdapter(output: "rendered")
+        var registry = DiagramAdapterRegistry()
+        registry.register(adapter, for: .mermaid)
+        let solver = LayoutSolver(cache: cache, diagramRegistry: registry)
+
+        let task = Task {
+            _ = await solver.solve(node: diagram, constrainedToWidth: 320)
+        }
+        guard await adapter.waitUntilFirstRenderStarts() else {
+            await adapter.releaseFirstRender()
+            task.cancel()
+            _ = await task.value
+            XCTFail("Diagram adapter did not start within the timeout")
+            return
+        }
+        task.cancel()
+        await adapter.releaseFirstRender()
+        _ = await task.value
+
+        cache.resetStatsForTesting()
+        let retry = await solver.solve(node: diagram, constrainedToWidth: 320)
+        let renderCount = await adapter.renderCount()
+
+        XCTAssertEqual(renderCount, 2)
+        XCTAssertEqual(cache.hitCountForTesting, 0)
+        XCTAssertEqual(cache.missCountForTesting, 1)
+        XCTAssertEqual(retry.attributedString?.string, "rendered")
+    }
+
+    func testSyncDiagramSkipsAdapterAndAsyncDiagramUsesCodeBlockInset() async throws {
+        let diagram = try XCTUnwrap(
+            TestHelper.parse(
+                "```mermaid\ngraph TD\nA-->B\n```",
+                plugins: [DiagramExtractionPlugin()]
+            ).children.first as? DiagramNode
+        )
+        let rawOutput = NSAttributedString(string: "rendered")
+        let adapter = RecordingDiagramAdapter(output: rawOutput.string)
+        var registry = DiagramAdapterRegistry()
+        registry.register(adapter, for: .mermaid)
+        let solver = LayoutSolver(cache: LayoutCache(), diagramRegistry: registry)
+        let width: CGFloat = 320
+
+        let sync = solver.solveSync(node: diagram, constrainedToWidth: width)
+        let syncExpected = TextKitCalculator().calculateSize(
+            for: NSAttributedString(),
+            constrainedToWidth: width
+        )
+        let syncRenderCount = await adapter.renderCount()
+
+        XCTAssertEqual(syncRenderCount, 0)
+        XCTAssertEqual(sync.attributedString?.string, "")
+        XCTAssertEqual(sync.size, syncExpected)
+
+        let async = await solver.solve(node: diagram, constrainedToWidth: width)
+        let totalInset = Theme.default.codeBlock.layoutTotalInset
+        var asyncExpected = TextKitCalculator().calculateSize(
+            for: rawOutput,
+            constrainedToWidth: max(0, width - totalInset)
+        )
+        asyncExpected.width += totalInset
+        asyncExpected.height += totalInset
+        let asyncRenderCount = await adapter.renderCount()
+
+        XCTAssertEqual(asyncRenderCount, 1)
+        XCTAssertEqual(async.size, asyncExpected)
+        XCTAssertNotEqual(async.renderFingerprint, sync.renderFingerprint)
+    }
+
     // MARK: - DiagramAdapterRegistry Tests
 
     func testRegistryAdapterReturnsNilForUnregisteredLanguage() {
@@ -109,4 +211,99 @@ private struct MockDiagramAdapter: DiagramRenderingAdapter {
     func render(source: String, language: DiagramLanguage) async -> NSAttributedString? {
         NSAttributedString(string: output)
     }
+}
+
+private struct RecordingDiagramAdapter: DiagramRenderingAdapter {
+    private let output: String
+    private let state = DiagramAdapterState()
+
+    init(output: String) {
+        self.output = output
+    }
+
+    func render(source: String, language: DiagramLanguage) async -> NSAttributedString? {
+        await state.recordRender()
+        return NSAttributedString(string: output)
+    }
+
+    func renderCount() async -> Int {
+        await state.renderCount
+    }
+
+    func cacheFingerprint(into hasher: inout Hasher) {
+        hasher.combine("RecordingDiagramAdapter")
+        hasher.combine(output)
+    }
+}
+
+private struct BlockingDiagramAdapter: DiagramRenderingAdapter {
+    private let output: String
+    private let state = DiagramAdapterState(blocksFirstRender: true)
+
+    init(output: String) {
+        self.output = output
+    }
+
+    func render(source: String, language: DiagramLanguage) async -> NSAttributedString? {
+        await state.recordRender()
+        return NSAttributedString(string: output)
+    }
+
+    func waitUntilFirstRenderStarts() async -> Bool {
+        await state.waitUntilFirstRenderStarts()
+    }
+
+    func releaseFirstRender() async {
+        await state.releaseFirstRender()
+    }
+
+    func renderCount() async -> Int {
+        await state.renderCount
+    }
+
+    func cacheFingerprint(into hasher: inout Hasher) {
+        hasher.combine("BlockingDiagramAdapter")
+        hasher.combine(output)
+    }
+}
+
+private actor DiagramAdapterState {
+    private let blocksFirstRender: Bool
+    private(set) var renderCount = 0
+    private var didStartFirstRender = false
+    private var isFirstRenderReleased = false
+    private var firstRenderContinuation: CheckedContinuation<Void, Never>?
+
+    init(blocksFirstRender: Bool = false) {
+        self.blocksFirstRender = blocksFirstRender
+    }
+
+    func recordRender() async {
+        renderCount += 1
+        if renderCount == 1 {
+            didStartFirstRender = true
+            if blocksFirstRender, !isFirstRenderReleased {
+                await withCheckedContinuation { continuation in
+                    firstRenderContinuation = continuation
+                }
+            }
+        }
+    }
+
+    func waitUntilFirstRenderStarts() async -> Bool {
+        for _ in 0..<200 {
+            if didStartFirstRender {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return didStartFirstRender
+    }
+
+    func releaseFirstRender() {
+        isFirstRenderReleased = true
+        firstRenderContinuation?.resume()
+        firstRenderContinuation = nil
+    }
+
 }

@@ -1,5 +1,6 @@
 import XCTest
 import Markdown
+import os
 @testable import MarkdownKit
 
 #if canImport(UIKit)
@@ -8,14 +9,9 @@ import UIKit
 import AppKit
 #endif
 
-/// `AttributedStringBuilder.buildString` (async) and `buildStringSync` are
-/// near-duplicate ~150-line implementations. They MUST agree on output for
-/// every non-async-dependent node type (everything except math / images /
-/// diagrams, which call into adapters whose behavior differs between sync
-/// and async modes).
-///
-/// These tests lock in that equivalence so the planned async/sync unification
-/// refactor (Phase 6.2 follow-up) doesn't silently break parity.
+/// Locks async/sync parity around the builder's shared flat render program.
+/// Resource leaves intentionally differ by mode; all structural operations and
+/// inherited attributes must remain equivalent.
 final class AttributedStringBuilderEquivalenceTests: XCTestCase {
 
     private func solve(_ node: MarkdownNode) async -> (asyncResult: LayoutResult, syncResult: LayoutResult) {
@@ -29,6 +25,21 @@ final class AttributedStringBuilderEquivalenceTests: XCTestCase {
         let parser = MarkdownParser()
         let doc = parser.parse(markdown)
         return await solve(doc)
+    }
+
+    private func makeBuilder(
+        diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry(),
+        mathAdapter: any MathRenderingAdapter = RecordingMathAdapter(recorder: ResourceCallRecorder()),
+        imageLoadingPolicy: ImageLoadingPolicy = .default
+    ) -> AttributedStringBuilder {
+        let theme = Theme.default
+        return AttributedStringBuilder(
+            theme: theme,
+            highlighter: SplashHighlighter(theme: theme),
+            diagramRegistry: diagramRegistry,
+            mathAdapter: mathAdapter,
+            imageLoadingPolicy: imageLoadingPolicy
+        )
     }
 
     private func assertAttributedStringEqual(
@@ -160,6 +171,66 @@ final class AttributedStringBuilderEquivalenceTests: XCTestCase {
         """)
     }
 
+    func testNestedListTransformsFilteringAndSeparatorsRemainEquivalent() async throws {
+        let nestedList = ListNode(
+            range: nil,
+            isOrdered: false,
+            children: [
+                TestBlockWrapper(children: [TextNode(range: nil, text: "filtered")]),
+                ListItemNode(
+                    range: nil,
+                    children: [
+                        ParagraphNode(range: nil, children: [TextNode(range: nil, text: "Nested")])
+                    ]
+                )
+            ]
+        )
+        let list = ListNode(
+            range: nil,
+            isOrdered: true,
+            children: [
+                TestInlineWrapper(children: [TextNode(range: nil, text: "filtered")]),
+                ListItemNode(
+                    range: nil,
+                    children: [
+                        ParagraphNode(range: nil, children: [TextNode(range: nil, text: "Outer")]),
+                        nestedList
+                    ]
+                ),
+                TestBlockWrapper(children: [TextNode(range: nil, text: "filtered")]),
+                ListItemNode(
+                    range: nil,
+                    children: [
+                        ParagraphNode(range: nil, children: [TextNode(range: nil, text: "Tail")])
+                    ]
+                )
+            ]
+        )
+
+        let results = await assertNodeAttributedStringEqual(list)
+        let string = try XCTUnwrap(results.syncResult.attributedString)
+        XCTAssertEqual(string.string, "1. Outer\n• Nested\n2. Tail")
+
+        let nestedRange = (string.string as NSString).range(of: "• Nested")
+        let nestedStyle = try XCTUnwrap(
+            string.attribute(.paragraphStyle, at: nestedRange.location, effectiveRange: nil)
+                as? NSParagraphStyle
+        )
+        XCTAssertEqual(nestedStyle.firstLineHeadIndent, Theme.default.list.nestedIndentDelta)
+        XCTAssertGreaterThan(nestedStyle.headIndent, nestedStyle.firstLineHeadIndent)
+
+        let firstStyle = try XCTUnwrap(
+            string.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+        )
+        let lastRange = (string.string as NSString).range(of: "2. Tail")
+        let lastStyle = try XCTUnwrap(
+            string.attribute(.paragraphStyle, at: lastRange.location, effectiveRange: nil)
+                as? NSParagraphStyle
+        )
+        XCTAssertEqual(firstStyle.paragraphSpacing, 2)
+        XCTAssertEqual(lastStyle.paragraphSpacing, Theme.default.typography.paragraph.paragraphSpacing)
+    }
+
     func testTaskListEquivalence() async {
         await assertStringEqual("""
         - [x] done
@@ -225,6 +296,80 @@ final class AttributedStringBuilderEquivalenceTests: XCTestCase {
         )
     }
 
+    func testMixedDetailsAndBlockQuoteNewlinesAndAttributesRemainEquivalent() async throws {
+        let quote = BlockQuoteNode(
+            range: nil,
+            children: [
+                ParagraphNode(
+                    range: nil,
+                    children: [
+                        TextNode(range: nil, text: "Quoted "),
+                        StrongNode(range: nil, children: [TextNode(range: nil, text: "body")])
+                    ]
+                ),
+                TestBlockWrapper(children: [TextNode(range: nil, text: "filtered")])
+            ]
+        )
+        let details = DetailsNode(
+            range: nil,
+            isOpen: true,
+            summary: SummaryNode(range: nil, children: [TextNode(range: nil, text: "Mixed")]),
+            children: [
+                quote,
+                ParagraphNode(range: nil, children: [TextNode(range: nil, text: "After")])
+            ]
+        )
+
+        let results = await assertNodeAttributedStringEqual(details)
+        let string = try XCTUnwrap(results.syncResult.attributedString)
+        XCTAssertEqual(string.string, "▼ Mixed\n┃ Quoted body\n\n\nAfter")
+
+        let barRange = (string.string as NSString).range(of: Theme.default.blockQuote.barCharacter)
+        let quoteRange = (string.string as NSString).range(of: "Quoted body")
+        XCTAssertNotEqual(
+            string.attribute(.foregroundColor, at: barRange.location, effectiveRange: nil) as? Color,
+            string.attribute(.foregroundColor, at: quoteRange.location, effectiveRange: nil) as? Color
+        )
+        XCTAssertEqual(
+            string.attribute(.paragraphStyle, at: barRange.location, effectiveRange: nil)
+                as? NSParagraphStyle,
+            string.attribute(.paragraphStyle, at: quoteRange.location, effectiveRange: nil)
+                as? NSParagraphStyle
+        )
+    }
+
+    func testBlockQuoteNestedListUsesChildLocalSeparatorState() async throws {
+        let list = ListNode(
+            range: nil,
+            isOrdered: false,
+            children: [
+                ListItemNode(
+                    range: nil,
+                    children: [
+                        ParagraphNode(
+                            range: nil,
+                            children: [TextNode(range: nil, text: "item")]
+                        )
+                    ]
+                )
+            ]
+        )
+        let quote = BlockQuoteNode(
+            range: nil,
+            children: [
+                ParagraphNode(
+                    range: nil,
+                    children: [TextNode(range: nil, text: "text")]
+                ),
+                list
+            ]
+        )
+
+        let results = await assertNodeAttributedStringEqual(quote)
+
+        XCTAssertEqual(results.syncResult.attributedString?.string, "┃ text\n• item\n")
+    }
+
     func testTaskPrefixesCarryInteractionDataAndAccessibilityState() async {
         await assertTaskPrefix(state: .checked, expectedChecked: true)
         await assertTaskPrefix(state: .unchecked, expectedChecked: false)
@@ -245,6 +390,178 @@ final class AttributedStringBuilderEquivalenceTests: XCTestCase {
 
         let results = await assertNodeAttributedStringEqual(paragraph)
         XCTAssertEqual(results.syncResult.attributedString?.string, "before wrapped after")
+    }
+
+    func testDeepUnknownInlineRecursionPreservesInheritedAttributes() async throws {
+        let destination = "https://example.com/deep"
+        let paragraph = ParagraphNode(
+            range: nil,
+            children: [
+                StrongNode(
+                    range: nil,
+                    children: [
+                        TestInlineWrapper(children: [
+                            EmphasisNode(
+                                range: nil,
+                                children: [
+                                    TestInlineWrapper(children: [
+                                        StrikethroughNode(
+                                            range: nil,
+                                            children: [
+                                                LinkNode(
+                                                    range: nil,
+                                                    destination: destination,
+                                                    title: nil,
+                                                    children: [
+                                                        TestInlineWrapper(children: [
+                                                            TextNode(range: nil, text: "deep")
+                                                        ])
+                                                    ]
+                                                )
+                                            ]
+                                        )
+                                    ])
+                                ]
+                            )
+                        ])
+                    ]
+                )
+            ]
+        )
+
+        let results = await assertNodeAttributedStringEqual(paragraph)
+        let string = try XCTUnwrap(results.syncResult.attributedString)
+        let expectedFont = FontTraitResolver.adding(
+            .italic,
+            to: FontTraitResolver.adding(.bold, to: Theme.default.typography.paragraph.font)
+        )
+
+        XCTAssertEqual(string.attribute(.font, at: 0, effectiveRange: nil) as? Font, expectedFont)
+        XCTAssertEqual(
+            string.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) as? Int,
+            NSUnderlineStyle.single.rawValue
+        )
+        XCTAssertEqual(
+            string.attribute(.underlineStyle, at: 0, effectiveRange: nil) as? Int,
+            NSUnderlineStyle.single.rawValue
+        )
+        XCTAssertEqual(
+            string.attribute(.link, at: 0, effectiveRange: nil) as? URL,
+            URL(string: destination)
+        )
+    }
+
+    func testClosedDetailsDoesNotMaterializeBodyResources() async {
+        let recorder = ResourceCallRecorder()
+        var registry = DiagramAdapterRegistry()
+        registry.register(RecordingDiagramAdapter(recorder: recorder), for: .mermaid)
+        let builder = makeBuilder(
+            diagramRegistry: registry,
+            mathAdapter: RecordingMathAdapter(recorder: recorder)
+        )
+        let details = DetailsNode(
+            range: nil,
+            isOpen: false,
+            summary: SummaryNode(range: nil, children: [TextNode(range: nil, text: "Closed")]),
+            children: [
+                MathNode(range: nil, style: .block, equation: "hidden-math"),
+                DiagramNode(range: nil, language: .mermaid, source: "hidden-diagram")
+            ]
+        )
+
+        let asyncString = await builder.buildString(for: details, constrainedToWidth: 320)
+        XCTAssertEqual(asyncString.string, "▶ Closed")
+        XCTAssertEqual(recorder.snapshot(), [])
+
+        let syncString = builder.buildStringSync(for: details, constrainedToWidth: 320)
+        XCTAssertEqual(syncString.string, "▶ Closed")
+        XCTAssertEqual(recorder.snapshot(), [])
+    }
+
+    func testAsyncResourcesMaterializeSequentiallyInSourceOrder() async {
+        let recorder = ResourceCallRecorder()
+        var registry = DiagramAdapterRegistry()
+        registry.register(RecordingDiagramAdapter(recorder: recorder), for: .mermaid)
+        let builder = makeBuilder(
+            diagramRegistry: registry,
+            mathAdapter: RecordingMathAdapter(recorder: recorder)
+        )
+        let details = DetailsNode(
+            range: nil,
+            isOpen: true,
+            summary: SummaryNode(range: nil, children: [TextNode(range: nil, text: "Resources")]),
+            children: [
+                MathNode(range: nil, style: .block, equation: "first"),
+                DiagramNode(range: nil, language: .mermaid, source: "second"),
+                ParagraphNode(
+                    range: nil,
+                    children: [
+                        TextNode(range: nil, text: "third "),
+                        MathNode(range: nil, style: .inline, equation: "third")
+                    ]
+                )
+            ]
+        )
+
+        let string = await builder.buildString(for: details, constrainedToWidth: 320)
+
+        XCTAssertEqual(string.string, "▼ Resources\n<A:first>\n<D:second>\nthird <A:third>")
+        XCTAssertEqual(
+            recorder.snapshot(),
+            [
+                "math-start:first",
+                "math-end:first",
+                "diagram-start:second",
+                "diagram-end:second",
+                "math-start:third",
+                "math-end:third"
+            ]
+        )
+    }
+
+    func testAsyncAndSyncResourceDifferencesRemainExplicit() async throws {
+        let recorder = ResourceCallRecorder()
+        var registry = DiagramAdapterRegistry()
+        registry.register(RecordingDiagramAdapter(recorder: recorder), for: .mermaid)
+        let builder = makeBuilder(
+            diagramRegistry: registry,
+            mathAdapter: RecordingMathAdapter(recorder: recorder),
+            imageLoadingPolicy: .trusted
+        )
+
+        let math = MathNode(range: nil, style: .block, equation: "x")
+        let asyncMath = await builder.buildString(for: math, constrainedToWidth: 320)
+        XCTAssertEqual(asyncMath.string, "<A:x>")
+        XCTAssertEqual(
+            builder.buildStringSync(for: math, constrainedToWidth: 320).string,
+            "<S:x>"
+        )
+
+        let diagram = DiagramNode(range: nil, language: .mermaid, source: "graph")
+        let asyncDiagram = await builder.buildString(for: diagram, constrainedToWidth: 320)
+        XCTAssertEqual(asyncDiagram.string, "<D:graph>")
+        XCTAssertEqual(
+            builder.buildStringSync(for: diagram, constrainedToWidth: 320).string,
+            ""
+        )
+
+        let fixtureURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("builder-resource-\(UUID().uuidString).png")
+        try TestHelper.onePixelPNGData().write(to: fixtureURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fixtureURL) }
+        let image = ImageNode(
+            range: nil,
+            source: fixtureURL.absoluteString,
+            altText: "fixture",
+            title: nil
+        )
+        let paragraph = ParagraphNode(range: nil, children: [image])
+        let asyncImage = await builder.buildString(for: paragraph, constrainedToWidth: 320)
+        let syncImage = builder.buildStringSync(for: paragraph, constrainedToWidth: 320)
+
+        XCTAssertNotNil(asyncImage.attribute(.attachment, at: 0, effectiveRange: nil))
+        XCTAssertEqual(syncImage.string, "[fixture]")
+        XCTAssertNil(syncImage.attribute(.attachment, at: 0, effectiveRange: nil))
     }
 
     func testRecursiveInlineFallbackDoesNotChangeUnsupportedBlockContexts() async {
@@ -387,5 +704,44 @@ private struct TestBlockWrapper: BlockNode {
             typeName: "TestBlockWrapper",
             children: children
         )
+    }
+}
+
+private final class ResourceCallRecorder: Sendable {
+    private let calls = OSAllocatedUnfairLock(initialState: [String]())
+
+    func record(_ call: String) {
+        calls.withLock { $0.append(call) }
+    }
+
+    func snapshot() -> [String] {
+        calls.withLock { $0 }
+    }
+}
+
+private struct RecordingMathAdapter: MathRenderingAdapter {
+    let recorder: ResourceCallRecorder
+
+    func render(from node: MathNode, theme: Theme, contextFont: Font?) async -> NSAttributedString {
+        recorder.record("math-start:\(node.equation)")
+        try? await Task.sleep(for: .milliseconds(5))
+        recorder.record("math-end:\(node.equation)")
+        return NSAttributedString(string: "<A:\(node.equation)>")
+    }
+
+    func renderSync(from node: MathNode, theme: Theme, contextFont: Font?) -> NSAttributedString {
+        recorder.record("math-sync:\(node.equation)")
+        return NSAttributedString(string: "<S:\(node.equation)>")
+    }
+}
+
+private struct RecordingDiagramAdapter: DiagramRenderingAdapter {
+    let recorder: ResourceCallRecorder
+
+    func render(source: String, language: DiagramLanguage) async -> NSAttributedString? {
+        recorder.record("diagram-start:\(source)")
+        try? await Task.sleep(for: .milliseconds(5))
+        recorder.record("diagram-end:\(source)")
+        return NSAttributedString(string: "<D:\(source)>")
     }
 }

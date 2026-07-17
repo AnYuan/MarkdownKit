@@ -26,7 +26,42 @@ public final class LayoutSolver: @unchecked Sendable {
     /// The explicit appearance this solver was initialised with. Stored so that
     /// every `LayoutResult` it creates carries the correct appearance value.
     private let appearance: MarkdownAppearance
-    
+
+    private enum ImmediateLayoutRecipe {
+        #if canImport(UIKit) && !os(watchOS)
+        case table(TableNode)
+        case thematicBreak
+        #endif
+        case codeBlock(CodeBlockNode)
+    }
+
+    private enum ShallowLayoutRecipe {
+        case immediate(ImmediateLayoutRecipe)
+        case diagram(DiagramNode)
+        case attributed(MarkdownNode)
+    }
+
+    private enum TextMeasurement {
+        case standard
+        case codeBlockInset
+    }
+
+    private struct ShallowLayoutOutput {
+        let size: CGSize
+        let attributedString: NSAttributedString?
+        let customDraw: (@Sendable (CGContext, CGSize) -> Void)?
+
+        init(
+            size: CGSize,
+            attributedString: NSAttributedString? = nil,
+            customDraw: (@Sendable (CGContext, CGSize) -> Void)? = nil
+        ) {
+            self.size = size
+            self.attributedString = attributedString
+            self.customDraw = customDraw
+        }
+    }
+
     public init(
         theme: Theme = .default,
         cache: LayoutCache = LayoutCache(),
@@ -110,80 +145,11 @@ public final class LayoutSolver: @unchecked Sendable {
             return cached
         }
 
-        #if canImport(UIKit) && !os(watchOS)
-        // Card-style table rendering on iOS: bypass TextKit, draw directly via CGContext
-        if let table = node as? TableNode {
-            let result = solveTableCard(
-                table: table,
-                constrainedToWidth: maxWidth,
-                variantHash: cacheVariantHash
-            )
-            if !Task.isCancelled {
-                cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
-            }
-            return result
-        }
-
-        // Thematic break: draw a hairline matching legacy DividerAttachment
-        if node is ThematicBreakNode {
-            let result = solveThematicBreak(
-                node: node,
-                constrainedToWidth: maxWidth,
-                variantHash: cacheVariantHash
-            )
-            if !Task.isCancelled {
-                cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
-            }
-            return result
-        }
-        #endif
-
-
-        // 1. Convert AST to styled NSAttributedString based on Theme
-        let rawString: NSAttributedString
-        var size: CGSize
-
-        // Special handling for nodes that have internal padding in their UI representation
-        if let code = node as? CodeBlockNode {
-            rawString = builder.buildCodeBlockAttributedString(from: code)
-
-            // TextKit needs to know that we inset the container 8pts horizontally by the UI view
-            // to accurately wrap the string if it's too long.
-            let totalInset = builder.theme.codeBlock.layoutTotalInset
-            let insets = CGSize(width: totalInset, height: totalInset)
-            size = textCalculator.calculateSize(
-                for: rawString,
-                constrainedToWidth: max(0, maxWidth - insets.width)
-            )
-            size.width += insets.width
-            size.height += insets.height
-
-        } else if let diagram = node as? DiagramNode {
-            rawString = await builder.buildDiagramAttributedString(from: diagram)
-
-            let totalInset = builder.theme.codeBlock.layoutTotalInset
-            let insets = CGSize(width: totalInset, height: totalInset)
-            size = textCalculator.calculateSize(
-                for: rawString,
-                constrainedToWidth: max(0, maxWidth - insets.width)
-            )
-            size.width += insets.width
-            size.height += insets.height
-
-        } else {
-            rawString = await builder.buildString(for: node, constrainedToWidth: maxWidth)
-            
-            if shouldUseArithmeticLayout(for: node, styledString: rawString) {
-                size = arithmeticCalculator.calculateSize(for: rawString, constrainedToWidth: maxWidth)
-            } else {
-                size = textCalculator.calculateSize(for: rawString, constrainedToWidth: maxWidth)
-            }
-        }
-
-        // Resolve any remaining dynamic colors (e.g. platform secondary-label
-        // used for code-block language labels, or colors from math/diagram adapters)
-        // to concrete values for the explicit appearance.
-        let styledString = AppearanceColorResolver.resolveColors(in: rawString, for: appearance)
+        let recipe = makeRecipe(for: node)
+        let output = await executeAsync(
+            recipe,
+            constrainedToWidth: maxWidth
+        )
 
         // 3. Recurse down children (if they represent separate visual block elements)
         // For basic implementation, we assume paragraphs/headers handle their own inline children.
@@ -197,14 +163,11 @@ public final class LayoutSolver: @unchecked Sendable {
             }
         }
 
-        // strictly immutable frame container
-        let result = LayoutResult(
+        let result = makeLayoutResult(
             node: node,
-            size: size,
-            attributedString: styledString,
+            output: output,
             children: childLayouts,
-            appearance: appearance,
-            renderFingerprint: makeRenderFingerprint(for: node, variantHash: cacheVariantHash)
+            variantHash: cacheVariantHash
         )
 
         // Memoize the result
@@ -227,52 +190,11 @@ public final class LayoutSolver: @unchecked Sendable {
             return cached
         }
 
-        #if canImport(UIKit) && !os(watchOS)
-        if let table = node as? TableNode {
-            let result = solveTableCard(
-                table: table,
-                constrainedToWidth: maxWidth,
-                variantHash: syncCacheVariantHash
-            )
-            cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: syncCacheVariantHash)
-            return result
-        }
-
-        if node is ThematicBreakNode {
-            let result = solveThematicBreak(
-                node: node,
-                constrainedToWidth: maxWidth,
-                variantHash: syncCacheVariantHash
-            )
-            cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: syncCacheVariantHash)
-            return result
-        }
-        #endif
-
-        let rawString: NSAttributedString
-        var size: CGSize
-
-        if let code = node as? CodeBlockNode {
-            rawString = builder.buildCodeBlockAttributedString(from: code)
-            let totalInset = builder.theme.codeBlock.layoutTotalInset
-            let insets = CGSize(width: totalInset, height: totalInset)
-            size = textCalculator.calculateSize(
-                for: rawString,
-                constrainedToWidth: max(0, maxWidth - insets.width)
-            )
-            size.width += insets.width
-            size.height += insets.height
-        } else {
-            rawString = builder.buildStringSync(for: node, constrainedToWidth: maxWidth)
-            
-            if shouldUseArithmeticLayout(for: node, styledString: rawString) {
-                size = arithmeticCalculator.calculateSize(for: rawString, constrainedToWidth: maxWidth)
-            } else {
-                size = textCalculator.calculateSize(for: rawString, constrainedToWidth: maxWidth)
-            }
-        }
-
-        let styledString = AppearanceColorResolver.resolveColors(in: rawString, for: appearance)
+        let recipe = makeRecipe(for: node)
+        let output = executeSync(
+            recipe,
+            constrainedToWidth: maxWidth
+        )
 
         var childLayouts: [LayoutResult] = []
         if let doc = node as? DocumentNode {
@@ -282,16 +204,156 @@ public final class LayoutSolver: @unchecked Sendable {
             }
         }
 
-        let result = LayoutResult(
+        let result = makeLayoutResult(
             node: node,
-            size: size,
-            attributedString: styledString,
+            output: output,
             children: childLayouts,
-            appearance: appearance,
-            renderFingerprint: makeRenderFingerprint(for: node, variantHash: syncCacheVariantHash)
+            variantHash: syncCacheVariantHash
         )
         cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: syncCacheVariantHash)
         return result
+    }
+
+    private func makeRecipe(for node: MarkdownNode) -> ShallowLayoutRecipe {
+        #if canImport(UIKit) && !os(watchOS)
+        if let table = node as? TableNode {
+            return .immediate(.table(table))
+        }
+        if node is ThematicBreakNode {
+            return .immediate(.thematicBreak)
+        }
+        #endif
+        if let codeBlock = node as? CodeBlockNode {
+            return .immediate(.codeBlock(codeBlock))
+        }
+        if let diagram = node as? DiagramNode {
+            return .diagram(diagram)
+        }
+        return .attributed(node)
+    }
+
+    private func executeAsync(
+        _ recipe: ShallowLayoutRecipe,
+        constrainedToWidth maxWidth: CGFloat
+    ) async -> ShallowLayoutOutput {
+        switch recipe {
+        case let .immediate(immediate):
+            return executeImmediate(immediate, constrainedToWidth: maxWidth)
+        case let .diagram(diagram):
+            return makeTextOutput(
+                rawString: await builder.buildDiagramAttributedString(from: diagram),
+                node: diagram,
+                constrainedToWidth: maxWidth,
+                measurement: .codeBlockInset
+            )
+        case let .attributed(node):
+            return makeTextOutput(
+                rawString: await builder.buildString(for: node, constrainedToWidth: maxWidth),
+                node: node,
+                constrainedToWidth: maxWidth,
+                measurement: .standard
+            )
+        }
+    }
+
+    private func executeSync(
+        _ recipe: ShallowLayoutRecipe,
+        constrainedToWidth maxWidth: CGFloat
+    ) -> ShallowLayoutOutput {
+        switch recipe {
+        case let .immediate(immediate):
+            return executeImmediate(immediate, constrainedToWidth: maxWidth)
+        case let .diagram(diagram):
+            return makeTextOutput(
+                rawString: builder.buildStringSync(for: diagram, constrainedToWidth: maxWidth),
+                node: diagram,
+                constrainedToWidth: maxWidth,
+                measurement: .standard
+            )
+        case let .attributed(node):
+            return makeTextOutput(
+                rawString: builder.buildStringSync(for: node, constrainedToWidth: maxWidth),
+                node: node,
+                constrainedToWidth: maxWidth,
+                measurement: .standard
+            )
+        }
+    }
+
+    private func executeImmediate(
+        _ recipe: ImmediateLayoutRecipe,
+        constrainedToWidth maxWidth: CGFloat
+    ) -> ShallowLayoutOutput {
+        switch recipe {
+        #if canImport(UIKit) && !os(watchOS)
+        case let .table(table):
+            return makeTableCardOutput(table: table, constrainedToWidth: maxWidth)
+        case .thematicBreak:
+            return makeThematicBreakOutput(constrainedToWidth: maxWidth)
+        #endif
+        case let .codeBlock(codeBlock):
+            return makeTextOutput(
+                rawString: builder.buildCodeBlockAttributedString(from: codeBlock),
+                node: codeBlock,
+                constrainedToWidth: maxWidth,
+                measurement: .codeBlockInset
+            )
+        }
+    }
+
+    private func makeTextOutput(
+        rawString: NSAttributedString,
+        node: MarkdownNode,
+        constrainedToWidth maxWidth: CGFloat,
+        measurement: TextMeasurement
+    ) -> ShallowLayoutOutput {
+        let size: CGSize
+        switch measurement {
+        case .standard:
+            if shouldUseArithmeticLayout(for: node, styledString: rawString) {
+                size = arithmeticCalculator.calculateSize(
+                    for: rawString,
+                    constrainedToWidth: maxWidth
+                )
+            } else {
+                size = textCalculator.calculateSize(
+                    for: rawString,
+                    constrainedToWidth: maxWidth
+                )
+            }
+        case .codeBlockInset:
+            let totalInset = builder.theme.codeBlock.layoutTotalInset
+            var measuredSize = textCalculator.calculateSize(
+                for: rawString,
+                constrainedToWidth: max(0, maxWidth - totalInset)
+            )
+            measuredSize.width += totalInset
+            measuredSize.height += totalInset
+            size = measuredSize
+        }
+
+        let styledString = AppearanceColorResolver.resolveColors(
+            in: rawString,
+            for: appearance
+        )
+        return ShallowLayoutOutput(size: size, attributedString: styledString)
+    }
+
+    private func makeLayoutResult(
+        node: MarkdownNode,
+        output: ShallowLayoutOutput,
+        children: [LayoutResult],
+        variantHash: Int
+    ) -> LayoutResult {
+        LayoutResult(
+            node: node,
+            size: output.size,
+            attributedString: output.attributedString,
+            children: children,
+            customDraw: output.customDraw,
+            appearance: appearance,
+            renderFingerprint: makeRenderFingerprint(for: node, variantHash: variantHash)
+        )
     }
 
     /// Stamps a top-level document-position identity onto the layout. Used by
@@ -310,11 +372,9 @@ public final class LayoutSolver: @unchecked Sendable {
     // MARK: - Thematic Break Layout (iOS only)
 
     #if canImport(UIKit) && !os(watchOS)
-    private func solveThematicBreak(
-        node: MarkdownNode,
-        constrainedToWidth maxWidth: CGFloat,
-        variantHash: Int
-    ) -> LayoutResult {
+    private func makeThematicBreakOutput(
+        constrainedToWidth maxWidth: CGFloat
+    ) -> ShallowLayoutOutput {
         let paddingTop = builder.theme.thematicBreak.paddingTop
         let paddingBottom = builder.theme.thematicBreak.paddingBottom
         let dividerHeight = builder.theme.thematicBreak.dividerHeight
@@ -333,14 +393,9 @@ public final class LayoutSolver: @unchecked Sendable {
             context.restoreGState()
         }
 
-        return LayoutResult(
-            node: node,
+        return ShallowLayoutOutput(
             size: totalSize,
-            attributedString: nil,
-            children: [],
-            customDraw: customDraw,
-            appearance: appearance,
-            renderFingerprint: makeRenderFingerprint(for: node, variantHash: variantHash)
+            customDraw: customDraw
         )
     }
     #endif
@@ -348,14 +403,12 @@ public final class LayoutSolver: @unchecked Sendable {
     // MARK: - Table Card Layout (iOS only)
 
     #if canImport(UIKit) && !os(watchOS)
-    /// Produces a `LayoutResult` for a table node that uses CGContext card rendering
-    /// instead of TextKit. The `customDraw` closure captures the pre-computed layout
-    /// and resolved colors so that rasterization is fully thread-safe.
-    private func solveTableCard(
+    /// Produces shallow table output using CGContext card rendering instead of TextKit.
+    /// The closure captures pre-computed layout and resolved colors for thread safety.
+    private func makeTableCardOutput(
         table: TableNode,
-        constrainedToWidth maxWidth: CGFloat,
-        variantHash: Int
-    ) -> LayoutResult {
+        constrainedToWidth maxWidth: CGFloat
+    ) -> ShallowLayoutOutput {
         let layout = TableCardRenderer.computeLayout(
             from: table,
             theme: builder.theme,
@@ -376,14 +429,9 @@ public final class LayoutSolver: @unchecked Sendable {
             )
         }
 
-        return LayoutResult(
-            node: table,
+        return ShallowLayoutOutput(
             size: layout.totalSize,
-            attributedString: nil,
-            children: [],
-            customDraw: customDraw,
-            appearance: appearance,
-            renderFingerprint: makeRenderFingerprint(for: table, variantHash: variantHash)
+            customDraw: customDraw
         )
     }
     #endif

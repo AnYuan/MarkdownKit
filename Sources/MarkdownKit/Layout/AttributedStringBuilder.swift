@@ -19,6 +19,122 @@ struct AttributedStringBuilder {
     private let mathAdapter: any MathRenderingAdapter
     private let imageLoadingPolicy: ImageLoadingPolicy
 
+    private typealias Attributes = [NSAttributedString.Key: Any]
+
+    private enum ResourceLeaf {
+        case image(ImageNode, baseAttributes: Attributes)
+        case math(MathNode, contextFont: Font?)
+        case diagram(DiagramNode)
+    }
+
+    private enum StaticLeaf {
+        case text(String, attributes: Attributes)
+        case table(TableNode)
+        case codeBlock(CodeBlockNode)
+        case blockQuoteBar(NSParagraphStyle)
+        case thematicBreak
+    }
+
+    private enum CaptureDisposition {
+        case append
+        case appendIfNotEmpty(prefix: String)
+        case paragraphStyle(NSParagraphStyle)
+    }
+
+    private enum RenderOperation {
+        case staticLeaf(StaticLeaf)
+        case resource(ResourceLeaf)
+        case beginCapture(CaptureDisposition)
+        case endCapture
+        case appendNewlineIfOutputNotEmpty
+    }
+
+    private enum MaterializationAction {
+        case handled
+        case staticLeaf(StaticLeaf)
+        case resource(ResourceLeaf)
+    }
+
+    private enum PlanningWork {
+        case block(MarkdownNode)
+        case inline([MarkdownNode], baseAttributes: Attributes)
+        case operation(RenderOperation)
+    }
+
+    private struct CaptureFrame {
+        let string = NSMutableAttributedString()
+        let disposition: CaptureDisposition
+    }
+
+    private struct MaterializationState {
+        private let output = NSMutableAttributedString()
+        private var captures: [CaptureFrame] = []
+
+        func finish() -> NSAttributedString {
+            precondition(captures.isEmpty, "Render program ended with unclosed captures")
+            return output
+        }
+
+        mutating func apply(_ operation: RenderOperation) -> MaterializationAction {
+            switch operation {
+            case let .staticLeaf(leaf):
+                return .staticLeaf(leaf)
+
+            case let .resource(resource):
+                return .resource(resource)
+
+            case let .beginCapture(disposition):
+                captures.append(CaptureFrame(disposition: disposition))
+
+            case .endCapture:
+                precondition(
+                    !captures.isEmpty,
+                    "Render program ended a capture without a matching begin"
+                )
+                let capture = captures.removeLast()
+                switch capture.disposition {
+                case .append:
+                    append(capture.string)
+
+                case let .appendIfNotEmpty(prefix):
+                    if capture.string.length > 0 {
+                        append(NSAttributedString(string: prefix))
+                        append(capture.string)
+                    }
+
+                case let .paragraphStyle(style):
+                    let transformed = NSMutableAttributedString(attributedString: capture.string)
+                    if transformed.length > 0 {
+                        transformed.addAttribute(
+                            .paragraphStyle,
+                            value: style,
+                            range: NSRange(location: 0, length: transformed.length)
+                        )
+                    }
+                    append(transformed)
+                }
+
+            case .appendNewlineIfOutputNotEmpty:
+                if currentLength > 0 {
+                    append(NSAttributedString(string: "\n"))
+                }
+            }
+            return .handled
+        }
+
+        mutating func append(_ string: NSAttributedString) {
+            if let capture = captures.last {
+                capture.string.append(string)
+            } else {
+                output.append(string)
+            }
+        }
+
+        private var currentLength: Int {
+            captures.last?.string.length ?? output.length
+        }
+    }
+
     init(
         theme: Theme,
         highlighter: SplashHighlighter,
@@ -32,142 +148,10 @@ struct AttributedStringBuilder {
         self.mathAdapter = mathAdapter
         self.imageLoadingPolicy = imageLoadingPolicy
     }
+
     func buildString(for node: MarkdownNode, constrainedToWidth maxWidth: CGFloat) async -> NSAttributedString {
-        let string = NSMutableAttributedString()
-        
-        switch node {
-        case let table as TableNode:
-            string.append(TableAttributedStringBuilder.build(from: table, theme: theme, constrainedToWidth: maxWidth))
-
-        case let diagram as DiagramNode:
-            // This case is now handled in solve() for size calculation, but we still need to build the string here
-            string.append(await buildDiagramAttributedString(from: diagram))
-
-        case let details as DetailsNode:
-            string.append(await buildDetailsAttributedString(from: details, constrainedToWidth: maxWidth))
-
-        case let summary as SummaryNode:
-            let baseAttrs = detailsSummaryAttributes()
-            string.append(await buildInlineAttributedString(
-                from: summary.children,
-                baseAttributes: baseAttrs,
-                constrainedToWidth: maxWidth
-            ))
-            
-        case let header as HeaderNode:
-            let token = themeToken(forHeaderLevel: header.level)
-            let baseAttrs = defaultAttributes(for: token)
-            string.append(await buildInlineAttributedString(
-                from: header.children,
-                baseAttributes: baseAttrs,
-                constrainedToWidth: maxWidth
-            ))
-            
-        case let text as TextNode:
-            let attributes = defaultAttributes(for: theme.typography.paragraph)
-            string.append(NSAttributedString(string: text.text, attributes: attributes))
-            
-        case let math as MathNode:
-            string.append(await mathAdapter.render(from: math, theme: theme, contextFont: nil))
-
-        case let paragraph as ParagraphNode:
-            let baseAttrs = defaultAttributes(for: theme.typography.paragraph)
-            string.append(await buildInlineAttributedString(
-                from: paragraph.children,
-                baseAttributes: baseAttrs,
-                constrainedToWidth: maxWidth
-            ))
-            
-        case let code as CodeBlockNode:
-            string.append(buildCodeBlockAttributedString(from: code))
-            
-        case let list as ListNode:
-            let font = theme.typography.paragraph.font
-            let listItemCount = list.children.filter { $0 is ListItemNode }.count
-            var currentListItemIndex = 0
-
-            for child in list.children {
-                guard let item = child as? ListItemNode else { continue }
-                currentListItemIndex += 1
-                let isLastItem = currentListItemIndex == listItemCount
-
-                if string.length > 0 {
-                    string.append(NSAttributedString(string: "\n"))
-                }
-
-                let (prefix, isCheckbox) = listItemPrefix(for: list, item: item, oneBasedIndex: currentListItemIndex)
-                let prefixWidth = listItemPrefixWidth(prefix, font: font)
-                let itemStyle = listItemParagraphStyle(prefixWidth: prefixWidth, isLastItem: isLastItem)
-                let listAttrs = listItemBaseAttributes(font: font, style: itemStyle)
-
-                var itemPrefixAttrs = listAttrs
-                if isCheckbox, let range = item.range {
-                    let interactionState = CheckboxInteractionData(isChecked: item.checkbox == .checked, range: range)
-                    itemPrefixAttrs[.markdownCheckbox] = interactionState
-                }
-
-                string.append(NSAttributedString(string: prefix, attributes: itemPrefixAttrs))
-
-                // Render item content
-                for itemChild in item.children {
-                    if let para = itemChild as? ParagraphNode {
-                        string.append(await buildInlineAttributedString(
-                            from: para.children,
-                            baseAttributes: listAttrs,
-                            constrainedToWidth: maxWidth
-                        ))
-                    } else if let nestedList = itemChild as? ListNode {
-                        let nestedAttr = await buildString(for: nestedList, constrainedToWidth: maxWidth)
-                        string.append(NSAttributedString(string: "\n"))
-                        let indented = NSMutableAttributedString(attributedString: nestedAttr)
-                        let indentStyle = nestedListParagraphStyle(prefixWidth: prefixWidth)
-                        indented.addAttribute(.paragraphStyle, value: indentStyle, range: NSRange(location: 0, length: indented.length))
-                        string.append(indented)
-                    } else {
-                        let childAttr = await buildString(for: itemChild, constrainedToWidth: maxWidth)
-                        string.append(childAttr)
-                    }
-                }
-            }
-
-        case is ListItemNode:
-            // ListItems are handled inside ListNode above; this case handles orphans
-            break
-
-        case let blockQuote as BlockQuoteNode:
-            let quoteStyle = blockQuoteParagraphStyle()
-
-            for child in blockQuote.children {
-                if let para = child as? ParagraphNode {
-                    let quoteAttrs = blockQuoteContentAttributes(style: quoteStyle)
-                    let inlineStr = await buildInlineAttributedString(
-                        from: para.children,
-                        baseAttributes: quoteAttrs,
-                        constrainedToWidth: maxWidth
-                    )
-                    string.append(blockQuoteBarAttributedString(style: quoteStyle))
-                    string.append(inlineStr)
-                } else {
-                    let childAttr = await buildString(for: child, constrainedToWidth: maxWidth)
-                    string.append(childAttr)
-                }
-                if string.length > 0 {
-                    string.append(NSAttributedString(string: "\n"))
-                }
-            }
-
-        case is ThematicBreakNode:
-            #if canImport(UIKit) && !os(watchOS)
-            break // Handled by LayoutSolver via customDraw on iOS
-            #else
-            string.append(buildThematicBreakAttributedString())
-            #endif
-
-        default:
-            break
-        }
-
-        return string
+        let operations = makeRenderOperations(for: node)
+        return await materialize(operations, constrainedToWidth: maxWidth)
     }
 
     // MARK: - Synchronous Build (no Swift concurrency)
@@ -175,140 +159,394 @@ struct AttributedStringBuilder {
     /// Builds an attributed string synchronously, without any async calls.
     /// Math nodes render as fallback text, images render as alt text, diagrams are skipped.
     func buildStringSync(for node: MarkdownNode, constrainedToWidth maxWidth: CGFloat) -> NSAttributedString {
-        let string = NSMutableAttributedString()
+        let operations = makeRenderOperations(for: node)
+        return materializeSync(operations, constrainedToWidth: maxWidth)
+    }
+
+    private func makeRenderOperations(for node: MarkdownNode) -> [RenderOperation] {
+        var operations: [RenderOperation] = []
+        var work: [PlanningWork] = [.block(node)]
+
+        while let current = work.popLast() {
+            switch current {
+            case let .block(node):
+                enqueueBlock(node, onto: &work)
+
+            case let .inline(children, baseAttributes):
+                enqueueInline(children, baseAttributes: baseAttributes, onto: &work)
+
+            case let .operation(operation):
+                operations.append(operation)
+            }
+        }
+
+        return operations
+    }
+
+    private func enqueueBlock(
+        _ node: MarkdownNode,
+        onto work: inout [PlanningWork]
+    ) {
+        let orderedWork: [PlanningWork]
 
         switch node {
         case let table as TableNode:
-            string.append(TableAttributedStringBuilder.build(from: table, theme: theme, constrainedToWidth: maxWidth))
+            orderedWork = [
+                .operation(.staticLeaf(.table(table)))
+            ]
+
+        case let diagram as DiagramNode:
+            orderedWork = [.operation(.resource(.diagram(diagram)))]
 
         case let details as DetailsNode:
-            string.append(buildDetailsAttributedStringSync(from: details, constrainedToWidth: maxWidth))
+            var detailsWork: [PlanningWork] = []
+            let summaryAttributes = detailsSummaryAttributes()
+            let disclosure = details.isOpen
+                ? theme.details.openDisclosure
+                : theme.details.closedDisclosure
+            detailsWork.append(.operation(.staticLeaf(.text(
+                disclosure,
+                attributes: summaryAttributes
+            ))))
+
+            if let summary = details.summary, !summary.children.isEmpty {
+                detailsWork.append(.inline(
+                    summary.children,
+                    baseAttributes: summaryAttributes
+                ))
+            } else {
+                detailsWork.append(.operation(.staticLeaf(.text(
+                    "Details",
+                    attributes: summaryAttributes
+                ))))
+            }
+
+            if details.isOpen {
+                for child in details.children {
+                    detailsWork.append(.operation(.beginCapture(
+                        .appendIfNotEmpty(prefix: "\n")
+                    )))
+                    detailsWork.append(.block(child))
+                    detailsWork.append(.operation(.endCapture))
+                }
+            }
+            orderedWork = detailsWork
 
         case let summary as SummaryNode:
-            let baseAttrs = detailsSummaryAttributes()
-            string.append(buildInlineAttributedStringSync(from: summary.children, baseAttributes: baseAttrs))
+            orderedWork = [
+                .inline(summary.children, baseAttributes: detailsSummaryAttributes())
+            ]
 
         case let header as HeaderNode:
             let token = themeToken(forHeaderLevel: header.level)
-            let baseAttrs = defaultAttributes(for: token)
-            string.append(buildInlineAttributedStringSync(from: header.children, baseAttributes: baseAttrs))
+            orderedWork = [
+                .inline(header.children, baseAttributes: defaultAttributes(for: token))
+            ]
 
         case let text as TextNode:
-            let attributes = defaultAttributes(for: theme.typography.paragraph)
-            string.append(NSAttributedString(string: text.text, attributes: attributes))
+            orderedWork = [
+                .operation(.staticLeaf(.text(
+                    text.text,
+                    attributes: defaultAttributes(for: theme.typography.paragraph)
+                )))
+            ]
 
         case let math as MathNode:
-            string.append(mathAdapter.renderSync(from: math, theme: theme, contextFont: nil))
+            orderedWork = [.operation(.resource(.math(math, contextFont: nil)))]
 
         case let paragraph as ParagraphNode:
-            let baseAttrs = defaultAttributes(for: theme.typography.paragraph)
-            string.append(buildInlineAttributedStringSync(from: paragraph.children, baseAttributes: baseAttrs))
+            orderedWork = [
+                .inline(
+                    paragraph.children,
+                    baseAttributes: defaultAttributes(for: theme.typography.paragraph)
+                )
+            ]
 
         case let code as CodeBlockNode:
-            string.append(buildCodeBlockAttributedString(from: code))
+            orderedWork = [
+                .operation(.staticLeaf(.codeBlock(code)))
+            ]
 
         case let list as ListNode:
-            let font = theme.typography.paragraph.font
-            let listItemCount = list.children.filter { $0 is ListItemNode }.count
-            var currentListItemIndex = 0
-            for child in list.children {
-                guard let item = child as? ListItemNode else { continue }
-                currentListItemIndex += 1
-                let isLastItem = currentListItemIndex == listItemCount
-                if string.length > 0 { string.append(NSAttributedString(string: "\n")) }
+            orderedWork = planningWork(for: list)
 
-                let (prefix, isCheckbox) = listItemPrefix(for: list, item: item, oneBasedIndex: currentListItemIndex)
-                let prefixWidth = listItemPrefixWidth(prefix, font: font)
-                let itemStyle = listItemParagraphStyle(prefixWidth: prefixWidth, isLastItem: isLastItem)
-                let listAttrs = listItemBaseAttributes(font: font, style: itemStyle)
-
-                var itemPrefixAttrs = listAttrs
-                if isCheckbox, let range = item.range {
-                    let interactionState = CheckboxInteractionData(isChecked: item.checkbox == .checked, range: range)
-                    itemPrefixAttrs[.markdownCheckbox] = interactionState
-                }
-
-                string.append(NSAttributedString(string: prefix, attributes: itemPrefixAttrs))
-                for itemChild in item.children {
-                    if let para = itemChild as? ParagraphNode {
-                        string.append(buildInlineAttributedStringSync(from: para.children, baseAttributes: listAttrs))
-                    } else if let nestedList = itemChild as? ListNode {
-                        string.append(NSAttributedString(string: "\n"))
-                        let nestedAttr = NSMutableAttributedString(attributedString: buildStringSync(for: nestedList, constrainedToWidth: maxWidth))
-                        let indentStyle = nestedListParagraphStyle(prefixWidth: prefixWidth)
-                        nestedAttr.addAttribute(.paragraphStyle, value: indentStyle, range: NSRange(location: 0, length: nestedAttr.length))
-                        string.append(nestedAttr)
-                    } else {
-                        string.append(buildStringSync(for: itemChild, constrainedToWidth: maxWidth))
-                    }
-                }
-            }
+        case is ListItemNode:
+            orderedWork = []
 
         case let blockQuote as BlockQuoteNode:
             let quoteStyle = blockQuoteParagraphStyle()
+            var quoteWork: [PlanningWork] = []
             for child in blockQuote.children {
-                if let para = child as? ParagraphNode {
-                    let quoteAttrs = blockQuoteContentAttributes(style: quoteStyle)
-                    string.append(blockQuoteBarAttributedString(style: quoteStyle))
-                    string.append(buildInlineAttributedStringSync(from: para.children, baseAttributes: quoteAttrs))
+                if let paragraph = child as? ParagraphNode {
+                    quoteWork.append(.operation(.staticLeaf(.blockQuoteBar(quoteStyle))))
+                    quoteWork.append(.inline(
+                        paragraph.children,
+                        baseAttributes: blockQuoteContentAttributes(style: quoteStyle)
+                    ))
                 } else {
-                    string.append(buildStringSync(for: child, constrainedToWidth: maxWidth))
+                    quoteWork.append(.operation(.beginCapture(.append)))
+                    quoteWork.append(.block(child))
+                    quoteWork.append(.operation(.endCapture))
                 }
-                if string.length > 0 { string.append(NSAttributedString(string: "\n")) }
+                quoteWork.append(.operation(.appendNewlineIfOutputNotEmpty))
             }
+            orderedWork = quoteWork
 
         case is ThematicBreakNode:
             #if canImport(UIKit) && !os(watchOS)
-            break // Handled by LayoutSolver via customDraw on iOS
+            orderedWork = []
             #else
-            string.append(buildThematicBreakAttributedString())
+            orderedWork = [
+                .operation(.staticLeaf(.thematicBreak))
+            ]
             #endif
 
         default:
-            break
+            orderedWork = []
         }
 
-        return string
+        work.append(contentsOf: orderedWork.reversed())
     }
 
-    /// Synchronous inline string builder — no async calls.
-    private func buildInlineAttributedStringSync(
-        from children: [MarkdownNode],
-        baseAttributes: [NSAttributedString.Key: Any]
-    ) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        for child in children {
-            switch child {
-            case let text as TextNode:
-                result.append(NSAttributedString(string: text.text, attributes: baseAttributes))
-            case let code as InlineCodeNode:
-                result.append(NSAttributedString(string: code.code, attributes: inlineCodeAttributes(base: baseAttributes)))
-            case let link as LinkNode:
-                let linkAttrs = linkAttributes(base: baseAttributes, destination: link.destination)
-                result.append(buildInlineAttributedStringSync(from: link.children, baseAttributes: linkAttrs))
-            case let emphasis as EmphasisNode:
-                result.append(buildInlineAttributedStringSync(from: emphasis.children, baseAttributes: italicAttributes(base: baseAttributes)))
-            case let strong as StrongNode:
-                result.append(buildInlineAttributedStringSync(from: strong.children, baseAttributes: boldAttributes(base: baseAttributes)))
-            case let strikethrough as StrikethroughNode:
-                result.append(buildInlineAttributedStringSync(from: strikethrough.children, baseAttributes: strikethroughAttributes(base: baseAttributes)))
-            case let image as ImageNode:
-                result.append(imageFallbackAttributedString(from: image, baseAttributes: baseAttributes))
-            case let math as MathNode:
-                let contextFont = baseAttributes[.font] as? Font
-                result.append(mathAdapter.renderSync(from: math, theme: theme, contextFont: contextFont))
-            default:
-                guard child is any InlineNode else { continue }
-                let childResult = buildInlineAttributedStringSync(
-                    from: child.children,
-                    baseAttributes: baseAttributes
+    private func planningWork(for list: ListNode) -> [PlanningWork] {
+        let font = theme.typography.paragraph.font
+        let items = list.children.compactMap { $0 as? ListItemNode }
+        var orderedWork: [PlanningWork] = []
+
+        for (offset, item) in items.enumerated() {
+            let oneBasedIndex = offset + 1
+            let isLastItem = oneBasedIndex == items.count
+            let (prefix, isCheckbox) = listItemPrefix(
+                for: list,
+                item: item,
+                oneBasedIndex: oneBasedIndex
+            )
+            let prefixWidth = listItemPrefixWidth(prefix, font: font)
+            let itemStyle = listItemParagraphStyle(
+                prefixWidth: prefixWidth,
+                isLastItem: isLastItem
+            )
+            let listAttributes = listItemBaseAttributes(font: font, style: itemStyle)
+            var prefixAttributes = listAttributes
+            if isCheckbox, let range = item.range {
+                prefixAttributes[.markdownCheckbox] = CheckboxInteractionData(
+                    isChecked: item.checkbox == .checked,
+                    range: range
                 )
-                if childResult.length > 0 {
-                    result.append(childResult)
+            }
+
+            orderedWork.append(.operation(.appendNewlineIfOutputNotEmpty))
+            orderedWork.append(.operation(.staticLeaf(.text(
+                prefix,
+                attributes: prefixAttributes
+            ))))
+
+            for child in item.children {
+                if let paragraph = child as? ParagraphNode {
+                    orderedWork.append(.inline(
+                        paragraph.children,
+                        baseAttributes: listAttributes
+                    ))
+                } else if let nestedList = child as? ListNode {
+                    orderedWork.append(.operation(.staticLeaf(.text("\n", attributes: [:]))))
+                    orderedWork.append(.operation(.beginCapture(
+                        .paragraphStyle(nestedListParagraphStyle(prefixWidth: prefixWidth))
+                    )))
+                    orderedWork.append(.block(nestedList))
+                    orderedWork.append(.operation(.endCapture))
+                } else {
+                    orderedWork.append(.operation(.beginCapture(.append)))
+                    orderedWork.append(.block(child))
+                    orderedWork.append(.operation(.endCapture))
                 }
             }
         }
-        return result
+
+        return orderedWork
+    }
+
+    private func enqueueInline(
+        _ children: [MarkdownNode],
+        baseAttributes: Attributes,
+        onto work: inout [PlanningWork]
+    ) {
+        var orderedWork: [PlanningWork] = []
+
+        for child in children {
+            switch child {
+            case let text as TextNode:
+                orderedWork.append(.operation(.staticLeaf(.text(
+                    text.text,
+                    attributes: baseAttributes
+                ))))
+
+            case let code as InlineCodeNode:
+                orderedWork.append(.operation(.staticLeaf(.text(
+                    code.code,
+                    attributes: inlineCodeAttributes(base: baseAttributes)
+                ))))
+
+            case let link as LinkNode:
+                orderedWork.append(.inline(
+                    link.children,
+                    baseAttributes: linkAttributes(
+                        base: baseAttributes,
+                        destination: link.destination
+                    )
+                ))
+
+            case let image as ImageNode:
+                orderedWork.append(.operation(.resource(.image(
+                    image,
+                    baseAttributes: baseAttributes
+                ))))
+
+            case let math as MathNode:
+                orderedWork.append(.operation(.resource(.math(
+                    math,
+                    contextFont: baseAttributes[.font] as? Font
+                ))))
+
+            case is EmphasisNode:
+                orderedWork.append(.inline(
+                    child.children,
+                    baseAttributes: italicAttributes(base: baseAttributes)
+                ))
+
+            case is StrongNode:
+                orderedWork.append(.inline(
+                    child.children,
+                    baseAttributes: boldAttributes(base: baseAttributes)
+                ))
+
+            case is StrikethroughNode:
+                orderedWork.append(.inline(
+                    child.children,
+                    baseAttributes: strikethroughAttributes(base: baseAttributes)
+                ))
+
+            default:
+                guard child is any InlineNode else { continue }
+                orderedWork.append(.inline(
+                    child.children,
+                    baseAttributes: baseAttributes
+                ))
+            }
+        }
+
+        work.append(contentsOf: orderedWork.reversed())
+    }
+
+    private func materialize(
+        _ operations: [RenderOperation],
+        constrainedToWidth maxWidth: CGFloat
+    ) async -> NSAttributedString {
+        var state = MaterializationState()
+
+        for operation in operations {
+            switch state.apply(operation) {
+            case .handled:
+                continue
+
+            case let .staticLeaf(leaf):
+                state.append(makeAttributedString(
+                    for: leaf,
+                    constrainedToWidth: maxWidth
+                ))
+
+            case let .resource(resource):
+                switch resource {
+                case let .image(image, baseAttributes):
+                    if let attachment = await ImageAttachmentBuilder.build(
+                        from: image,
+                        constrainedToWidth: maxWidth,
+                        imageLoadingPolicy: imageLoadingPolicy
+                    ) {
+                        state.append(attachment)
+                    } else {
+                        state.append(imageFallbackAttributedString(
+                            from: image,
+                            baseAttributes: baseAttributes
+                        ))
+                    }
+
+                case let .math(math, contextFont):
+                    state.append(await mathAdapter.render(
+                        from: math,
+                        theme: theme,
+                        contextFont: contextFont
+                    ))
+
+                case let .diagram(diagram):
+                    state.append(await buildDiagramAttributedString(from: diagram))
+                }
+            }
+        }
+
+        return state.finish()
+    }
+
+    private func materializeSync(
+        _ operations: [RenderOperation],
+        constrainedToWidth maxWidth: CGFloat
+    ) -> NSAttributedString {
+        var state = MaterializationState()
+
+        for operation in operations {
+            switch state.apply(operation) {
+            case .handled:
+                continue
+
+            case let .staticLeaf(leaf):
+                state.append(makeAttributedString(
+                    for: leaf,
+                    constrainedToWidth: maxWidth
+                ))
+
+            case let .resource(resource):
+                switch resource {
+                case let .image(image, baseAttributes):
+                    state.append(imageFallbackAttributedString(
+                        from: image,
+                        baseAttributes: baseAttributes
+                    ))
+
+                case let .math(math, contextFont):
+                    state.append(mathAdapter.renderSync(
+                        from: math,
+                        theme: theme,
+                        contextFont: contextFont
+                    ))
+
+                case .diagram:
+                    continue
+                }
+            }
+        }
+
+        return state.finish()
+    }
+
+    private func makeAttributedString(
+        for leaf: StaticLeaf,
+        constrainedToWidth maxWidth: CGFloat
+    ) -> NSAttributedString {
+        switch leaf {
+        case let .text(text, attributes):
+            NSAttributedString(string: text, attributes: attributes)
+        case let .table(table):
+            TableAttributedStringBuilder.build(
+                from: table,
+                theme: theme,
+                constrainedToWidth: maxWidth
+            )
+        case let .codeBlock(codeBlock):
+            buildCodeBlockAttributedString(from: codeBlock)
+        case let .blockQuoteBar(style):
+            blockQuoteBarAttributedString(style: style)
+        case .thematicBreak:
+            buildThematicBreakAttributedString()
+        }
     }
 
     private func themeToken(forHeaderLevel level: Int) -> TypographyToken {
@@ -523,171 +761,12 @@ struct AttributedStringBuilder {
         return buildCodeBlockAttributedString(from: fallback)
     }
 
-    // MARK: - Details Helper
-
-    private func buildDetailsAttributedString(
-        from details: DetailsNode,
-        constrainedToWidth maxWidth: CGFloat
-    ) async -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        let summaryAttrs = detailsSummaryAttributes()
-
-        let disclosure = details.isOpen ? theme.details.openDisclosure : theme.details.closedDisclosure
-        result.append(NSAttributedString(string: disclosure, attributes: summaryAttrs))
-
-        if let summary = details.summary, !summary.children.isEmpty {
-            let summaryText = await buildInlineAttributedString(
-                from: summary.children,
-                baseAttributes: summaryAttrs,
-                constrainedToWidth: maxWidth
-            )
-            result.append(summaryText)
-        } else {
-            result.append(NSAttributedString(string: "Details", attributes: summaryAttrs))
-        }
-
-        guard details.isOpen else {
-            return result
-        }
-
-        var didAppendBody = false
-        for child in details.children {
-            let childAttr = await buildString(for: child, constrainedToWidth: maxWidth)
-            guard childAttr.length > 0 else { continue }
-
-            if !didAppendBody {
-                result.append(NSAttributedString(string: "\n"))
-                didAppendBody = true
-            } else {
-                result.append(NSAttributedString(string: "\n"))
-            }
-            result.append(childAttr)
-        }
-
-        return result
-    }
-
-    private func buildDetailsAttributedStringSync(
-        from details: DetailsNode,
-        constrainedToWidth maxWidth: CGFloat
-    ) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        let summaryAttrs = detailsSummaryAttributes()
-
-        let disclosure = details.isOpen ? theme.details.openDisclosure : theme.details.closedDisclosure
-        result.append(NSAttributedString(string: disclosure, attributes: summaryAttrs))
-
-        if let summary = details.summary, !summary.children.isEmpty {
-            result.append(buildInlineAttributedStringSync(
-                from: summary.children,
-                baseAttributes: summaryAttrs
-            ))
-        } else {
-            result.append(NSAttributedString(string: "Details", attributes: summaryAttrs))
-        }
-
-        guard details.isOpen else {
-            return result
-        }
-
-        for child in details.children {
-            let childAttr = buildStringSync(for: child, constrainedToWidth: maxWidth)
-            guard childAttr.length > 0 else { continue }
-
-            result.append(NSAttributedString(string: "\n"))
-            result.append(childAttr)
-        }
-
-        return result
-    }
-
     private func detailsSummaryAttributes() -> [NSAttributedString.Key: Any] {
         var attrs = defaultAttributes(for: theme.typography.paragraph)
         if let font = attrs[.font] as? Font {
             attrs[.font] = FontTraitResolver.adding(.bold, to: font)
         }
         return attrs
-    }
-
-    // MARK: - Inline Attributed String Builder
-
-    /// Builds a rich NSAttributedString from inline children, preserving styles
-    /// for bold, italic, inline code, links, and images.
-    private func buildInlineAttributedString(
-        from children: [MarkdownNode],
-        baseAttributes: [NSAttributedString.Key: Any],
-        constrainedToWidth maxWidth: CGFloat
-    ) async -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        for child in children {
-            switch child {
-            case let text as TextNode:
-                result.append(NSAttributedString(string: text.text, attributes: baseAttributes))
-
-            case let code as InlineCodeNode:
-                result.append(NSAttributedString(string: code.code, attributes: inlineCodeAttributes(base: baseAttributes)))
-
-            case let link as LinkNode:
-                let linkAttrs = linkAttributes(base: baseAttributes, destination: link.destination)
-                let linkText = await buildInlineAttributedString(
-                    from: link.children,
-                    baseAttributes: linkAttrs,
-                    constrainedToWidth: maxWidth
-                )
-                result.append(linkText)
-
-            case let image as ImageNode:
-                if let attachment = await ImageAttachmentBuilder.build(
-                    from: image,
-                    constrainedToWidth: maxWidth,
-                    imageLoadingPolicy: imageLoadingPolicy
-                ) {
-                    result.append(attachment)
-                } else {
-                    result.append(imageFallbackAttributedString(
-                        from: image,
-                        baseAttributes: baseAttributes
-                    ))
-                }
-
-            case let math as MathNode:
-                let contextFont = baseAttributes[.font] as? Font
-                result.append(await mathAdapter.render(from: math, theme: theme, contextFont: contextFont))
-
-            case is EmphasisNode:
-                result.append(await buildInlineAttributedString(
-                    from: child.children,
-                    baseAttributes: italicAttributes(base: baseAttributes),
-                    constrainedToWidth: maxWidth
-                ))
-
-            case is StrongNode:
-                result.append(await buildInlineAttributedString(
-                    from: child.children,
-                    baseAttributes: boldAttributes(base: baseAttributes),
-                    constrainedToWidth: maxWidth
-                ))
-
-            case is StrikethroughNode:
-                result.append(await buildInlineAttributedString(
-                    from: child.children,
-                    baseAttributes: strikethroughAttributes(base: baseAttributes),
-                    constrainedToWidth: maxWidth
-                ))
-
-            default:
-                guard child is any InlineNode else { continue }
-                let childResult = await buildInlineAttributedString(
-                    from: child.children,
-                    baseAttributes: baseAttributes,
-                    constrainedToWidth: maxWidth
-                )
-                if childResult.length > 0 {
-                    result.append(childResult)
-                }
-            }
-        }
-        return result
     }
 
     private func imageFallbackAttributedString(

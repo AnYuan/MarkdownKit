@@ -356,27 +356,30 @@ review the complete diff, then commit and push before starting the next stage.
   Validation: 22 focused accessibility/AppKit tests, 421 macOS correctness
   tests, 438 discoverable-test documentation checks, visual and determinism
   snapshot gates (4/4 each), and 459 iOS Simulator tests all pass.
-- [ ] `refactor: share sync and async layout dispatch`
+- [x] `refactor: share sync and async layout dispatch`
   - [x] Q15-A aligns sync details/summary rendering, task-checkbox attributes,
     and recursive unknown-inline flattening. A separate interaction fingerprint
     prevents cached checkbox/details callbacks from retaining stale source
     ranges or source URLs while preserving semantic, stable, and pixel-render
     identities.
-  - [ ] Q15-B/C replace the duplicated `AttributedStringBuilder` switches with
+  - [x] Q15-B/C replace the duplicated `AttributedStringBuilder` switches with
     one invocation-local flat render program and separate sequential sync/async
     materializers, then replace `LayoutSolver` classification with one shallow
     recipe plus shared measurement/result assembly.
-  - [ ] Q15-D/E preserve and verify true resource differences, cache variants,
+  - [x] Q15-D/E preserve and verify true resource differences, cache variants,
     cancellation publication, platform custom-draw routes, stable identities,
     and the fully synchronous API without new unsafe annotations or meaningful
     benchmark regressions.
-  Review: unknown recursion is limited to `InlineNode`; checkbox payloads use the
-  owning item range; interaction identity propagates only through rendered
-  ancestors and excludes closed hidden details bodies. Final read-only review
-  found no material issue.
-  Validation: 89 focused tests, 441 macOS correctness tests, 458 discoverable
-  documentation checks, visual and determinism snapshot gates (4/4 each), 479
-  iOS Simulator tests, and the complete benchmark gate all pass.
+  Review: unknown recursion is limited to `InlineNode`; interaction identity
+  propagates only through rendered ancestors. The builder now defers static-leaf
+  construction until sequential materialization and isolates nested block output
+  so parent separator state cannot leak. The solver classifies only after cache
+  lookup and shares immediate execution, measurement, color resolution, and
+  result assembly. Final simplification, concurrency, and regression reviews
+  found no remaining material issue.
+  Validation: 149 focused integration tests, 455 macOS correctness tests, 472
+  discoverable-test documentation checks, visual and determinism snapshot gates
+  (4/4 each), 495 iOS Simulator tests, and the complete benchmark gate all pass.
 - [ ] `refactor: share table geometry across renderers`
   Keep platform renderers thin over one normalization and sizing model.
 - [ ] `refactor: decompose arithmetic text preparation`

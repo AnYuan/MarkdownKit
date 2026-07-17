@@ -30,6 +30,50 @@ final class iOSTableLayoutTests: XCTestCase {
                         "UIKit table layout should provide a customDraw closure")
     }
 
+    func testUIKitSyncTableRetainsCustomDrawContractAndExactGeometry() throws {
+        let document = TestHelper.parse("""
+        | A | B |
+        |---|---|
+        | 1 | 2 |
+        """)
+        let table = try XCTUnwrap(document.children.first as? TableNode)
+        let width: CGFloat = 400
+
+        let result = LayoutSolver().solveSync(node: table, constrainedToWidth: width)
+        let expected = TableCardRenderer.computeLayout(
+            from: table,
+            theme: .default,
+            constrainedToWidth: width
+        )
+
+        XCTAssertEqual(result.size, expected.totalSize)
+        XCTAssertNil(result.attributedString)
+        XCTAssertNotNil(result.customDraw)
+    }
+
+    func testUIKitThematicBreakCustomDrawContractMatchesInBothEnvelopes() async throws {
+        let thematicBreak = try XCTUnwrap(
+            TestHelper.parse("---").children.first as? ThematicBreakNode
+        )
+        let width: CGFloat = 375
+        let solver = LayoutSolver(cache: LayoutCache())
+
+        let async = await solver.solve(node: thematicBreak, constrainedToWidth: width)
+        let sync = solver.solveSync(node: thematicBreak, constrainedToWidth: width)
+        let style = Theme.default.thematicBreak
+        let expectedSize = CGSize(
+            width: width,
+            height: style.paddingTop + style.dividerHeight + style.paddingBottom
+        )
+
+        for result in [async, sync] {
+            XCTAssertEqual(result.size, expectedSize)
+            XCTAssertNil(result.attributedString)
+            XCTAssertNotNil(result.customDraw)
+        }
+        XCTAssertNotEqual(async.renderFingerprint, sync.renderFingerprint)
+    }
+
     func testUIKitTableLayoutSizeMatchesTableCardRendererComputedLayout() async throws {
         let markdown = """
         | A | B | C |

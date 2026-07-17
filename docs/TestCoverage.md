@@ -2,7 +2,7 @@
 
 > 最近更新: 2026-07-18
 > 生成方式: `python3 scripts/generate_test_coverage_report.py [--run-tests|--from-log <path>]`
-> 生成时间: 2026-07-18 01:22:08
+> 生成时间: 2026-07-18 02:33:44
 
 ## 1. 总览
 
@@ -11,8 +11,8 @@
 | 源码文件数 (`Sources/MarkdownKit/*.swift`) | 83 | 不含 Demo target |
 | 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 72 | 含基准/夹具/辅助文件 |
 | 含 `test*` 方法的测试文件 | 64 | 静态扫描结果 |
-| 静态扫描 `test*` 方法总数 | 528 | 受编译条件影响，可能高于可执行测试数 |
-| 可发现测试数 (`swift test list`) | 458 | 当前平台可执行测试 |
+| 静态扫描 `test*` 方法总数 | 544 | 受编译条件影响，可能高于可执行测试数 |
+| 可发现测试数 (`swift test list`) | 472 | 当前平台可执行测试 |
 | 全量执行结果 (`swift test`) | 未提供 | 未执行或未提供日志 |
 
 ## 2. 本次执行状态
@@ -30,7 +30,7 @@
 | `AsyncCodeViewCopyTests.swift` | 7 |
 | `AsyncTextViewInteractionTests.swift` | 5 |
 | `AsyncTextViewRenderTests.swift` | 7 |
-| `AttributedStringBuilderEquivalenceTests.swift` | 15 |
+| `AttributedStringBuilderEquivalenceTests.swift` | 22 |
 | `BenchmarkBaseline.swift` | 0 |
 | `BenchmarkCacheTests.swift` | 2 |
 | `BenchmarkFixtures.swift` | 0 |
@@ -45,7 +45,7 @@
 | `DepthLimitTests.swift` | 3 |
 | `DetailsExtractionPluginTests.swift` | 4 |
 | `DiagramExtractionPluginTests.swift` | 3 |
-| `DiagramLayoutTests.swift` | 8 |
+| `DiagramLayoutTests.swift` | 11 |
 | `DiagramSnapshotTests.swift` | 1 |
 | `EdgeCaseTests.swift` | 13 |
 | `FuzzTests.swift` | 1 |
@@ -56,8 +56,8 @@
 | `InlineFormattingLayoutTests.swift` | 30 |
 | `IntegrationPipelineTests.swift` | 10 |
 | `InteractionCacheIdentityTests.swift` | 14 |
-| `LayoutCacheEdgeCaseTests.swift` | 12 |
-| `LayoutSolverExtendedTests.swift` | 16 |
+| `LayoutCacheEdgeCaseTests.swift` | 15 |
+| `LayoutSolverExtendedTests.swift` | 17 |
 | `LayoutTests.swift` | 5 |
 | `MacOSUIComponentsTests.swift` | 15 |
 | `MarkdownKitBenchmarkTests.swift` | 4 |
@@ -93,7 +93,7 @@
 | `VirtualizationTests.swift` | 1 |
 | `iOSAccessibilityTests.swift` | 8 |
 | `iOSSnapshotTests.swift` | 6 |
-| `iOSTableLayoutTests.swift` | 12 |
+| `iOSTableLayoutTests.swift` | 14 |
 | `iOSThemeDelegateTests.swift` | 4 |
 
 ## 4. 辅助/夹具文件（无 `test*` 方法）

@@ -5,7 +5,7 @@ This document is a practical snapshot of the current repository, with emphasis o
 ## 1. Repository Snapshot
 
 - Branch at snapshot: `copilot/code-quality-roadmap`
-- HEAD at snapshot: `6150c62`
+- HEAD at snapshot: `25adc30`
 - Swift tools: `6.2`
 - Platforms: `iOS 17+`, `macOS 26.0+`
 - Dependencies:
@@ -65,7 +65,7 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **458** discoverable tests
+- `swift test list`: **472** discoverable tests
 - `swift test`: no execution log supplied for this refresh
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
@@ -123,7 +123,8 @@ Primary files:
 
 Key facts:
 - `LayoutCache` keys are `node.contentFingerprint` + optional interaction fingerprint + rounded width + solver variant hash (theme/diagram/math/image policy/appearance inputs). The separate interaction identity covers source ranges and URLs captured by checkbox/details callbacks without changing semantic stable identity or pixel-render identity.
-- `AttributedStringBuilder` acts as the master coordinator delegating block constructions to isolated async-friendly builders (Table, Math, Image).
+- `AttributedStringBuilder` classifies block and inline structure once into an invocation-local flat operation program. Sequential async/sync materializers share structural behavior while keeping image, math, and diagram mode differences explicit.
+- `LayoutSolver` performs cache lookup before classifying a node into a shallow recipe, then shares immediate output, measurement, color resolution, and `LayoutResult` assembly across its explicit async/sync envelopes.
 - `ImageResourceLoader` is the sole production owner of image source resolution, policy gating, file/`URLSession` loading, pre-follow redirect policy, HTTP status, MIME, expected-byte-count, streamed final-byte limits, and typed rejection.
 - `ImageAttachmentBuilder` uses ImageIO to create an oriented, width-constrained thumbnail. Its decoded cache is keyed by policy/source/rounded target width, bounded by count and total cost, and rejects any decoded image above 64 MiB.
 - Parser-produced Markdown images are inline attachments only. There is no top-level/block-image layout or visible-cell image loader.

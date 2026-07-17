@@ -415,6 +415,30 @@ final class LayoutSolverExtendedTests: XCTestCase {
         XCTAssertTrue(text.contains("plain text"))
     }
 
+    func testCodeBlockResultMetadataIsPreservedAcrossAsyncAndSyncEnvelopes() async throws {
+        let code = try XCTUnwrap(
+            TestHelper.parse("```swift\nlet value = 1\n```").children.first as? CodeBlockNode
+        )
+        let solver = LayoutSolver(cache: LayoutCache(), appearance: .dark)
+        let width: CGFloat = 320
+
+        let async = await solver.solve(node: code, constrainedToWidth: width)
+        let sync = solver.solveSync(node: code, constrainedToWidth: width)
+
+        for result in [async, sync] {
+            XCTAssertEqual(result.node.contentFingerprint, code.contentFingerprint)
+            XCTAssertEqual(result.appearance, .dark)
+            XCTAssertTrue(result.children.isEmpty)
+            XCTAssertNil(result.customDraw)
+            XCTAssertNotNil(result.attributedString)
+            XCTAssertEqual(
+                result.stableIdentity,
+                StableNodeIdentity(contentFingerprint: code.contentFingerprint, pathHash: 0)
+            )
+        }
+        XCTAssertNotEqual(async.renderFingerprint, sync.renderFingerprint)
+    }
+
     func testEmptyDocumentLayoutProducesZeroChildren() async throws {
         let layout = await TestHelper.solveLayout("")
         XCTAssertEqual(layout.children.count, 0)
