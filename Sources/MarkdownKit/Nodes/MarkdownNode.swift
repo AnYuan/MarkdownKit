@@ -58,3 +58,105 @@ internal func _markdownNodeFingerprint(
     }
     return hasher.finalize()
 }
+
+internal protocol _InteractionFingerprintProviding {
+    var interactionFingerprint: Int? { get }
+}
+
+internal extension MarkdownNode {
+    var _interactionFingerprint: Int? {
+        (self as? any _InteractionFingerprintProviding)?.interactionFingerprint
+    }
+}
+
+internal func _markdownSourceRangeInteractionFingerprint(
+    typeName: String,
+    discriminator: String? = nil,
+    range: SourceRange?
+) -> Int? {
+    guard let range else { return nil }
+
+    var hasher = Hasher()
+    hasher.combine(typeName)
+    hasher.combine(discriminator)
+    hasher.combine(range.lowerBound.line)
+    hasher.combine(range.lowerBound.column)
+    hasher.combine(range.lowerBound.source)
+    hasher.combine(range.upperBound.line)
+    hasher.combine(range.upperBound.column)
+    hasher.combine(range.upperBound.source)
+    return hasher.finalize()
+}
+
+internal func _markdownRenderedSourceRangesInteractionFingerprint(
+    typeName: String,
+    ownRange: SourceRange?,
+    summary: MarkdownNode?,
+    children: [MarkdownNode],
+    includesChildren: Bool
+) -> Int? {
+    var hasher = Hasher()
+    hasher.combine(typeName)
+    var hasSourceRange = false
+
+    func combineRange(_ range: SourceRange?, marker: String, index: Int? = nil) {
+        guard let fingerprint = _markdownSourceRangeInteractionFingerprint(
+            typeName: "RenderedSourceRange",
+            range: range
+        ) else {
+            return
+        }
+        hasSourceRange = true
+        hasher.combine(marker)
+        hasher.combine(index)
+        hasher.combine(fingerprint)
+    }
+
+    func combineNode(_ node: MarkdownNode, marker: String, index: Int? = nil) {
+        combineRange(node.range, marker: marker, index: index)
+        if let details = node as? DetailsNode {
+            if let summary = details.summary {
+                combineNode(summary, marker: "summary")
+            }
+            guard details.isOpen else { return }
+        }
+        for (childIndex, child) in node.children.enumerated() {
+            combineNode(child, marker: "child", index: childIndex)
+        }
+    }
+
+    combineRange(ownRange, marker: "own")
+    if let summary {
+        combineNode(summary, marker: "summary")
+    }
+    if includesChildren {
+        for (index, child) in children.enumerated() {
+            combineNode(child, marker: "child", index: index)
+        }
+    }
+
+    return hasSourceRange ? hasher.finalize() : nil
+}
+
+internal func _markdownNodeInteractionFingerprint(
+    typeName: String,
+    ownFingerprint: Int? = nil,
+    children: [MarkdownNode]
+) -> Int? {
+    var hasher = Hasher()
+    hasher.combine(typeName)
+    var hasInteraction = false
+    if let ownFingerprint {
+        hasInteraction = true
+        hasher.combine("own")
+        hasher.combine(ownFingerprint)
+    }
+    for (index, child) in children.enumerated() {
+        guard let fingerprint = child._interactionFingerprint else { continue }
+        hasInteraction = true
+        hasher.combine("child")
+        hasher.combine(index)
+        hasher.combine(fingerprint)
+    }
+    return hasInteraction ? hasher.finalize() : nil
+}

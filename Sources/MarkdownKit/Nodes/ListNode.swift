@@ -15,6 +15,7 @@ public struct ListNode: BlockNode {
     public let isOrdered: Bool
     public let children: [MarkdownNode]
     public let contentFingerprint: Int
+    internal let interactionFingerprint: Int?
 
     public init(range: SourceRange?, isOrdered: Bool, children: [MarkdownNode]) {
         self.range = range
@@ -26,5 +27,11 @@ public struct ListNode: BlockNode {
         ) { hasher in
             hasher.combine(isOrdered)
         }
+        self.interactionFingerprint = _markdownNodeInteractionFingerprint(
+            typeName: "ListNode",
+            children: children
+        )
     }
 }
+
+extension ListNode: _InteractionFingerprintProviding {}

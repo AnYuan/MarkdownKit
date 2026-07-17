@@ -181,6 +181,13 @@ struct AttributedStringBuilder {
         case let table as TableNode:
             string.append(TableAttributedStringBuilder.build(from: table, theme: theme, constrainedToWidth: maxWidth))
 
+        case let details as DetailsNode:
+            string.append(buildDetailsAttributedStringSync(from: details, constrainedToWidth: maxWidth))
+
+        case let summary as SummaryNode:
+            let baseAttrs = detailsSummaryAttributes()
+            string.append(buildInlineAttributedStringSync(from: summary.children, baseAttributes: baseAttrs))
+
         case let header as HeaderNode:
             let token = themeToken(forHeaderLevel: header.level)
             let baseAttrs = defaultAttributes(for: token)
@@ -210,12 +217,18 @@ struct AttributedStringBuilder {
                 let isLastItem = currentListItemIndex == listItemCount
                 if string.length > 0 { string.append(NSAttributedString(string: "\n")) }
 
-                let (prefix, _) = listItemPrefix(for: list, item: item, oneBasedIndex: currentListItemIndex)
+                let (prefix, isCheckbox) = listItemPrefix(for: list, item: item, oneBasedIndex: currentListItemIndex)
                 let prefixWidth = listItemPrefixWidth(prefix, font: font)
                 let itemStyle = listItemParagraphStyle(prefixWidth: prefixWidth, isLastItem: isLastItem)
                 let listAttrs = listItemBaseAttributes(font: font, style: itemStyle)
 
-                string.append(NSAttributedString(string: prefix, attributes: listAttrs))
+                var itemPrefixAttrs = listAttrs
+                if isCheckbox, let range = item.range {
+                    let interactionState = CheckboxInteractionData(isChecked: item.checkbox == .checked, range: range)
+                    itemPrefixAttrs[.markdownCheckbox] = interactionState
+                }
+
+                string.append(NSAttributedString(string: prefix, attributes: itemPrefixAttrs))
                 for itemChild in item.children {
                     if let para = itemChild as? ParagraphNode {
                         string.append(buildInlineAttributedStringSync(from: para.children, baseAttributes: listAttrs))
@@ -285,7 +298,14 @@ struct AttributedStringBuilder {
                 let contextFont = baseAttributes[.font] as? Font
                 result.append(mathAdapter.renderSync(from: math, theme: theme, contextFont: contextFont))
             default:
-                break
+                guard child is any InlineNode else { continue }
+                let childResult = buildInlineAttributedStringSync(
+                    from: child.children,
+                    baseAttributes: baseAttributes
+                )
+                if childResult.length > 0 {
+                    result.append(childResult)
+                }
             }
         }
         return result
@@ -547,6 +567,40 @@ struct AttributedStringBuilder {
         return result
     }
 
+    private func buildDetailsAttributedStringSync(
+        from details: DetailsNode,
+        constrainedToWidth maxWidth: CGFloat
+    ) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let summaryAttrs = detailsSummaryAttributes()
+
+        let disclosure = details.isOpen ? theme.details.openDisclosure : theme.details.closedDisclosure
+        result.append(NSAttributedString(string: disclosure, attributes: summaryAttrs))
+
+        if let summary = details.summary, !summary.children.isEmpty {
+            result.append(buildInlineAttributedStringSync(
+                from: summary.children,
+                baseAttributes: summaryAttrs
+            ))
+        } else {
+            result.append(NSAttributedString(string: "Details", attributes: summaryAttrs))
+        }
+
+        guard details.isOpen else {
+            return result
+        }
+
+        for child in details.children {
+            let childAttr = buildStringSync(for: child, constrainedToWidth: maxWidth)
+            guard childAttr.length > 0 else { continue }
+
+            result.append(NSAttributedString(string: "\n"))
+            result.append(childAttr)
+        }
+
+        return result
+    }
+
     private func detailsSummaryAttributes() -> [NSAttributedString.Key: Any] {
         var attrs = defaultAttributes(for: theme.typography.paragraph)
         if let font = attrs[.font] as? Font {
@@ -622,6 +676,7 @@ struct AttributedStringBuilder {
                 ))
 
             default:
+                guard child is any InlineNode else { continue }
                 let childResult = await buildInlineAttributedString(
                     from: child.children,
                     baseAttributes: baseAttributes,

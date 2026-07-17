@@ -1,11 +1,11 @@
-# MarkdownKit Codebase Knowledge (2026-07-17)
+# MarkdownKit Codebase Knowledge (2026-07-18)
 
 This document is a practical snapshot of the current repository, with emphasis on commands, architecture, and known risks that are still actionable.
 
 ## 1. Repository Snapshot
 
 - Branch at snapshot: `copilot/code-quality-roadmap`
-- HEAD at snapshot: `dcba202`
+- HEAD at snapshot: `6150c62`
 - Swift tools: `6.2`
 - Platforms: `iOS 17+`, `macOS 26.0+`
 - Dependencies:
@@ -15,7 +15,7 @@ This document is a practical snapshot of the current repository, with emphasis o
   - `pointfreeco/swift-snapshot-testing` (`>= 1.17.0`)
 - File counts at snapshot:
   - Source files (`Sources/MarkdownKit/**/*.swift`): **83**
-  - Test files (`Tests/MarkdownKitTests/*.swift`): **71**
+  - Test files (`Tests/MarkdownKitTests/*.swift`): **72**
   - Docs files (`docs/*.md`): **21**
 
 ## 2. Build / Run / Test Commands
@@ -65,7 +65,7 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **438** discoverable tests
+- `swift test list`: **458** discoverable tests
 - `swift test`: no execution log supplied for this refresh
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
@@ -79,7 +79,7 @@ Pipeline:
 4. Details disclosure overrides are reapplied to the latest configuration before layout.
 5. `LayoutSolver.solve(node:width:)` builds attributed content + measured sizes (`TextKitCalculator`). Parser-produced images remain inline: `ImageAttachmentBuilder` loads through `ImageResourceLoader`, builds a bounded thumbnail attachment, or emits bracketed secondary-color alt text.
 6. Each `LayoutResult` caches accessibility label, value, hint, role, and task-checkbox state during layout so UIKit/AppKit cells apply metadata without re-scanning attributed strings.
-7. `LayoutCache` memoizes `(node.contentFingerprint, rounded width, solver variant hash)` results, including image-policy inputs.
+7. `LayoutCache` memoizes `(node.contentFingerprint, optional interaction fingerprint, rounded width, solver variant hash)` results, including image-policy inputs.
 8. UI containers mount top-level `LayoutResult` rows (`MarkdownCollectionView` iOS/macOS).
 9. `AsyncTextView` rasterizes attributed strings, including inline image attachments, off-main; `AsyncCodeView` handles code rows.
 
@@ -122,7 +122,7 @@ Primary files:
 - `Sources/MarkdownKit/Theme/Theme.swift`
 
 Key facts:
-- `LayoutCache` keys are `node.contentFingerprint` + rounded width + solver variant hash (theme/diagram/math/image policy/appearance inputs).
+- `LayoutCache` keys are `node.contentFingerprint` + optional interaction fingerprint + rounded width + solver variant hash (theme/diagram/math/image policy/appearance inputs). The separate interaction identity covers source ranges and URLs captured by checkbox/details callbacks without changing semantic stable identity or pixel-render identity.
 - `AttributedStringBuilder` acts as the master coordinator delegating block constructions to isolated async-friendly builders (Table, Math, Image).
 - `ImageResourceLoader` is the sole production owner of image source resolution, policy gating, file/`URLSession` loading, pre-follow redirect policy, HTTP status, MIME, expected-byte-count, streamed final-byte limits, and typed rejection.
 - `ImageAttachmentBuilder` uses ImageIO to create an oriented, width-constrained thumbnail. Its decoded cache is keyed by policy/source/rounded target width, bounded by count and total cost, and rejects any decoded image above 64 MiB.
@@ -152,7 +152,7 @@ Key facts:
 
 High-value suites:
 - Parser/plugin correctness: `Parser*Tests`, `ASTPluginTests`, `*ExtractionPluginTests`, `GitHubAutolinkPluginTests`
-- Layout invariants: `LayoutSolverExtendedTests`, `InlineFormattingLayoutTests`, `CrossPlatformLayoutTests`, `iOSTableLayoutTests`
+- Layout invariants: `LayoutSolverExtendedTests`, `InlineFormattingLayoutTests`, `InteractionCacheIdentityTests`, `CrossPlatformLayoutTests`, `iOSTableLayoutTests`
 - Unified image pipeline: `ImageResourceLoaderTests` (12 injected-`URLProtocol`/local policy and validation tests), `ImageAttachmentBuilderTests` (5 decode/cache tests)
 - Safety and Utils: `URLSanitizerTests`, `DepthLimitTests`, `FuzzTests`, `TableOfContentsBuilderTests`, `PlatformAccessibilityTests`, `PerformanceProfilerTests`
 - Committed visual regression: macOS `SnapshotTests`

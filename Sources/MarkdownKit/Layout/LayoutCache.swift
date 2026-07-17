@@ -12,7 +12,8 @@ import AppKit
 #endif
 
 /// A thread-safe cache storing previously computed layout results.
-/// The cache is keyed on a **content fingerprint** of the node rather than its UUID.
+/// The cache is keyed on a **content fingerprint** of the node rather than its UUID,
+/// plus a range-sensitive interaction fingerprint only when the rendered payload needs one.
 /// This enables cache hits during streaming scenarios where each call to `parser.parse()`
 /// creates fresh AST nodes with new UUIDs, but unchanged paragraphs produce identical content.
 ///
@@ -22,14 +23,16 @@ public final class LayoutCache: @unchecked Sendable {
 
     // MARK: - Cache Key
 
-    /// The internal key structure for NSCache, based on content fingerprint + width.
+    /// The internal key structure for NSCache, based on content, interaction, variant, and width.
     private class CacheKey: NSObject {
         let contentHash: Int
+        let interactionHash: Int?
         let width: Int
         let variantHash: Int
 
-        init(contentHash: Int, width: CGFloat, variantHash: Int) {
+        init(contentHash: Int, interactionHash: Int?, width: CGFloat, variantHash: Int) {
             self.contentHash = contentHash
+            self.interactionHash = interactionHash
             self.variantHash = variantHash
             // Hash and compare exact integer widths since floating point jitter
             // inside scroll views often breaks fuzzy hit rates.
@@ -39,6 +42,7 @@ public final class LayoutCache: @unchecked Sendable {
         override var hash: Int {
             var hasher = Hasher()
             hasher.combine(contentHash)
+            hasher.combine(interactionHash)
             hasher.combine(width)
             hasher.combine(variantHash)
             return hasher.finalize()
@@ -47,6 +51,7 @@ public final class LayoutCache: @unchecked Sendable {
         override func isEqual(_ object: Any?) -> Bool {
             guard let other = object as? CacheKey else { return false }
             return self.contentHash == other.contentHash
+                && self.interactionHash == other.interactionHash
                 && self.width == other.width
                 && self.variantHash == other.variantHash
         }
@@ -99,8 +104,8 @@ public final class LayoutCache: @unchecked Sendable {
 
     /// Retrieve a pre-calculated layout if it exists for the given node and container width.
     ///
-    /// O(1) with respect to subtree size: `node.contentFingerprint` was computed
-    /// once at parse time, so no recursive tree walk happens here.
+    /// O(1) with respect to subtree size: content and interaction fingerprints
+    /// were computed once at parse time, so no recursive tree walk happens here.
     public func getLayout(
         for node: MarkdownNode,
         constrainedToWidth width: CGFloat,
@@ -108,6 +113,7 @@ public final class LayoutCache: @unchecked Sendable {
     ) -> LayoutResult? {
         let key = CacheKey(
             contentHash: node.contentFingerprint,
+            interactionHash: node._interactionFingerprint,
             width: width,
             variantHash: variantHash
         )
@@ -130,6 +136,7 @@ public final class LayoutCache: @unchecked Sendable {
     ) {
         let key = CacheKey(
             contentHash: result.node.contentFingerprint,
+            interactionHash: result.interactionFingerprint,
             width: width,
             variantHash: variantHash
         )

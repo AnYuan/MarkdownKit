@@ -1,18 +1,18 @@
 # MarkdownKit 测试覆盖与执行快照
 
-> 最近更新: 2026-07-17
+> 最近更新: 2026-07-18
 > 生成方式: `python3 scripts/generate_test_coverage_report.py [--run-tests|--from-log <path>]`
-> 生成时间: 2026-07-17 23:58:43
+> 生成时间: 2026-07-18 01:22:08
 
 ## 1. 总览
 
 | 指标 | 当前值 | 说明 |
 | --- | ---: | --- |
 | 源码文件数 (`Sources/MarkdownKit/*.swift`) | 83 | 不含 Demo target |
-| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 71 | 含基准/夹具/辅助文件 |
-| 含 `test*` 方法的测试文件 | 63 | 静态扫描结果 |
-| 静态扫描 `test*` 方法总数 | 508 | 受编译条件影响，可能高于可执行测试数 |
-| 可发现测试数 (`swift test list`) | 438 | 当前平台可执行测试 |
+| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 72 | 含基准/夹具/辅助文件 |
+| 含 `test*` 方法的测试文件 | 64 | 静态扫描结果 |
+| 静态扫描 `test*` 方法总数 | 528 | 受编译条件影响，可能高于可执行测试数 |
+| 可发现测试数 (`swift test list`) | 458 | 当前平台可执行测试 |
 | 全量执行结果 (`swift test`) | 未提供 | 未执行或未提供日志 |
 
 ## 2. 本次执行状态
@@ -30,7 +30,7 @@
 | `AsyncCodeViewCopyTests.swift` | 7 |
 | `AsyncTextViewInteractionTests.swift` | 5 |
 | `AsyncTextViewRenderTests.swift` | 7 |
-| `AttributedStringBuilderEquivalenceTests.swift` | 9 |
+| `AttributedStringBuilderEquivalenceTests.swift` | 15 |
 | `BenchmarkBaseline.swift` | 0 |
 | `BenchmarkCacheTests.swift` | 2 |
 | `BenchmarkFixtures.swift` | 0 |
@@ -55,6 +55,7 @@
 | `ImageResourceLoaderTests.swift` | 12 |
 | `InlineFormattingLayoutTests.swift` | 30 |
 | `IntegrationPipelineTests.swift` | 10 |
+| `InteractionCacheIdentityTests.swift` | 14 |
 | `LayoutCacheEdgeCaseTests.swift` | 12 |
 | `LayoutSolverExtendedTests.swift` | 16 |
 | `LayoutTests.swift` | 5 |

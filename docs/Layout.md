@@ -25,6 +25,8 @@ A recursive tree solver. It visits an AST root (`DocumentNode`), applies the cen
 ### `LayoutCache`
 An `NSCache`-backed memoization utility. 
 Because text measurement is still expensive, `LayoutCache` keys results by node
-`contentFingerprint`, rounded viewport width, and a rendering-variant fingerprint. Collection
-views answer cell-size queries from already-computed `LayoutResult.size`; a changed width or
-variant can require new layout work.
+`contentFingerprint`, an optional interaction fingerprint, rounded viewport width, and a
+rendering-variant fingerprint. The interaction fingerprint invalidates cached callback payloads
+when source ranges or source URLs change without changing semantic stable identity or pixel-render
+identity. Collection views answer cell-size queries from already-computed `LayoutResult.size`; a
+changed width, rendering variant, or visible interaction identity can require new layout work.

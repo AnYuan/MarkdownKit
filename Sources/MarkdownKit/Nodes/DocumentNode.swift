@@ -7,6 +7,7 @@ public struct DocumentNode: BlockNode {
     public let range: SourceRange?
     public let children: [MarkdownNode]
     public let contentFingerprint: Int
+    internal let interactionFingerprint: Int?
 
     public init(range: SourceRange?, children: [MarkdownNode]) {
         self.range = range
@@ -15,5 +16,11 @@ public struct DocumentNode: BlockNode {
             typeName: "DocumentNode",
             children: children
         )
+        self.interactionFingerprint = _markdownNodeInteractionFingerprint(
+            typeName: "DocumentNode",
+            children: children
+        )
     }
 }
+
+extension DocumentNode: _InteractionFingerprintProviding {}

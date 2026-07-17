@@ -62,6 +62,10 @@ public struct LayoutResult {
     /// source semantics.
     public let renderFingerprint: Int
 
+    /// Range-sensitive identity for interaction payloads embedded in the
+    /// attributed string. Kept separate from pixel-only rendering identity.
+    internal let interactionFingerprint: Int?
+
     public init(
         node: MarkdownNode,
         size: CGSize,
@@ -86,12 +90,13 @@ public struct LayoutResult {
             ?? AccessibilityMetadata.make(for: node, attributedString: attributedString)
         self.appearance = appearance
         self.renderFingerprint = renderFingerprint ?? node.contentFingerprint
+        self.interactionFingerprint = node._interactionFingerprint
     }
 
     /// Returns a copy of this result with its `stableIdentity` replaced. Used
     /// by `LayoutSolver` to stamp the correct document-position hash onto
-    /// otherwise-cached results. Both `appearance` and `renderFingerprint` are
-    /// preserved unchanged.
+    /// otherwise-cached results. Rendering and interaction fingerprints are
+    /// preserved from the unchanged node.
     public func withStableIdentity(_ identity: StableNodeIdentity) -> LayoutResult {
         LayoutResult(
             node: node,
@@ -115,7 +120,8 @@ enum LayoutResultVariantDiff {
         next.compactMap { layout in
             guard let oldLayout = previous[layout.stableIdentity],
                   oldLayout.renderFingerprint != layout.renderFingerprint
-                    || oldLayout.appearance != layout.appearance else {
+                   || oldLayout.appearance != layout.appearance
+                   || oldLayout.interactionFingerprint != layout.interactionFingerprint else {
                 return nil
             }
             return layout.stableIdentity

@@ -9,6 +9,7 @@ public struct DetailsNode: BlockNode {
     public let summary: SummaryNode?
     public let children: [MarkdownNode]
     public let contentFingerprint: Int
+    internal let interactionFingerprint: Int?
 
     public init(
         range: SourceRange?,
@@ -29,8 +30,17 @@ public struct DetailsNode: BlockNode {
             // explicitly combine its fingerprint (read-only — never its children).
             hasher.combine(summary?.contentFingerprint)
         }
+        self.interactionFingerprint = _markdownRenderedSourceRangesInteractionFingerprint(
+            typeName: "DetailsNode.callback",
+            ownRange: range,
+            summary: summary,
+            children: children,
+            includesChildren: isOpen
+        )
     }
 }
+
+extension DetailsNode: _InteractionFingerprintProviding {}
 
 /// A block node representing an HTML `<summary>` row.
 public struct SummaryNode: BlockNode {

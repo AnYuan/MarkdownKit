@@ -24,6 +24,7 @@ public struct ListItemNode: BlockNode {
     public let checkbox: CheckboxState
     public let children: [MarkdownNode]
     public let contentFingerprint: Int
+    internal let interactionFingerprint: Int?
 
     public init(range: SourceRange?, checkbox: CheckboxState = .none, children: [MarkdownNode]) {
         self.range = range
@@ -39,6 +40,30 @@ public struct ListItemNode: BlockNode {
             case .unchecked: hasher.combine("unchecked")
             case .none:      hasher.combine("none")
             }
+        }
+        self.interactionFingerprint = _markdownNodeInteractionFingerprint(
+            typeName: "ListItemNode",
+            ownFingerprint: _markdownSourceRangeInteractionFingerprint(
+                typeName: "ListItemNode.checkbox",
+                discriminator: checkbox.interactionDiscriminator,
+                range: checkbox == .none ? nil : range
+            ),
+            children: children
+        )
+    }
+}
+
+extension ListItemNode: _InteractionFingerprintProviding {}
+
+private extension CheckboxState {
+    var interactionDiscriminator: String {
+        switch self {
+        case .checked:
+            return "checked"
+        case .unchecked:
+            return "unchecked"
+        case .none:
+            return "none"
         }
     }
 }
