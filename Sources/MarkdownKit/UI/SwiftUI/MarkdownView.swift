@@ -91,8 +91,7 @@ public struct MarkdownView: View {
                 onLinkTap: linkTapHandler,
                 onCheckboxToggle: checkboxToggleHandler,
                 theme: theme,
-                textInteractionMode: textInteractionMode,
-                imageLoadingPolicy: imageLoadingPolicy
+                textInteractionMode: textInteractionMode
             )
             .task {
                 // First paint is immediate — debouncing here would add latency

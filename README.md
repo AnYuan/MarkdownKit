@@ -60,6 +60,39 @@ Direct layout APIs use a deterministic `.light` appearance by default. Pass
 dark output. SwiftUI `MarkdownView` follows the environment `colorScheme`
 automatically.
 
+## Markdown Images
+
+Markdown images are inline content. During layout, `ImageAttachmentBuilder` asks the unified
+`ImageResourceLoader` to load an allowed source, decodes a width-constrained thumbnail, and
+inserts an `NSTextAttachment`. Rejected or undecodable sources render as bracketed,
+secondary-color alt text. MarkdownKit does not expose a separate top-level/block-image path.
+
+Image I/O is opt-in:
+
+- `.default` and `.disabled` deny all image I/O.
+- `.remoteHTTPS` allows HTTPS sources only and rejects disallowed redirects before following them.
+- `.trusted` allows local/relative paths plus HTTP and HTTPS; use it only for trusted content.
+
+Configure the policy on the layout/render surface:
+
+```swift
+let solver = MarkdownKitEngine.makeLayoutSolver(imageLoadingPolicy: .remoteHTTPS)
+let layout = await MarkdownKitEngine.layout(
+    markdown: "Logo: ![MarkdownKit](https://example.com/logo.png)",
+    constrainedToWidth: 800,
+    solver: solver
+)
+
+let view = MarkdownView(
+    text: "Logo: ![MarkdownKit](https://example.com/logo.png)",
+    imageLoadingPolicy: .remoteHTTPS
+)
+```
+
+`imageLoadingPolicy` is a layout input. Changing it relayouts the document and rebuilds inline
+attachments; it does not enable visible-cell image loading. Remote response bodies are streamed
+and canceled once `maximumResponseBytes` would be exceeded.
+
 ## Parser Resource Limits & Typed Outcomes
 
 `MarkdownParser` uses a per-instance `ResourceLimits` policy to bound accepted input size and

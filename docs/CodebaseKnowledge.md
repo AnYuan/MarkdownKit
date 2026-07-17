@@ -1,11 +1,11 @@
-# MarkdownKit Codebase Knowledge (2026-03-04)
+# MarkdownKit Codebase Knowledge (2026-07-17)
 
 This document is a practical snapshot of the current repository, with emphasis on commands, architecture, and known risks that are still actionable.
 
 ## 1. Repository Snapshot
 
-- Branch at snapshot: `codex/docs-refresh-20260304-064504`
-- HEAD at snapshot: `105e51f`
+- Branch at snapshot: `copilot/code-quality-roadmap`
+- HEAD at snapshot: `dcba202`
 - Swift tools: `6.2`
 - Platforms: `iOS 17+`, `macOS 26.0+`
 - Dependencies:
@@ -14,9 +14,9 @@ This document is a practical snapshot of the current repository, with emphasis o
   - `colinc86/MathJaxSwift` (`>= 3.4.0`)
   - `pointfreeco/swift-snapshot-testing` (`>= 1.17.0`)
 - File counts at snapshot:
-  - Source files (`Sources/MarkdownKit/**/*.swift`): **54**
-  - Test files (`Tests/MarkdownKitTests/*.swift`): **48**
-  - Docs files (`docs/*.md`): **16**
+  - Source files (`Sources/MarkdownKit/**/*.swift`): **83**
+  - Test files (`Tests/MarkdownKitTests/*.swift`): **71**
+  - Docs files (`docs/*.md`): **21**
 
 ## 2. Build / Run / Test Commands
 
@@ -65,7 +65,7 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **411** discoverable tests
+- `swift test list`: **430** discoverable tests
 - `swift test`: no execution log supplied for this refresh
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
@@ -77,10 +77,10 @@ Pipeline:
 2. Parse boundary uses `MarkdownParseKey` (`text` + `resourceLimits` + ordered plugin fingerprint); only matching keys can reuse cached raw AST.
 3. On parse misses, task-confined `MarkdownParser` + plugin chain produce a fresh internal `DocumentNode`.
 4. Details disclosure overrides are reapplied to the latest configuration before layout.
-5. `LayoutSolver.solve(node:width:)` builds attributed content + measured sizes (`TextKitCalculator`)
-6. `LayoutCache` memoizes `(node.contentFingerprint, rounded width, solver variant hash)` results
-7. UI containers mount `LayoutResult` rows (`MarkdownCollectionView` iOS/macOS)
-8. Async node views render text/code/image (`AsyncTextView`, `AsyncCodeView`, `AsyncImageView`)
+5. `LayoutSolver.solve(node:width:)` builds attributed content + measured sizes (`TextKitCalculator`). Parser-produced images remain inline: `ImageAttachmentBuilder` loads through `ImageResourceLoader`, builds a bounded thumbnail attachment, or emits bracketed secondary-color alt text.
+6. `LayoutCache` memoizes `(node.contentFingerprint, rounded width, solver variant hash)` results, including image-policy inputs.
+7. UI containers mount top-level `LayoutResult` rows (`MarkdownCollectionView` iOS/macOS).
+8. `AsyncTextView` rasterizes attributed strings, including inline image attachments, off-main; `AsyncCodeView` handles code rows.
 
 Core goal: move parse/layout cost off the main thread and keep cell sizing effectively O(1) during scrolling.
 
@@ -106,6 +106,7 @@ Key facts:
 
 - Node model is structured and UUID-addressable (`DocumentNode`, `ParagraphNode`, `Table*`, `DetailsNode`, `DiagramNode`, `MathNode`, etc.).
 - `LinkNode` and `ImageNode` sanitize URL input through `URLSanitizer` on initialization.
+- Image source sanitization does not grant I/O permission; `ImageLoadingPolicy` is enforced separately during layout.
 
 ### 4.3 Layout/styling
 
@@ -122,6 +123,9 @@ Primary files:
 Key facts:
 - `LayoutCache` keys are `node.contentFingerprint` + rounded width + solver variant hash (theme/diagram/math/image policy/appearance inputs).
 - `AttributedStringBuilder` acts as the master coordinator delegating block constructions to isolated async-friendly builders (Table, Math, Image).
+- `ImageResourceLoader` is the sole production owner of image source resolution, policy gating, file/`URLSession` loading, pre-follow redirect policy, HTTP status, MIME, expected-byte-count, streamed final-byte limits, and typed rejection.
+- `ImageAttachmentBuilder` uses ImageIO to create an oriented, width-constrained thumbnail. Its decoded cache is keyed by policy/source/rounded target width, bounded by count and total cost, and rejects any decoded image above 64 MiB.
+- Parser-produced Markdown images are inline attachments only. There is no top-level/block-image layout or visible-cell image loader.
 - `TextKitCalculator` safely isolates layout passes to avoid concurrent `NSLayoutManager` data dictionary deadlocks via tight locks.
 - Code blocks support optional language badge + Splash highlighting.
 - Inline code remains style-focused (no token-level inline lexing).
@@ -135,11 +139,12 @@ Key facts:
 
 Primary files:
 - iOS: `UI/iOS/MarkdownCollectionView_iOS.swift`, `UI/iOS/MarkdownCollectionViewCell.swift`
-- Shared components: `UI/Components/AsyncTextView.swift`, `AsyncCodeView.swift`, `AsyncImageView.swift`, `UI/SwiftUI/MarkdownRenderCoordinator.swift`
+- Shared components: `UI/Components/AsyncTextView.swift`, `AsyncCodeView.swift`, `UI/SwiftUI/MarkdownRenderCoordinator.swift`
 - macOS: `UI/macOS/MarkdownCollectionView_macOS.swift`, `UI/macOS/MarkdownItemView.swift`
 
 Key facts:
 - `MarkdownCollectionViewCell` (iOS) and `MarkdownItemView` (macOS) natively implement Texture-style view layer recycling, maintaining `AsyncView` allocations and CALayers across high-speed lists.
+- Image-policy changes trigger relayout and inline attachment rebuilding; cells do not independently load images when they become visible.
 - macOS resize updates are coalesced through effective-content-width reporting plus the SwiftUI coordinator's 200ms debounce/latest-request replacement path.
 
 ## 5. Automated Test Strategy (Current State)
@@ -147,6 +152,7 @@ Key facts:
 High-value suites:
 - Parser/plugin correctness: `Parser*Tests`, `ASTPluginTests`, `*ExtractionPluginTests`, `GitHubAutolinkPluginTests`
 - Layout invariants: `LayoutSolverExtendedTests`, `InlineFormattingLayoutTests`, `CrossPlatformLayoutTests`, `iOSTableLayoutTests`
+- Unified image pipeline: `ImageResourceLoaderTests` (12 injected-`URLProtocol`/local policy and validation tests), `ImageAttachmentBuilderTests` (5 decode/cache tests)
 - Safety and Utils: `URLSanitizerTests`, `DepthLimitTests`, `FuzzTests`, `TableOfContentsBuilderTests`, `PlatformAccessibilityTests`, `PerformanceProfilerTests`
 - Committed visual regression: macOS `SnapshotTests`
 - Deferred visual coverage: `iOSSnapshotTests` has no committed baseline or dedicated lane

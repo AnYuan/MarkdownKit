@@ -19,6 +19,7 @@ This document traces the advanced parsing and layout features (defined in Phase 
 | Diagram Fenced Languages (`mermaid`, etc) | ✅ | `DiagramExtractionPluginTests.swift` |
 | GitHub Autolinks (`@mentions`, `#issues`) | ✅ | `GitHubAutolinkPluginTests.swift` |
 | Interactive Task Lists | ✅ | `SnapshotTests.testTasklistRendering` |
+| Inline Markdown images with policy-gated attachment loading and alt fallback | ✅ (inline only) | `ImageResourceLoaderTests.swift`, `ImageAttachmentBuilderTests.swift`, `InlineFormattingLayoutTests.swift` |
 
 ## P2: Host-App Integration Boundaries
 | Feature | Status | Covered By Unit/Snapshot Tests |
@@ -32,6 +33,7 @@ This document traces the advanced parsing and layout features (defined in Phase 
 | Feature | Status | Covered By Unit/Snapshot Tests |
 | :--- | :---: | :--- |
 | URL Scheme Allow-listing | ✅ | `URLSanitizerTests.swift` |
+| Image I/O policy and response validation (`default` deny-all, HTTPS-only remote, trusted local/HTTP/HTTPS) | ✅ | `ImageResourceLoaderTests.swift` (injected `URLProtocol` + local fixtures) |
 | Per-Parser Input Limit and Typed Rejection | ✅ | `ParserResourceLimitTests.swift` |
 | Native-AST Mapping Recursion Limit (`MarkdownParser.ResourceLimits.maximumNestingDepth`, default 50 — bounds only `MarkdownKitVisitor`'s mapping recursion, not `swift-markdown` parsing or layout depth) | ✅ | `DepthLimitTests.swift` |
 | Fuzzing & Malformed Document Testing | ✅ | `FuzzTests.swift` |

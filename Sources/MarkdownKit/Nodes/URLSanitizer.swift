@@ -3,7 +3,7 @@ import Foundation
 /// A utility to validate and sanitize URIs to prevent XSS and malformed URL attacks.
 /// Production-grade markdown parsers must never pass `javascript:` or `vbscript:`
 /// strings directly to native UI components when generating `NSAttributedString` hyperlinks or
-/// loading `AsyncImageView` network images.
+/// loading network images.
 public struct URLSanitizer {
 
     /// The default set of allowed URL schemes.

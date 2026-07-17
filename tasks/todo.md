@@ -322,9 +322,25 @@ review the complete diff, then commit and push before starting the next stage.
   each), and the iOS Simulator gate (450 tests) all pass. iOS logs contain no
   XCTest process restarts or private-font fallback diagnostics, and
   `git diff --check` is clean.
-- [ ] `refactor: establish one image-loading pipeline`
-  Decide the supported image surfaces, centralize fetch validation, and downsample
-  live inline images before caching.
+- [x] `refactor: establish one image-loading pipeline`
+  Keep Markdown images on the live attributed-attachment path used by parser
+  output. Remove the dormant iOS-only `AsyncImageView` branch, which can only be
+  reached through manually fabricated top-level `ImageNode` layouts and has no
+  producing parser/layout path. Add one internal image-resource loader that owns
+  source resolution, policy enforcement, file/network loading, redirect/status/
+  MIME/byte validation, and typed failures. Make `ImageAttachmentBuilder` decode
+  ImageIO thumbnails before caching, partition decoded entries by policy/source/
+  target width, and retain alt-text fallback plus the default no-I/O policy.
+  Review: disallowed redirects are rejected before follow, allowed HTTPS redirects
+  remain supported, remote bodies stream under `maximumResponseBytes`, URL/path
+  failures stay private in logs, sync and async layouts use separate cache/render
+  variants, and canceled image renders cannot cache fallback over a later retry.
+  Validation: 70 focused image/appearance/equivalence tests, strict documentation
+  freshness (430 discoverable tests), the complete macOS correctness gate (413
+  tests), visual and determinism snapshot gates (4/4 each), and the iOS Simulator
+  gate (459 tests) all pass. iOS logs contain no XCTest process restarts, corrupt
+  image fixture diagnostics, private-font fallback diagnostics, or concurrency
+  diagnostics, and `git diff --check` is clean.
 - [ ] `perf: reuse accessibility metadata on macOS`
   Remove repeated main-thread attributed-string scans during item configuration.
 - [ ] `refactor: share sync and async layout dispatch`

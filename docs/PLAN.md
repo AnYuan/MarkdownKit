@@ -65,7 +65,7 @@ bash scripts/verify_all.sh --full
 **Goal**: prevent recurrence of known rendering failures.
 1. ✅ Add explicit regression tests for details toggle stale-configuration handling (`MarkdownRenderCoordinatorTests.testDebouncedDarkToggleUsesLatestConfigurationWithoutReparse`).
 2. Add explicit regression tests for table readability (no column collapse, alignment correctness).
-3. Add explicit regression tests for image attachment rendering and fallback behavior.
+3. ✅ Add explicit regression tests for the unified inline image path: policy/source/response validation in `ImageResourceLoaderTests`, bounded decode/cache behavior in `ImageAttachmentBuilderTests`, and bracketed alt fallback in layout tests. Remote cases use injected `URLProtocol` responses rather than the public network.
 4. Add explicit regression tests for diagram fallback rendering behavior.
 
 Phase C note: this coordinator/details regression fix does **not** claim the separate iOS details tap-gesture gap is fixed.
@@ -143,12 +143,12 @@ Phase C note: this coordinator/details regression fix does **not** claim the sep
 4. **Quality Assurance**: Develop unit tests verifying mathematically perfect framing calculations for varying device screen widths and dynamic type sizes.
 
 ## Phase 3: Virtualized Rendering UI
-**Goal**: Only instantiate UI layers when components enter the viewport, keeping heavy text/image work off the main thread during rendering.
+**Goal**: Only instantiate top-level UI layers when components enter the viewport, keeping backing-store rendering off the main thread.
 1. **iOS**: Implement a high-performance `UICollectionView` handling virtualization.
 2. **macOS**: Implement the `NSTableView`/`NSCollectionView` AppKit equivalents.
-3. Develop individual native View components for each layout node (e.g., `MarkdownTextView`, `MarkdownImageView`, `MarkdownCodeView`).
-4. **Texture Display State**: Specifically mandate that all text rendering (drawing `NSAttributedString` to a `CGContext`) and all `Image/GIF` data decoding must occur strictly on a background queue.
-5. Implement the asynchronous mounting logic—applying the pre-drawn contexts to views dynamically as the user scrolls.
+3. Develop native text and code view components for top-level layout rows.
+4. **Texture Display State**: Draw `NSAttributedString` content—including inline image attachments—into a `CGContext` off-main, then mount the backing store from UI context.
+5. Build inline image attachments during layout through `ImageResourceLoader` and `ImageAttachmentBuilder`; image policy changes relayout rather than reconfigure visible cells. No top-level/block-image route is implemented.
 6. **Quality Assurance**: (Deferred) Perform memory profiling to characterize footprint under large-document workloads; no fixed ceiling has been measured or is guaranteed yet.
 
 ## Phase 4: Extended Syntax & Rich Elements

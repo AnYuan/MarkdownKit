@@ -7,41 +7,6 @@ import UIKit
 @MainActor
 final class UIComponentsPlatformTests: XCTestCase {
 
-    // MARK: - AsyncImageView
-
-    func testAsyncImageViewConfigureWithNonImageNodeIsNoop() async throws {
-        let textNode = TextNode(range: nil, text: "not an image")
-        let layout = LayoutResult(node: textNode, size: CGSize(width: 100, height: 50))
-
-        let view = AsyncImageView(frame: .zero)
-        view.configure(with: layout)
-
-        // Should not crash, frame should be set
-        XCTAssertEqual(view.frame.size, CGSize(width: 100, height: 50))
-    }
-
-    func testAsyncImageViewConfigureWithNilSourceIsNoop() async throws {
-        let imageNode = ImageNode(range: nil, source: nil, altText: nil, title: nil)
-        let layout = LayoutResult(node: imageNode, size: CGSize(width: 100, height: 50))
-
-        let view = AsyncImageView(frame: .zero)
-        view.configure(with: layout)
-
-        XCTAssertEqual(view.frame.size, CGSize(width: 100, height: 50))
-    }
-
-    func testAsyncImageViewConfigureWithInvalidURLIsNoop() async throws {
-        let imageNode = ImageNode(range: nil, source: "", altText: nil, title: nil)
-        let layout = LayoutResult(node: imageNode, size: CGSize(width: 100, height: 50))
-
-        let view = AsyncImageView(frame: .zero)
-        view.configure(with: layout)
-
-        // URL(string: "") returns nil, so guard exits — layer should remain empty
-        XCTAssertEqual(view.frame.size, CGSize(width: 100, height: 50))
-        XCTAssertNil(view.layer.contents, "Invalid URL should not produce any layer contents")
-    }
-
     // MARK: - AsyncCodeView
 
     func testAsyncCodeViewHasSubviews() {
@@ -93,17 +58,6 @@ final class UIComponentsPlatformTests: XCTestCase {
     }
 
     // MARK: - MarkdownCollectionViewCell Routing
-
-    func testCellRoutesImageNodeToAsyncImageView() {
-        let imageNode = ImageNode(range: nil, source: "https://example.com/img.png", altText: "alt", title: nil)
-        let imageLayout = LayoutResult(node: imageNode, size: CGSize(width: 320, height: 200))
-
-        let cell = MarkdownCollectionViewCell(frame: .zero)
-        cell.configure(with: imageLayout)
-
-        XCTAssertEqual(cell.contentView.subviews.count, 1)
-        XCTAssertTrue(cell.contentView.subviews[0] is AsyncImageView)
-    }
 
     func testCellRoutesCodeBlockToAsyncCodeView() {
         let codeNode = CodeBlockNode(range: nil, language: "swift", code: "let x = 1")

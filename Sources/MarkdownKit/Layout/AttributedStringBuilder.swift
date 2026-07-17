@@ -279,6 +279,8 @@ struct AttributedStringBuilder {
                 result.append(buildInlineAttributedStringSync(from: strong.children, baseAttributes: boldAttributes(base: baseAttributes)))
             case let strikethrough as StrikethroughNode:
                 result.append(buildInlineAttributedStringSync(from: strikethrough.children, baseAttributes: strikethroughAttributes(base: baseAttributes)))
+            case let image as ImageNode:
+                result.append(imageFallbackAttributedString(from: image, baseAttributes: baseAttributes))
             case let math as MathNode:
                 let contextFont = baseAttributes[.font] as? Font
                 result.append(mathAdapter.renderSync(from: math, theme: theme, contextFont: contextFont))
@@ -588,10 +590,10 @@ struct AttributedStringBuilder {
                 ) {
                     result.append(attachment)
                 } else {
-                    var imgAttrs = baseAttributes
-                    imgAttrs[.foregroundColor] = Color.platformSecondaryLabel
-                    let altText = image.altText ?? image.source ?? "image"
-                    result.append(NSAttributedString(string: "[\(altText)]", attributes: imgAttrs))
+                    result.append(imageFallbackAttributedString(
+                        from: image,
+                        baseAttributes: baseAttributes
+                    ))
                 }
 
             case let math as MathNode:
@@ -631,5 +633,15 @@ struct AttributedStringBuilder {
             }
         }
         return result
+    }
+
+    private func imageFallbackAttributedString(
+        from image: ImageNode,
+        baseAttributes: [NSAttributedString.Key: Any]
+    ) -> NSAttributedString {
+        var attributes = baseAttributes
+        attributes[.foregroundColor] = Color.platformSecondaryLabel
+        let altText = image.altText ?? image.source ?? "image"
+        return NSAttributedString(string: "[\(altText)]", attributes: attributes)
     }
 }

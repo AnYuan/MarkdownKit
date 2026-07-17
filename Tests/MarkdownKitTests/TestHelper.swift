@@ -8,6 +8,8 @@ import AppKit
 #endif
 
 enum TestHelper {
+    private static let onePixelPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAAaADAAQAAAABAAAAAQAAAADa6r/EAAAADUlEQVQIHWNwrL32HwAFKwKUyeNl6wAAAABJRU5ErkJggg=="
+
     /// Parse markdown string and return the DocumentNode.
     static func parse(_ markdown: String) -> DocumentNode {
         let parser = MarkdownParser()
@@ -32,6 +34,13 @@ enum TestHelper {
         let doc = parse(markdown, plugins: plugins)
         let solver = LayoutSolver(theme: theme, imageLoadingPolicy: imageLoadingPolicy, appearance: appearance)
         return await solver.solve(node: doc, constrainedToWidth: width)
+    }
+
+    static func onePixelPNGData() throws -> Data {
+        guard let data = Data(base64Encoded: onePixelPNGBase64) else {
+            throw TestFixtureError.invalidPNGData
+        }
+        return data
     }
 
     #if canImport(UIKit) && !os(watchOS)
@@ -89,4 +98,8 @@ enum TestHelper {
             file: file, line: line)
         return child
     }
+}
+
+private enum TestFixtureError: Error {
+    case invalidPNGData
 }

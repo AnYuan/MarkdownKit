@@ -537,6 +537,49 @@ final class InlineFormattingLayoutTests: XCTestCase {
         XCTAssertTrue(attrStr.string.contains("[local image]"))
     }
 
+    func testSyncImageFallbackDoesNotSuppressLaterAsyncAttachment() async throws {
+        let fixture = try makeRelativeFixtureImagePath()
+        defer { try? FileManager.default.removeItem(at: fixture.absoluteURL) }
+        let document = TestHelper.parse("![local image](\(fixture.relativePath))")
+        let solver = LayoutSolver(
+            cache: LayoutCache(),
+            imageLoadingPolicy: .trusted
+        )
+
+        let syncLayout = solver.solveSync(node: document, constrainedToWidth: 400)
+        let syncString = try XCTUnwrap(syncLayout.children.first?.attributedString)
+        XCTAssertTrue(syncString.string.contains("[local image]"))
+        XCTAssertFalse(syncString.string.contains("\u{FFFC}"))
+
+        let asyncLayout = await solver.solve(node: document, constrainedToWidth: 400)
+        let asyncString = try XCTUnwrap(asyncLayout.children.first?.attributedString)
+        XCTAssertTrue(asyncString.string.contains("\u{FFFC}"))
+    }
+
+    func testCancelledImageFallbackDoesNotPoisonLayoutCache() async throws {
+        let fixture = try makeRelativeFixtureImagePath()
+        defer { try? FileManager.default.removeItem(at: fixture.absoluteURL) }
+        let document = TestHelper.parse("![local image](\(fixture.relativePath))")
+        let solver = LayoutSolver(
+            cache: LayoutCache(),
+            imageLoadingPolicy: .trusted
+        )
+
+        let canceledTask = Task {
+            try? await Task.sleep(for: .milliseconds(50))
+            let layout = await solver.solve(node: document, constrainedToWidth: 400)
+            return layout.children.first?.attributedString?.string
+        }
+        canceledTask.cancel()
+        let canceledValue = await canceledTask.value
+        let canceledString = try XCTUnwrap(canceledValue)
+        XCTAssertTrue(canceledString.contains("[local image]"))
+
+        let retryLayout = await solver.solve(node: document, constrainedToWidth: 400)
+        let retryString = try XCTUnwrap(retryLayout.children.first?.attributedString)
+        XCTAssertTrue(retryString.string.contains("\u{FFFC}"))
+    }
+
     func testMathLayoutProducesOutput() async throws {
         // `DefaultMathRenderingAdapter` may succeed (image attachment) or fall back to raw equation text
         let markdown = "$E=mc^2$"
@@ -579,17 +622,12 @@ final class InlineFormattingLayoutTests: XCTestCase {
     }
 
     private func makeRelativeFixtureImagePath() throws -> (relativePath: String, absoluteURL: URL) {
-        let base64PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO8B9n0AAAAASUVORK5CYII="
-        guard let data = Data(base64Encoded: base64PNG) else {
-            throw NSError(domain: "InlineFormattingLayoutTests", code: 1)
-        }
-
         let cwdURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
         let fixtureDir = cwdURL.appendingPathComponent(".build/inline-image-fixtures", isDirectory: true)
         try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: true)
 
         let imageURL = fixtureDir.appendingPathComponent("inline-\(UUID().uuidString).png")
-        try data.write(to: imageURL, options: .atomic)
+        try TestHelper.onePixelPNGData().write(to: imageURL, options: .atomic)
 
         let relativePath = imageURL.path.replacingOccurrences(of: cwdURL.path + "/", with: "")
         return (relativePath, imageURL)

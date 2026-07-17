@@ -23,15 +23,6 @@ public class MarkdownCollectionView: UIView {
     public var onLinkTap: ((URL) -> Void)?
     public var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
     public var theme: Theme = .default
-    public var imageLoadingPolicy: ImageLoadingPolicy = .default {
-        didSet {
-            guard oldValue != imageLoadingPolicy else { return }
-            // Visible-only reconfigure beats `reloadData()` here — the policy
-            // affects image rendering, not layout geometry, so cells offscreen
-            // can wait until next dequeue.
-            reconfigureVisibleItems()
-        }
-    }
     public var textInteractionMode: MarkdownTextInteractionMode = .asyncReadOnly {
         didSet {
             guard oldValue != textInteractionMode else { return }
@@ -99,7 +90,6 @@ public class MarkdownCollectionView: UIView {
             cell.onLinkTap = self.onLinkTap
             cell.onCheckboxToggle = self.onCheckboxToggle
             cell.textInteractionMode = self.textInteractionMode
-            cell.imageLoadingPolicy = self.imageLoadingPolicy
             cell.onDetailsTap = { [weak self] details in
                 // Resolve index from the live snapshot so external callers
                 // get the current position even if the cell moved.

@@ -22,18 +22,13 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
     public var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
     public var onDetailsTap: ((DetailsNode) -> Void)?
     public var theme: Theme = .default
-    public var imageLoadingPolicy: ImageLoadingPolicy = .default
     public var textInteractionMode: MarkdownTextInteractionMode = .asyncReadOnly
 
     public override func prepareForReuse() {
         super.prepareForReuse()
-        // Keep `hostedView` alive across recycles so the inner async view can be
-        // reused (same identity, just reset state). The configure-time type check
-        // `if let _ = hostedView as? AsyncXxxView` previously never matched because
-        // hostedView was set to nil here, defeating cell pooling.
+        // Keep the hosted code/text view alive across recycles and reset its
+        // state in place so cell pooling also reuses the expensive inner view.
         switch hostedView {
-        case let imageView as AsyncImageView:
-            imageView.prepareForReuse()
         case let codeView as AsyncCodeView:
             codeView.prepareForReuse()
         case let textView as AsyncTextView:
@@ -57,18 +52,6 @@ public class MarkdownCollectionViewCell: UICollectionViewCell {
     /// Mounts the pre-calculated `LayoutResult` onto the main thread.
     public func configure(with layout: LayoutResult) {
         switch layout.node {
-        case is ImageNode:
-            if let imageView = hostedView as? AsyncImageView {
-                imageView.frame = CGRect(origin: .zero, size: layout.size)
-                imageView.configure(with: layout, imageLoadingPolicy: imageLoadingPolicy)
-            } else {
-                hostedView?.removeFromSuperview()
-                let imageView = AsyncImageView(frame: CGRect(origin: .zero, size: layout.size))
-                self.contentView.addSubview(imageView)
-                self.hostedView = imageView
-                imageView.configure(with: layout, imageLoadingPolicy: imageLoadingPolicy)
-            }
-
         case is CodeBlockNode, is DiagramNode:
             if let codeView = hostedView as? AsyncCodeView {
                 codeView.frame = CGRect(origin: .zero, size: layout.size)

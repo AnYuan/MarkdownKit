@@ -35,7 +35,7 @@ The renderer must support the exact Markdown syntax subset utilized by the offic
 - **Rich Code Blocks**: Full syntax highlighting for all standard programming languages outputted by LLMs, complete with a "Copy Code" button and language label.
 - **Complex Math & Equations**: Robust LaTeX syntax support (`$$` for block and `$` for inline syntax) to elegantly display complex mathematical equations, matrices, and theorems (achieved natively or using high-performance bridging via KaTeX/MathJax).
 - **Headers & Typography**: Scaling header sizes (`#` to `######`), blockquotes (`>`), and bold/italic nested rendering precisely as seen in ChatGPT.
-- **Image Handling**: Asynchronous loading and caching of remote and local images.
+- **Image Handling**: Parser-produced Markdown images render inline as policy-gated `NSTextAttachment` values with bracketed alt-text fallback. Image I/O is deny-all by default; hosts may opt into HTTPS-only remote loading or trusted local/relative plus HTTP/HTTPS loading. Top-level/block-image rendering is not supported.
 - **Diagrams & Flowcharts**: Native rendering of `mermaid` diagrams via a pluggable adapter, providing rich visualizations.
 - **Frontmatter Parsing**: Support for YAML/TOML frontmatter parsing and display.
 - **Footnotes & Citations**: Anchor links jumping seamlessly within the document.
@@ -71,7 +71,7 @@ To ensure the renderer is safe for use in production environments with untrusted
    - (Target, not yet implemented) For very large files, parsing should be chunked or yielded so memory doesn't spike. Today, `MarkdownParser` instead enforces a conservative default input ceiling (`ResourceLimits.maximumInputBytes` = 1 MiB) and rejects larger input outright via `parseOutcome(_:)` rather than streaming or chunking it.
 2. **Lazy, Asynchronous Layout (TextureKit Inspired)**:
    - Inspired by the open-source TextureKit / AsyncDisplayKit framework pattern, sizing and text layout calculation (e.g., measuring bounding boxes for string attributes) must be performed **asynchronously on background threads**.
-   - Only the visible text and elements (images, code blocks) in the scroll view should be fully rendered and instantiated into views lazily. Content waiting off-screen is stored simply as layout models.
+   - Top-level layout rows are instantiated lazily by virtualized collection views. Inline images are loaded, decoded, and inserted as attachments during layout rather than when a cell becomes visible; `AsyncTextView` still rasterizes the resulting attributed string off-main.
    - (Target) We will utilize `TextKit 2` with non-contiguous layout or `UICollectionView` / `NSTableView` logic to keep per-cell sizing cost independent of total document size. This has not yet been benchmarked or guaranteed as a formal O(1) bound.
 3. **Smooth Scrolling**:
    - (Target) Scroll performance should be smooth. Heavy operations like syntax highlighting code blocks must be debounced and executed asynchronously. No current benchmark suite asserts a specific frame-rate guarantee (e.g. 60/120 FPS).
@@ -111,7 +111,7 @@ Required automated coverage dimensions:
 ### 6.2 Test Types and Ownership
 1. **Syntax Fixture Tests** (unit/integration): assert AST shape, node counts, and expected semantic transforms.
 2. **Layout Invariant Tests** (integration): assert finite geometry, stable top-level layout counts, attachment presence rules, and table readability constraints.
-3. **Regression Tests for Known Bugs**: explicit tests for previously fixed issues, including the SwiftUI coordinator details stale-config regression (`MarkdownRenderCoordinatorTests.testDebouncedDarkToggleUsesLatestConfigurationWithoutReparse`), table column collapse, image fallback rendering, diagram fallback rendering, and inline code visual tokenization.
+3. **Regression Tests for Known Bugs**: explicit tests for previously fixed issues, including the SwiftUI coordinator details stale-config regression (`MarkdownRenderCoordinatorTests.testDebouncedDarkToggleUsesLatestConfigurationWithoutReparse`), table column collapse, unified inline-image policy/loading/decode/cache and fallback behavior, diagram fallback rendering, and inline code visual tokenization.
 4. **Optional Visual Snapshots** (platform-specific): for high-value visual blocks (tables, code, math, details).
 5. **Stress and Fuzz-like Tests**: deterministic permutation suites that run in CI and fail on crashes or invalid geometry.
 
@@ -127,6 +127,7 @@ Operational constraints:
 2. Fixture tests must be deterministic and reproducible on local machines and CI runners.
 3. Every newly supported syntax feature must add at least one positive test and one fallback or error-path test.
 4. The coordinator stale-config details regression coverage above does **not** imply the separate iOS details tap-gesture gap is fixed.
+5. Remote image loader tests must use injected `URLProtocol` responses; they do not establish public-network availability or network-independent remote rendering.
 
 ## 7. GitHub Advanced Formatting Parity (Source of Truth)
 
@@ -154,6 +155,7 @@ This section defines parity targets based on GitHub Docs:
 | Tables | Pipe + hyphen header syntax, optional edge pipes, blank line before table, alignment markers (`:---`, `:---:`, `---:`) | Native table cell borders, header emphasis/background, alternating row shading, alignment mapping | In scope |
 | Math expressions | Inline `$...$`, block `$$...$$`, and fenced ```math``` | Inline math baseline alignment, block math display mode, deterministic glyph sizing, graceful fallback | In scope |
 | Autolinks | URLs auto-link; issue/PR refs, commit SHAs, and mentions in supported contexts | Convert supported tokens to tappable links with visual style parity. Host apps can override mention/reference/commit destinations through `MarkdownAutolinkResolver`; unresolved tokens fall back to safe internal schemes. | In scope (renderer + host-resolved destinations) |
+| Markdown images | `![alt](source)` inline image syntax | Sanitize the source at node creation, apply the host image policy during layout, and emit a bounded inline attachment or bracketed alt fallback | In scope (inline only; no block-image surface) |
 | Attaching files | GitHub comment editor feature with context-specific supported file types | Not a markdown rendering concern; editor/upload integration belongs to host app layer | Out of renderer scope |
 | Permanent links to code | GitHub code UI action and snippet permalink behavior | Not a markdown parser/layout concern; host app integration only | Out of renderer scope |
 | Issue/PR keywords | Workflow keywords like `close(s)`, `fix(es)`, `resolve(s)` | Not renderer scope; semantic workflow integration belongs to GitHub backend layer | Out of renderer scope |

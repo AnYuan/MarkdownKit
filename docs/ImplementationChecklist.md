@@ -90,23 +90,26 @@ It focuses on closing known gaps with low-risk, test-first, atomic commits.
 
 ## [x] C5. Image Loading Reliability and Fallback Coverage (P1)
 
-- Objective: make image behavior predictable for remote/local/unavailable sources.
+- Objective: make inline image behavior predictable for remote/local/unavailable sources through one production loading boundary.
 - Problem:
-  - Restricted environments can fail remote fetch; fallback coverage should be explicit.
+  - Source resolution, policy enforcement, response validation, decode, and caching must not diverge across layout and UI surfaces.
 - Files:
-  - `Sources/MarkdownKit/Layout/LayoutSolver.swift`
-  - `Sources/MarkdownKit/UI/Components/AsyncImageView.swift`
-  - `Tests/MarkdownKitTests/AsyncImageViewLoadingTests.swift`
+  - `Sources/MarkdownKit/ImageResourceLoader.swift`
+  - `Sources/MarkdownKit/Layout/Builders/ImageAttachmentBuilder.swift`
+  - `Tests/MarkdownKitTests/ImageResourceLoaderTests.swift`
+  - `Tests/MarkdownKitTests/ImageAttachmentBuilderTests.swift`
   - `Tests/MarkdownKitTests/InlineFormattingLayoutTests.swift`
-  - `Tests/MarkdownKitTests/SyntaxMatrixTests.swift`
 - Change:
-  - Strengthen source resolution and failure handling paths.
-  - Ensure fallback text behavior is deterministic and testable.
+  - Centralize source resolution, policy gating, file/`URLSession` loading, pre-follow redirect rejection, streamed byte limits, status/MIME validation, and typed rejection in `ImageResourceLoader`.
+  - Decode oriented, width-constrained inline attachments with ImageIO and cache decoded thumbnails by policy/source/rounded target width.
+  - Remove the dormant top-level iOS image-view route; parser/LayoutSolver output supports inline image attachments only.
 - DoD:
-  - Local fixture image always renders.
-  - Missing/blocked remote image always falls back to `[alt]`.
+  - `.default`/`.disabled` deny I/O, `.remoteHTTPS` permits HTTPS only, and `.trusted` permits local/relative plus HTTP/HTTPS.
+  - Disallowed redirects are rejected before the target request and remote bodies cannot accumulate beyond `maximumResponseBytes`.
+  - Rejected or undecodable images deterministically fall back to bracketed secondary-color alt text.
+  - Cache count/cost bounds and the 64 MiB per-image decoded bound are enforced.
 - Verify:
-  - `swift test --filter "AsyncImageViewLoadingTests|InlineFormattingLayoutTests|SyntaxMatrixTests"`
+  - `swift test --filter "ImageResourceLoaderTests|ImageAttachmentBuilderTests|InlineFormattingLayoutTests"`
 
 ## [x] C6. Public API Surface Cleanup (P1)
 

@@ -561,32 +561,20 @@ final class SyntaxMatrixTests: XCTestCase {
     }
 
     private func makeTemporaryPNGFilePath() throws -> String {
-        let base64PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO8B9n0AAAAASUVORK5CYII="
-
-        guard let data = Data(base64Encoded: base64PNG) else {
-            throw MatrixFixtureError.failedToDecodePNG
-        }
-
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("markdownkit-matrix-\(UUID().uuidString).png")
 
-        try data.write(to: url, options: .atomic)
+        try TestHelper.onePixelPNGData().write(to: url, options: .atomic)
         return url.path
     }
 
     private func makeRelativePNGFilePath() throws -> (relativePath: String, absoluteURL: URL) {
-        let base64PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO8B9n0AAAAASUVORK5CYII="
-
-        guard let data = Data(base64Encoded: base64PNG) else {
-            throw MatrixFixtureError.failedToDecodePNG
-        }
-
         let cwdURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
         let fixtureDir = cwdURL.appendingPathComponent(".build/markdownkit-matrix-fixtures", isDirectory: true)
         try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: true)
 
         let fileURL = fixtureDir.appendingPathComponent("matrix-\(UUID().uuidString).png")
-        try data.write(to: fileURL, options: .atomic)
+        try TestHelper.onePixelPNGData().write(to: fileURL, options: .atomic)
 
         let relativePath = fileURL.path.replacingOccurrences(of: cwdURL.path + "/", with: "")
         return (relativePath, fileURL)
@@ -622,8 +610,4 @@ private enum NodeKind: String {
     case details
     case summary
     case diagram
-}
-
-private enum MatrixFixtureError: Error {
-    case failedToDecodePNG
 }

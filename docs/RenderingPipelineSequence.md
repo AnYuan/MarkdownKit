@@ -14,12 +14,13 @@ sequenceDiagram
     participant Cache as "LayoutCache"
     participant Highlight as "SplashHighlighter"
     participant Math as "DefaultMathRenderingAdapter (MathJax → SwiftDraw)"
+    participant ImageBuilder as "ImageAttachmentBuilder"
+    participant ImageLoader as "ImageResourceLoader"
     participant Measure as "TextKitCalculator"
     participant CV as "MarkdownCollectionView"
     participant Cell as "MarkdownCollectionViewCell"
     participant TextView as "AsyncTextView"
     participant CodeView as "AsyncCodeView"
-    participant ImageView as "AsyncImageView"
 
     User->>Demo: Edit / load markdown text
     Demo->>Parser: parse(markdown)
@@ -43,6 +44,13 @@ sequenceDiagram
             Solver->>Math: render(latex)
             Math-->>Solver: image attachment / fallback
         end
+        opt Inline ImageNode
+            Solver->>ImageBuilder: build(source, policy, width)
+            ImageBuilder->>ImageLoader: resolve + redirect-gated byte stream
+            ImageLoader-->>ImageBuilder: validated bytes / typed rejection
+            ImageBuilder->>ImageBuilder: ImageIO thumbnail + decoded cache
+            ImageBuilder-->>Solver: NSTextAttachment / bracketed alt fallback
+        end
         Solver->>Measure: calculateSize(attributedString, width)
         Measure-->>Solver: CGSize
         Solver->>Cache: setLayout(result, width)
@@ -58,10 +66,6 @@ sequenceDiagram
     else Code block
         Cell->>CodeView: configure(layout)
         CodeView->>TextView: configure(inset layout)
-    else Image node
-        Cell->>ImageView: configure(layout)
-        ImageView->>ImageView: download/decode/downsample in background
-        ImageView-->>Cell: layer.contents update on MainActor
     end
 ```
 
@@ -70,4 +74,5 @@ sequenceDiagram
 - Sizing is expected to be O(1) at collection-view query time because dimensions are precomputed.
 - Heavy work is intentionally shifted to background tasks, with only final layer/content mounting on main thread.
 - Theme/appearance changes should trigger layout refresh so cached attributed output matches current colors.
-
+- Markdown images are inline attachments built during layout. Image-policy changes relayout and rebuild attachments; collection-view cells never start image I/O.
+- The pipeline does not produce top-level/block-image rows.

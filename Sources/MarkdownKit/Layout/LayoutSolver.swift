@@ -22,6 +22,7 @@ public final class LayoutSolver: @unchecked Sendable {
     private let cache: LayoutCache
     private let builder: AttributedStringBuilder
     private let cacheVariantHash: Int
+    private let syncCacheVariantHash: Int
     /// The explicit appearance this solver was initialised with. Stored so that
     /// every `LayoutResult` it creates carries the correct appearance value.
     private let appearance: MarkdownAppearance
@@ -43,13 +44,18 @@ public final class LayoutSolver: @unchecked Sendable {
         // no ambient UITraitCollection / NSAppearance state is read during layout.
         let resolvedTheme = theme.resolved(for: appearance)
         let resolvedMathAdapter = mathAdapter ?? DefaultMathRenderingAdapter()
-        self.cacheVariantHash = Self.makeCacheVariantHash(
+        let cacheVariantHash = Self.makeCacheVariantHash(
             theme: resolvedTheme,
             diagramRegistry: diagramRegistry,
             mathAdapter: resolvedMathAdapter,
             imageLoadingPolicy: imageLoadingPolicy,
             appearance: appearance
         )
+        self.cacheVariantHash = cacheVariantHash
+        var syncHasher = Hasher()
+        syncHasher.combine(cacheVariantHash)
+        syncHasher.combine("synchronous-layout")
+        self.syncCacheVariantHash = syncHasher.finalize()
         let highlighter = SplashHighlighter(theme: resolvedTheme)
         self.builder = AttributedStringBuilder(
             theme: resolvedTheme,
@@ -81,10 +87,10 @@ public final class LayoutSolver: @unchecked Sendable {
 
     /// Combines the node's content fingerprint with the solver's cache-variant
     /// hash to produce a rendering fingerprint for use in `LayoutResult`.
-    private func makeRenderFingerprint(for node: MarkdownNode) -> Int {
+    private func makeRenderFingerprint(for node: MarkdownNode, variantHash: Int) -> Int {
         var hasher = Hasher()
         hasher.combine(node.contentFingerprint)
-        hasher.combine(cacheVariantHash)
+        hasher.combine(variantHash)
         return hasher.finalize()
     }
 
@@ -107,15 +113,27 @@ public final class LayoutSolver: @unchecked Sendable {
         #if canImport(UIKit) && !os(watchOS)
         // Card-style table rendering on iOS: bypass TextKit, draw directly via CGContext
         if let table = node as? TableNode {
-            let result = solveTableCard(table: table, constrainedToWidth: maxWidth)
-            cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
+            let result = solveTableCard(
+                table: table,
+                constrainedToWidth: maxWidth,
+                variantHash: cacheVariantHash
+            )
+            if !Task.isCancelled {
+                cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
+            }
             return result
         }
 
         // Thematic break: draw a hairline matching legacy DividerAttachment
         if node is ThematicBreakNode {
-            let result = solveThematicBreak(node: node, constrainedToWidth: maxWidth)
-            cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
+            let result = solveThematicBreak(
+                node: node,
+                constrainedToWidth: maxWidth,
+                variantHash: cacheVariantHash
+            )
+            if !Task.isCancelled {
+                cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
+            }
             return result
         }
         #endif
@@ -186,11 +204,13 @@ public final class LayoutSolver: @unchecked Sendable {
             attributedString: styledString,
             children: childLayouts,
             appearance: appearance,
-            renderFingerprint: makeRenderFingerprint(for: node)
+            renderFingerprint: makeRenderFingerprint(for: node, variantHash: cacheVariantHash)
         )
 
         // Memoize the result
-        cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
+        if !Task.isCancelled {
+            cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
+        }
 
         return result
     }
@@ -199,20 +219,32 @@ public final class LayoutSolver: @unchecked Sendable {
     /// Uses `buildStringSync` (cached math / fallback text, no async rendering).
     /// Safe to call from the main thread without RunLoop polling.
     public func solveSync(node: MarkdownNode, constrainedToWidth maxWidth: CGFloat) -> LayoutResult {
-        if let cached = cache.getLayout(for: node, constrainedToWidth: maxWidth, variantHash: cacheVariantHash) {
+        if let cached = cache.getLayout(
+            for: node,
+            constrainedToWidth: maxWidth,
+            variantHash: syncCacheVariantHash
+        ) {
             return cached
         }
 
         #if canImport(UIKit) && !os(watchOS)
         if let table = node as? TableNode {
-            let result = solveTableCard(table: table, constrainedToWidth: maxWidth)
-            cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
+            let result = solveTableCard(
+                table: table,
+                constrainedToWidth: maxWidth,
+                variantHash: syncCacheVariantHash
+            )
+            cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: syncCacheVariantHash)
             return result
         }
 
         if node is ThematicBreakNode {
-            let result = solveThematicBreak(node: node, constrainedToWidth: maxWidth)
-            cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
+            let result = solveThematicBreak(
+                node: node,
+                constrainedToWidth: maxWidth,
+                variantHash: syncCacheVariantHash
+            )
+            cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: syncCacheVariantHash)
             return result
         }
         #endif
@@ -256,9 +288,9 @@ public final class LayoutSolver: @unchecked Sendable {
             attributedString: styledString,
             children: childLayouts,
             appearance: appearance,
-            renderFingerprint: makeRenderFingerprint(for: node)
+            renderFingerprint: makeRenderFingerprint(for: node, variantHash: syncCacheVariantHash)
         )
-        cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
+        cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: syncCacheVariantHash)
         return result
     }
 
@@ -278,7 +310,11 @@ public final class LayoutSolver: @unchecked Sendable {
     // MARK: - Thematic Break Layout (iOS only)
 
     #if canImport(UIKit) && !os(watchOS)
-    private func solveThematicBreak(node: MarkdownNode, constrainedToWidth maxWidth: CGFloat) -> LayoutResult {
+    private func solveThematicBreak(
+        node: MarkdownNode,
+        constrainedToWidth maxWidth: CGFloat,
+        variantHash: Int
+    ) -> LayoutResult {
         let paddingTop = builder.theme.thematicBreak.paddingTop
         let paddingBottom = builder.theme.thematicBreak.paddingBottom
         let dividerHeight = builder.theme.thematicBreak.dividerHeight
@@ -304,7 +340,7 @@ public final class LayoutSolver: @unchecked Sendable {
             children: [],
             customDraw: customDraw,
             appearance: appearance,
-            renderFingerprint: makeRenderFingerprint(for: node)
+            renderFingerprint: makeRenderFingerprint(for: node, variantHash: variantHash)
         )
     }
     #endif
@@ -315,7 +351,11 @@ public final class LayoutSolver: @unchecked Sendable {
     /// Produces a `LayoutResult` for a table node that uses CGContext card rendering
     /// instead of TextKit. The `customDraw` closure captures the pre-computed layout
     /// and resolved colors so that rasterization is fully thread-safe.
-    private func solveTableCard(table: TableNode, constrainedToWidth maxWidth: CGFloat) -> LayoutResult {
+    private func solveTableCard(
+        table: TableNode,
+        constrainedToWidth maxWidth: CGFloat,
+        variantHash: Int
+    ) -> LayoutResult {
         let layout = TableCardRenderer.computeLayout(
             from: table,
             theme: builder.theme,
@@ -343,7 +383,7 @@ public final class LayoutSolver: @unchecked Sendable {
             children: [],
             customDraw: customDraw,
             appearance: appearance,
-            renderFingerprint: makeRenderFingerprint(for: table)
+            renderFingerprint: makeRenderFingerprint(for: table, variantHash: variantHash)
         )
     }
     #endif
