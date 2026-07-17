@@ -23,10 +23,10 @@ This document traces the advanced parsing and layout features (defined in Phase 
 ## P2: Host-App Integration Boundaries
 | Feature | Status | Covered By Unit/Snapshot Tests |
 | :--- | :---: | :--- |
-| `MarkdownContextDelegate` Extensibility | ✅ | N/A (Protocol Definition) |
-| Async Attachment Workflow Hooks | ✅ | N/A (Protocol Definition) |
-| Semantic Issue Keywords Hooks | ✅ | N/A (Protocol Definition) |
-| Custom Action/Permalink Hooks | ✅ | N/A (Protocol Definition) |
+| `MarkdownAutolinkResolver` destination hook (`@mention`, reference, commit) | ✅ | `GitHubAutolinkPluginTests.swift`, `MarkdownKitTests.swift` |
+| Attachment upload workflow hooks | Host-owned (no renderer hook) | N/A |
+| Semantic issue-keyword workflow hooks | Host-owned (no renderer hook) | N/A |
+| Custom action/permalink workflow hooks | Host-owned (no renderer hook) | N/A |
 
 ## Phase 7: Production Readiness (Security & Robustness)
 | Feature | Status | Covered By Unit/Snapshot Tests |

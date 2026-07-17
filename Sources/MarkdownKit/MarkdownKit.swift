@@ -19,7 +19,7 @@ public enum MarkdownKitEngine {
     /// 3. Math extraction
     /// 4. Optional GitHub-style autolinks
     public static func defaultPlugins(
-        contextDelegate: MarkdownContextDelegate? = nil,
+        autolinkResolver: MarkdownAutolinkResolver? = nil,
         includeGitHubAutolinks: Bool = false
     ) -> [ASTPlugin] {
         var plugins: [ASTPlugin] = [
@@ -29,10 +29,25 @@ public enum MarkdownKitEngine {
         ]
 
         if includeGitHubAutolinks {
-            plugins.append(GitHubAutolinkPlugin(delegate: contextDelegate))
+            plugins.append(GitHubAutolinkPlugin(resolver: autolinkResolver))
         }
 
         return plugins
+    }
+
+    @available(
+        *,
+        deprecated,
+        renamed: "defaultPlugins(autolinkResolver:includeGitHubAutolinks:)"
+    )
+    public static func defaultPlugins(
+        contextDelegate: MarkdownContextDelegate?,
+        includeGitHubAutolinks: Bool = false
+    ) -> [ASTPlugin] {
+        defaultPlugins(
+            autolinkResolver: contextDelegate,
+            includeGitHubAutolinks: includeGitHubAutolinks
+        )
     }
 
     /// Builds a parser using either a supplied plugin list or the default plugin pipeline.
@@ -41,15 +56,34 @@ public enum MarkdownKitEngine {
     ///   native-AST mapping recursion. Defaults to `MarkdownParser.ResourceLimits.default`.
     public static func makeParser(
         plugins: [ASTPlugin]? = nil,
-        contextDelegate: MarkdownContextDelegate? = nil,
+        autolinkResolver: MarkdownAutolinkResolver? = nil,
         includeGitHubAutolinks: Bool = false,
         resourceLimits: MarkdownParser.ResourceLimits = .default
     ) -> MarkdownParser {
         let resolvedPlugins = plugins ?? defaultPlugins(
-            contextDelegate: contextDelegate,
+            autolinkResolver: autolinkResolver,
             includeGitHubAutolinks: includeGitHubAutolinks
         )
         return MarkdownParser(plugins: resolvedPlugins, limits: resourceLimits)
+    }
+
+    @available(
+        *,
+        deprecated,
+        renamed: "makeParser(plugins:autolinkResolver:includeGitHubAutolinks:resourceLimits:)"
+    )
+    public static func makeParser(
+        plugins: [ASTPlugin]? = nil,
+        contextDelegate: MarkdownContextDelegate?,
+        includeGitHubAutolinks: Bool = false,
+        resourceLimits: MarkdownParser.ResourceLimits = .default
+    ) -> MarkdownParser {
+        makeParser(
+            plugins: plugins,
+            autolinkResolver: contextDelegate,
+            includeGitHubAutolinks: includeGitHubAutolinks,
+            resourceLimits: resourceLimits
+        )
     }
 
     /// Builds a layout solver with configurable theme/cache/diagram registry.

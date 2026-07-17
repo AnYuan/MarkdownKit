@@ -65,7 +65,7 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **397** discoverable tests
+- `swift test list`: **405** discoverable tests
 - `swift test`: no execution log supplied for this refresh
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
@@ -100,6 +100,7 @@ Key facts:
 - `MarkdownParser.ResourceLimits.default` bounds resource usage: `maximumInputBytes` = 1,048,576 UTF-8 bytes (inclusive) and `maximumNestingDepth` = 50. The depth budget only bounds `MarkdownKitVisitor` while mapping an already-parsed `swift-markdown` tree into native nodes: the root document is not counted, and a boundary container remains while its descendants are omitted. It is **not** a `swift-markdown` front-end limit or a layout/rendering depth limit.
 - `parseOutcome(_:)` returns `.rejected(diagnostic:)` for oversized input (checked before any `swift-markdown` parsing) and reports depth truncation as a diagnostic on a `.parsed` outcome; it never logs. The legacy `parse(_:) -> DocumentNode` is a lossy compatibility convenience that logs each diagnostic and collapses rejection into the historical empty `DocumentNode`.
 - HTML blocks/inlines are preserved as text and optionally reinterpreted by plugins.
+- `GitHubAutolinkPlugin` optionally accepts a `MarkdownAutolinkResolver`, retains it strongly, and fingerprints nil-vs-resolver configuration (plus resolver-specific fingerprint state) for render/cache invalidation.
 
 ### 4.2 Nodes and security boundary
 
@@ -164,7 +165,7 @@ High-value suites:
 1. New syntax transform: add an `ASTPlugin` and wire it into parser pipeline.
 2. New diagram language: extend `DiagramLanguage` + adapter registry + tests.
 3. Styling: evolve `Theme` token surface and apply in `AttributedStringBuilder`.
-4. Host-app integration: use `MarkdownContextDelegate` hooks for link/autolink behaviors.
+4. Host-app integration: use `MarkdownAutolinkResolver` for autolink destinations; attachment upload/permalink/custom action/issue-keyword workflows remain host-owned (no renderer hooks).
 5. Performance gates: refresh benchmark baseline docs and threshold policies as needed.
 
 ## 8. Practical Review Sequence

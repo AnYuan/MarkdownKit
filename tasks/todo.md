@@ -289,8 +289,21 @@ review the complete diff, then commit and push before starting the next stage.
   snapshot gates (4/4 each), and the iOS Simulator gate (436 tests) all pass.
   iOS logs contain no XCTest process restarts or private-font fallback
   diagnostics, and `git diff --check` is clean.
-- [ ] `refactor: split host resolver and interaction contracts`
-  Separate background `Sendable` autolink resolution from main-actor UI callbacks.
+- [x] `refactor: split host resolver and interaction contracts`
+  Replace the mixed `MarkdownContextDelegate` with a class-bound `Sendable`
+  autolink resolver used only by detached parsing. Preserve existing UI-owned
+  link/checkbox/details closures, add deprecated resolver-name/label migration
+  shims without overload ambiguity, fingerprint stateful resolver configuration,
+  and remove the unused attachment/action/issue-keyword/checkbox requirements
+  instead of advertising dead hooks. Review: the resolver is strongly retained
+  for detached parser work, mutable/main-actor host objects must split out an
+  immutable or synchronized resolver, and the deprecated name remains only for
+  conformers that satisfy the new `Sendable` contract. Validation: 26 focused
+  resolver/engine/render-input/Sendable tests, strict documentation freshness
+  (405 discoverable tests), the complete macOS correctness gate (46 suites /
+  388 tests), visual and determinism snapshot gates (4/4 each), and the iOS
+  Simulator gate (444 tests) all pass. iOS logs contain no XCTest process
+  restarts or private-font fallback diagnostics, and `git diff --check` is clean.
 - [ ] `perf: coalesce render jobs and reuse parsed ASTs`
   Bound in-flight parsing and skip reparsing for width-only layout changes.
 - [ ] `refactor: establish one image-loading pipeline`

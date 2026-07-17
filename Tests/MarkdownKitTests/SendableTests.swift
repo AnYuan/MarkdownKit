@@ -2,6 +2,19 @@ import XCTest
 import Markdown
 @testable import MarkdownKit
 
+private final class ImmutableSendableAutolinkResolver: MarkdownAutolinkResolver {
+    let token: String
+
+    init(token: String) {
+        self.token = token
+    }
+
+    func cacheFingerprint(into hasher: inout Hasher) {
+        hasher.combine(String(reflecting: Self.self))
+        hasher.combine(token)
+    }
+}
+
 final class SendableTests: XCTestCase {
     func testCoreMarkdownASTNodesAreSendable() {
         func requireSendable<T: Sendable>(_: T) {}
@@ -61,5 +74,16 @@ final class SendableTests: XCTestCase {
 
         requireSendable(range)
         requireSendable(nodes)
+    }
+
+    func testAutolinkResolverExistentialAndPluginAreSendable() {
+        func requireSendable<T: Sendable>(_: T) {}
+
+        let concreteResolver = ImmutableSendableAutolinkResolver(token: "stable")
+        let existentialResolver: any MarkdownAutolinkResolver = concreteResolver
+        let plugin = GitHubAutolinkPlugin(resolver: existentialResolver)
+
+        requireSendable(existentialResolver)
+        requireSendable(plugin)
     }
 }

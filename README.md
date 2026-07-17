@@ -95,6 +95,53 @@ case .rejected(let diagnostic):
 Construct task-confined parser/plugin instances rather than sharing one across concurrent
 tasks; host call sites decide whether to invoke it off the main actor.
 
+## Autolink Resolver Integration
+
+`MarkdownKitEngine.makeParser(autolinkResolver:includeGitHubAutolinks:)` and
+`GitHubAutolinkPlugin(resolver:)` accept an optional `MarkdownAutolinkResolver`:
+
+```swift
+final class ImmutableAutolinkResolver: MarkdownAutolinkResolver {
+    let ownerRepo: String
+
+    init(ownerRepo: String) {
+        self.ownerRepo = ownerRepo
+    }
+
+    func resolveMention(username: String) -> URL? {
+        URL(string: "https://github.com/\(username)")
+    }
+
+    func resolveReference(reference: String) -> URL? {
+        guard reference.hasPrefix("#") else {
+            return URL(string: "https://github.com/\(reference)")
+        }
+        return URL(string: "https://github.com/\(ownerRepo)/issues/\(reference.dropFirst())")
+    }
+
+    func resolveCommit(sha: String) -> URL? {
+        URL(string: "https://github.com/\(ownerRepo)/commit/\(sha)")
+    }
+
+    func cacheFingerprint(into hasher: inout Hasher) {
+        hasher.combine(String(reflecting: Self.self))
+        hasher.combine(ownerRepo)
+    }
+}
+
+let parser = MarkdownKitEngine.makeParser(
+    autolinkResolver: ImmutableAutolinkResolver(ownerRepo: "apple/swift"),
+    includeGitHubAutolinks: true
+)
+```
+
+Guidance:
+- `GitHubAutolinkPlugin` strongly retains its resolver. Use a dedicated resolver object and avoid a cycle in which it also retains the parser/plugin graph.
+- Resolver methods are synchronous and may run off-main during detached render work, so resolver state must be immutable or explicitly synchronized. A main-actor UI model should not conform directly.
+- Include all output-affecting resolver configuration in `cacheFingerprint(into:)` so SwiftUI render identity invalidates when resolver behavior changes.
+- UI interactions (link taps, checkbox toggles, details disclosure) remain view-owned via closures like `onLinkTap` and `onCheckboxToggle`.
+- The deprecated `MarkdownContextDelegate` name and `contextDelegate:` labels remain migration shims, but conformers must satisfy the new `Sendable` contract.
+
 ## Automated Verification
 
 Fast regression gate (recommended for daily iteration, correctness-only in every environment):

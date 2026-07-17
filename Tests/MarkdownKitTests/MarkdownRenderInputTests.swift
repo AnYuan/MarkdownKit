@@ -28,6 +28,19 @@ private struct FingerprintedDiagramAdapter: DiagramRenderingAdapter {
     }
 }
 
+private final class FingerprintedAutolinkResolver: MarkdownAutolinkResolver {
+    let token: String
+
+    init(token: String) {
+        self.token = token
+    }
+
+    func cacheFingerprint(into hasher: inout Hasher) {
+        hasher.combine(String(reflecting: Self.self))
+        hasher.combine(token)
+    }
+}
+
 @available(iOS 14.0, macOS 11.0, *)
 final class MarkdownRenderInputTests: XCTestCase {
     private let limits = MarkdownParser.ResourceLimits.default
@@ -69,6 +82,23 @@ final class MarkdownRenderInputTests: XCTestCase {
                 FingerprintedPlugin(value: 1)
             ])
         )
+    }
+
+    func testRenderInputTracksAutolinkResolverConfiguration() {
+        let noResolver = makeInput(plugins: [GitHubAutolinkPlugin(resolver: nil)])
+        let resolverA = makeInput(plugins: [
+            GitHubAutolinkPlugin(resolver: FingerprintedAutolinkResolver(token: "A"))
+        ])
+        let resolverASameConfiguration = makeInput(plugins: [
+            GitHubAutolinkPlugin(resolver: FingerprintedAutolinkResolver(token: "A"))
+        ])
+        let resolverB = makeInput(plugins: [
+            GitHubAutolinkPlugin(resolver: FingerprintedAutolinkResolver(token: "B"))
+        ])
+
+        XCTAssertNotEqual(noResolver, resolverA)
+        XCTAssertEqual(resolverA, resolverASameConfiguration)
+        XCTAssertNotEqual(resolverA, resolverB)
     }
 
     func testDiagramFingerprintTracksAdapterConfiguration() {

@@ -152,7 +152,7 @@ This section defines parity targets based on GitHub Docs:
 | Tasklists | `- [ ]` and `- [x]`, nested tasklists, completion reflects checked items | Checkbox list visuals with proper spacing/indentation; optional interactive toggling in editor mode | In scope |
 | Tables | Pipe + hyphen header syntax, optional edge pipes, blank line before table, alignment markers (`:---`, `:---:`, `---:`) | Native table cell borders, header emphasis/background, alternating row shading, alignment mapping | In scope |
 | Math expressions | Inline `$...$`, block `$$...$$`, and fenced ```math``` | Inline math baseline alignment, block math display mode, deterministic glyph sizing, graceful fallback | In scope |
-| Autolinks | URLs auto-link; issue/PR refs, labels, commit SHAs, mentions, custom autolinks in supported contexts | Convert supported tokens to tappable links with visual style parity and safe fallback for unknown refs | Partial (URL links done, reference linking pending) |
+| Autolinks | URLs auto-link; issue/PR refs, commit SHAs, and mentions in supported contexts | Convert supported tokens to tappable links with visual style parity. Host apps can override mention/reference/commit destinations through `MarkdownAutolinkResolver`; unresolved tokens fall back to safe internal schemes. | In scope (renderer + host-resolved destinations) |
 | Attaching files | GitHub comment editor feature with context-specific supported file types | Not a markdown rendering concern; editor/upload integration belongs to host app layer | Out of renderer scope |
 | Permanent links to code | GitHub code UI action and snippet permalink behavior | Not a markdown parser/layout concern; host app integration only | Out of renderer scope |
 | Issue/PR keywords | Workflow keywords like `close(s)`, `fix(es)`, `resolve(s)` | Not renderer scope; semantic workflow integration belongs to GitHub backend layer | Out of renderer scope |
@@ -171,7 +171,7 @@ For markdown-rendered blocks, style must approximate GitHub documentation visual
 
 1. Some features are only active in specific GitHub contexts (issues, pull requests, discussions, wiki, files with `.md` extension).
 2. Renderer should implement syntax and visuals consistently, but platform workflow semantics (closing issues, attachments upload pipeline, permalink generation) remain host-app responsibilities.
-3. When behavior is context-dependent, MarkdownKit must expose extension hooks rather than hardcode GitHub backend semantics.
+3. For context-dependent behavior, MarkdownKit currently exposes only the `MarkdownAutolinkResolver` extension hook. Attachment uploads, permalink generation, and issue-keyword workflow semantics remain host/backend responsibilities outside renderer hooks.
 
 ### 7.4. Acceptance Criteria for Parity
 

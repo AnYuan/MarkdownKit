@@ -3,9 +3,18 @@ import Markdown
 
 /// A parsing middleware plugin that detects custom textual patterns
 /// and wraps them in actionable `LinkNode` elements pointing back to a host application.
-public struct GitHubAutolinkPlugin: ASTPlugin {
+public struct GitHubAutolinkPlugin: ASTPlugin, Sendable {
 
-    public weak var delegate: MarkdownContextDelegate?
+    /// Resolver used for host-specific autolink destinations.
+    ///
+    /// Stored strongly so detached parser work retains one resolver for the plugin lifetime.
+    public var resolver: MarkdownAutolinkResolver?
+
+    @available(*, deprecated, renamed: "resolver")
+    public var delegate: MarkdownContextDelegate? {
+        get { resolver }
+        set { resolver = newValue }
+    }
 
     // Regular expressions for GitHub-style tokens (compile-time string literals — patterns are guaranteed valid)
     private static let mentionPattern = "(?<![a-zA-Z0-9])@([a-zA-Z0-9-]+)"
@@ -16,8 +25,8 @@ public struct GitHubAutolinkPlugin: ASTPlugin {
     private let referenceRegex: NSRegularExpression
     private let commitRegex: NSRegularExpression
 
-    public init(delegate: MarkdownContextDelegate? = nil) {
-        self.delegate = delegate
+    public init(resolver: MarkdownAutolinkResolver? = nil) {
+        self.resolver = resolver
 
         guard let mention = try? NSRegularExpression(pattern: Self.mentionPattern, options: []),
               let reference = try? NSRegularExpression(pattern: Self.referencePattern, options: []),
@@ -27,6 +36,21 @@ public struct GitHubAutolinkPlugin: ASTPlugin {
         self.mentionRegex = mention
         self.referenceRegex = reference
         self.commitRegex = commit
+    }
+
+    @available(*, deprecated, renamed: "init(resolver:)")
+    public init(delegate: MarkdownContextDelegate?) {
+        self.init(resolver: delegate)
+    }
+
+    public func cacheFingerprint(into hasher: inout Hasher) {
+        hasher.combine(String(reflecting: Self.self))
+        guard let resolver else {
+            hasher.combine(false)
+            return
+        }
+        hasher.combine(true)
+        resolver.cacheFingerprint(into: &hasher)
     }
 
     public func visit(_ nodes: [MarkdownNode]) -> [MarkdownNode] {
@@ -146,11 +170,11 @@ public struct GitHubAutolinkPlugin: ASTPlugin {
             let urlString: String
             switch match.type {
             case .mention:
-                urlString = delegate?.resolveMention(username: match.extracted)?.absoluteString ?? "x-mention://\(match.extracted)"
+                urlString = resolver?.resolveMention(username: match.extracted)?.absoluteString ?? "x-mention://\(match.extracted)"
             case .reference:
-                urlString = delegate?.resolveReference(reference: match.extracted)?.absoluteString ?? "x-reference://\(match.extracted)"
+                urlString = resolver?.resolveReference(reference: match.extracted)?.absoluteString ?? "x-reference://\(match.extracted)"
             case .commit:
-                urlString = delegate?.resolveCommit(sha: match.extracted)?.absoluteString ?? "x-commit://\(match.extracted)"
+                urlString = resolver?.resolveCommit(sha: match.extracted)?.absoluteString ?? "x-commit://\(match.extracted)"
             }
 
             let linkNode = LinkNode(
