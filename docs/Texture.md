@@ -28,11 +28,15 @@ Texture manages the lifecycle of nodes based on their proximity to the visible s
 
 ## Application to our High-Performance Markdown Renderer
 
-To achieve the "best performance" for massive Markdown files, we will adopt the architectural philosophies of Texture into our Swift renderer:
+MarkdownKit adopts selected Texture architectural ideas while keeping capability claims tied to
+measured repository behavior and the active parser resource policy:
 
 ### A. Background Layout & Sizing
-- **The Problem**: A 5MB Markdown file contains tens of thousands of text blocks. Calling `NSAttributedString.boundingRect(with:...)` or configuring `TextKit` layouts on the main thread will instantly freeze the app.
-- **The Texture Solution**: We will parse the AST and calculate the text layout (sizing blocks, handling line wrapping, resolving image dimensions) entirely on a background thread. The view layer will receive a pre-calculated model containing exact `{x, y, width, height}` rects.
+- **The Problem**: Text measurement and backing-store generation are expensive when performed
+  repeatedly on the main actor.
+- **The MarkdownKit approach**: High-level render surfaces schedule the synchronous parser and
+  UI-detached layout work off the main actor. The view layer receives pre-calculated
+  `LayoutResult` values.
 
 ### B. View/Layer Virtualization (The Node Pattern)
 - We will not create a single massive `UITextView`.
@@ -41,4 +45,5 @@ To achieve the "best performance" for massive Markdown files, we will adopt the 
 
 ### C. Asynchronous Text Drawing
 - Heavy operations like syntax highlighting code blocks or rendering LaTeX will be scheduled on background queues. 
-- While scrolling, placeholder frames or un-highlighted text can be shown instantly, with the heavy rendering popping in asynchronously without dropping a single frame of scroll performance.
+- While scrolling, expensive backing-store work can complete asynchronously before final content
+  is mounted on the main actor. Frame-rate behavior remains a profiling concern, not a guarantee.

@@ -134,20 +134,20 @@ bash scripts/verify_all.sh --full
 5. **Quality Assurance**: Write 100% test coverage unit tests proving parsing fidelity against both CommonMark and GitHub Flavored Markdown (GFM) specs.
 
 ## Phase 2: Asynchronous Layout Engine (Texture-Inspired)
-**Goal**: Design the layout calculation engine that operates off the main thread to guarantee O(1) rendering time relative to file size.
+**Goal**: Design the layout calculation engine that operates off the main thread, targeting per-cell sizing cost that stays independent of total document size. (This has not yet been formally benchmarked or guaranteed as O(1).)
 1. Define `LayoutResult` models containing exact core graphics `{x, y, width, height}` coordinate geometries and drawing contexts.
 2. Build the Layout Engine using `TextKit 2` bounding-box solvers running entirely inside a GCD background queue.
-3. Implement a chunking and yielding mechanism to ensure parsing and sizing massive documents do not spike memory unpredictably.
+3. (Deferred) Implement a chunking/yielding mechanism so parsing and sizing very large documents don't spike memory unpredictably. Today, `MarkdownParser` instead enforces a conservative default input ceiling (`ResourceLimits.maximumInputBytes` = 1 MiB) and reports oversized input via `parseOutcome(_:)` rather than streaming or chunking it.
 4. **Quality Assurance**: Develop unit tests verifying mathematically perfect framing calculations for varying device screen widths and dynamic type sizes.
 
 ## Phase 3: Virtualized Rendering UI
-**Goal**: Only instantiate UI layers when components enter the viewport, and completely eliminate main-thread blocking during rendering.
+**Goal**: Only instantiate UI layers when components enter the viewport, keeping heavy text/image work off the main thread during rendering.
 1. **iOS**: Implement a high-performance `UICollectionView` handling virtualization.
 2. **macOS**: Implement the `NSTableView`/`NSCollectionView` AppKit equivalents.
 3. Develop individual native View components for each layout node (e.g., `MarkdownTextView`, `MarkdownImageView`, `MarkdownCodeView`).
 4. **Texture Display State**: Specifically mandate that all text rendering (drawing `NSAttributedString` to a `CGContext`) and all `Image/GIF` data decoding must occur strictly on a background queue.
 5. Implement the asynchronous mounting logic—applying the pre-drawn contexts to views dynamically as the user scrolls.
-6. **Quality Assurance**: Perform memory profiling confirming the footprint remains under 100MB even for millions of words.
+6. **Quality Assurance**: (Deferred) Perform memory profiling to characterize footprint under large-document workloads; no fixed ceiling has been measured or is guaranteed yet.
 
 ## Phase 4: Extended Syntax & Rich Elements
 **Goal**: Perfect alignment with the ChatGPT App feature sets.

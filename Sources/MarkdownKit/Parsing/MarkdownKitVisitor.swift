@@ -6,19 +6,35 @@ import Markdown
 public struct MarkdownKitVisitor: MarkupVisitor {
     public typealias Result = [MarkdownNode]
     
-    /// The maximum allowed recursion depth to prevent Stack Overflow exploits
+    /// The maximum native-AST container nesting retained beneath a root document.
+    /// A boundary container remains mapped while its descendants are omitted.
     private let maxDepth: Int
     private var currentDepth: Int = 0
-    
+
+    /// Set when recursion was halted at `maxDepth` while the halted markup still had
+    /// children that were therefore omitted from the mapped tree. Reset at the start of
+    /// each top-level traversal so a reused visitor reports only the most recent traversal's
+    /// truncation state.
+    public private(set) var didTruncateAtMaximumDepth: Bool = false
+
     public init(maxDepth: Int = 50) {
-        self.maxDepth = maxDepth
+        self.maxDepth = max(1, maxDepth)
     }
     
     // MARK: - Core Entry Point
     
     public mutating func defaultVisit(_ markup: Markup) -> [MarkdownNode] {
+        if currentDepth == 0 {
+            didTruncateAtMaximumDepth = false
+        }
+
         guard currentDepth < maxDepth else {
-            // If depth exceeds limit, stop traversing and return a dummy node to prevent crash
+            // If depth reaches the limit, stop traversing and omit descendants.
+            // Only report truncation if there was actual descendant content being omitted;
+            // a leaf markup at the boundary has nothing to omit.
+            if markup.childCount > 0 {
+                didTruncateAtMaximumDepth = true
+            }
             return []
         }
         

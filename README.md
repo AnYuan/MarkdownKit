@@ -38,6 +38,11 @@ let layout = await solver.solve(node: document, constrainedToWidth: 800)
 print(layout.children.count)
 ```
 
+`parser.parse(_:)` is a lossy compatibility convenience: it logs diagnostics and falls back to
+an empty (or partially-truncated) document instead of surfacing rejection. Hosts that parse
+untrusted or unbounded content should use `parser.parseOutcome(_:)` instead — see
+[Parser Resource Limits & Typed Outcomes](#parser-resource-limits--typed-outcomes) below.
+
 ## One-Call Convenience
 
 ```swift
@@ -49,6 +54,41 @@ let layout = await MarkdownKitEngine.layout(
 )
 print(layout.children.count)
 ```
+
+## Parser Resource Limits & Typed Outcomes
+
+`MarkdownParser` uses a per-instance `ResourceLimits` policy to bound accepted input size and
+recursive native-AST mapping work. The default policy
+(`MarkdownParser.ResourceLimits.default`) is:
+
+- `maximumInputBytes`: 1,048,576 UTF-8 bytes (1 MiB), inclusive — input whose UTF-8 byte count
+  equals the limit is accepted; only strictly larger input is rejected.
+- `maximumNestingDepth`: 50 — the maximum retained container nesting beneath the root
+  `Document`. The root is not counted; at the boundary, the container remains while its
+  descendants are omitted. This is **not** a `swift-markdown` front-end parser limit and
+  **not** a layout/rendering depth limit.
+
+For untrusted or unbounded input, use the synchronous, non-logging `parseOutcome(_:)` API and
+inspect its diagnostics directly instead of relying on the lossy `parse(_:)` convenience:
+
+```swift
+import MarkdownKit
+
+let parser = MarkdownParser(limits: .init(maximumInputBytes: 2_000_000, maximumNestingDepth: 80))
+
+switch parser.parseOutcome(untrustedMarkdown) {
+case .parsed(let document, let diagnostics):
+    // `diagnostics` may report a truncated subtree even though parsing succeeded.
+    let layout = await solver.solve(node: document, constrainedToWidth: 800)
+case .rejected(let diagnostic):
+    // Input exceeded `maximumInputBytes` before any swift-markdown parsing occurred.
+    handle(diagnostic)
+}
+```
+
+`MarkdownParser` itself is synchronous and not `Sendable` (its plugins need not be `Sendable`).
+Construct task-confined parser/plugin instances rather than sharing one across concurrent
+tasks; host call sites decide whether to invoke it off the main actor.
 
 ## Automated Verification
 

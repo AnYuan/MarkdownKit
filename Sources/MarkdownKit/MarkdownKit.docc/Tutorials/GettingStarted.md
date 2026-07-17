@@ -1,6 +1,6 @@
 # Getting Started with MarkdownKit
 
-Learn how to integrate zero-latency Markdown rendering into your iOS and macOS apps.
+Learn how to integrate responsive, off-main-thread Markdown rendering into your iOS and macOS apps.
 
 ## Overview
 
@@ -27,6 +27,36 @@ Task {
     }
 }
 ```
+
+`MarkdownParser.parse(_:)` above is a lossy compatibility convenience: it logs diagnostics and
+returns an empty (or partially-truncated) document instead of surfacing rejection. `MarkdownParser`
+itself is synchronous and not `Sendable`, so keep a configured parser (and its plugins) confined
+to a single task rather than sharing it across concurrent tasks; the example above stays on the
+calling task until `parse(_:)` returns, then hops onto the `Task` for layout.
+
+### Handling Untrusted Input
+
+When rendering content you don't control (e.g. user-generated Markdown), inspect the typed
+`parseOutcome(_:)` result instead of the lossy `parse(_:)` convenience:
+
+```swift
+let parser = MarkdownParser() // default limits: 1,048,576 UTF-8 bytes, 50 levels of AST-mapping recursion
+
+switch parser.parseOutcome(untrustedMarkdown) {
+case .parsed(let document, let diagnostics):
+    // `diagnostics` may include `.maximumNestingDepthExceeded` if a deeply nested
+    // subtree was truncated during native-AST mapping; the document is still usable.
+    let layoutResult = await LayoutSolver().solve(node: document, constrainedToWidth: view.bounds.width)
+case .rejected(let diagnostic):
+    // Input's UTF-8 byte count exceeded `limits.maximumInputBytes` before any
+    // swift-markdown parsing occurred.
+    presentRejection(diagnostic)
+}
+```
+
+`parseOutcome(_:)` never logs; it's the API to use when you need to distinguish rejected input
+from a document that parsed successfully with no content, or need programmatic access to
+diagnostics.
 
 ### Extending with Plugins
 

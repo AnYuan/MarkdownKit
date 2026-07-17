@@ -23,6 +23,7 @@ public struct MarkdownView: View {
     private let plugins: [ASTPlugin]
     private let diagramRegistry: DiagramAdapterRegistry
     private let imageLoadingPolicy: ImageLoadingPolicy
+    private let resourceLimits: MarkdownParser.ResourceLimits
     private var textInteractionMode: MarkdownTextInteractionMode = .asyncReadOnly
     private var linkTapHandler: ((URL) -> Void)?
     private var checkboxToggleHandler: ((CheckboxInteractionData) -> Void)?
@@ -36,18 +37,23 @@ public struct MarkdownView: View {
     ///   - plugins: A list of AST plugins to mutate the syntax tree before measuring layout.
     ///   - diagramRegistry: Host-provided diagram renderers used for diagram code fences.
     ///   - imageLoadingPolicy: Host-controlled rules for Markdown image sources.
+    ///   - resourceLimits: The per-parser resource policy bounding input size and native-AST
+    ///     mapping recursion for every parse this view triggers. Defaults to
+    ///     `MarkdownParser.ResourceLimits.default`.
     public init(
         text: String,
         theme: Theme = .default,
         plugins: [ASTPlugin] = [DetailsExtractionPlugin(), DiagramExtractionPlugin(), MathExtractionPlugin()],
         diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry(),
-        imageLoadingPolicy: ImageLoadingPolicy = .default
+        imageLoadingPolicy: ImageLoadingPolicy = .default,
+        resourceLimits: MarkdownParser.ResourceLimits = .default
     ) {
         self.text = text
         self.theme = theme
         self.plugins = plugins
         self.diagramRegistry = diagramRegistry
         self.imageLoadingPolicy = imageLoadingPolicy
+        self.resourceLimits = resourceLimits
     }
 
     public var body: some View {
@@ -70,7 +76,8 @@ public struct MarkdownView: View {
                         plugins: plugins,
                         theme: theme,
                         diagramRegistry: diagramRegistry,
-                        imageLoadingPolicy: imageLoadingPolicy
+                        imageLoadingPolicy: imageLoadingPolicy,
+                        resourceLimits: resourceLimits
                     )
                 },
                 onLinkTap: linkTapHandler,
@@ -88,20 +95,23 @@ public struct MarkdownView: View {
                     theme: theme,
                     fallbackWidth: geometry.size.width,
                     diagramRegistry: diagramRegistry,
-                    imageLoadingPolicy: imageLoadingPolicy
+                    imageLoadingPolicy: imageLoadingPolicy,
+                    resourceLimits: resourceLimits
                 )
             }
             // Single `.onChange` over a combined input so a simultaneous
             // text+width change only triggers one render (the previous code
-            // could race two cancellations).
-            .onChange(of: RenderInput(text: text, width: geometry.size.width)) { _, newInput in
+            // could race two cancellations). A changed `resourceLimits` policy
+            // is included so it also triggers a render.
+            .onChange(of: RenderInput(text: text, width: geometry.size.width, resourceLimits: resourceLimits)) { _, newInput in
                 engine.scheduleDebouncedTextRender(
                     markdown: newInput.text,
                     plugins: plugins,
                     theme: theme,
                     fallbackWidth: newInput.width,
                     diagramRegistry: diagramRegistry,
-                    imageLoadingPolicy: imageLoadingPolicy
+                    imageLoadingPolicy: imageLoadingPolicy,
+                    resourceLimits: newInput.resourceLimits
                 )
             }
         }
@@ -137,6 +147,7 @@ public struct MarkdownView: View {
 private struct RenderInput: Equatable {
     let text: String
     let width: CGFloat
+    let resourceLimits: MarkdownParser.ResourceLimits
 }
 
 // MARK: - Async Rendering Engine
@@ -202,6 +213,7 @@ private final class MarkdownEngine: ObservableObject {
         let solver: LayoutSolver
         let width: CGFloat
         let theme: Theme
+        let resourceLimits: MarkdownParser.ResourceLimits
     }
 
     private struct RenderOutput: @unchecked Sendable {
@@ -220,7 +232,8 @@ private final class MarkdownEngine: ObservableObject {
         theme: Theme,
         width: CGFloat,
         diagramRegistry: DiagramAdapterRegistry,
-        imageLoadingPolicy: ImageLoadingPolicy
+        imageLoadingPolicy: ImageLoadingPolicy,
+        resourceLimits: MarkdownParser.ResourceLimits
     ) {
         guard width > 50 else { return }
 
@@ -236,7 +249,8 @@ private final class MarkdownEngine: ObservableObject {
             plugins: plugins,
             solver: solver,
             width: width,
-            theme: theme
+            theme: theme,
+            resourceLimits: resourceLimits
         )
 
         renderTask = Task {
@@ -258,7 +272,7 @@ private final class MarkdownEngine: ObservableObject {
     }
 
     private nonisolated static func renderOffMain(_ job: RenderJob) async -> RenderOutput? {
-        let parser = MarkdownParser(plugins: job.plugins)
+        let parser = MarkdownParser(plugins: job.plugins, limits: job.resourceLimits)
         let ast = parser.parse(job.markdown)
 
         guard !Task.isCancelled else { return nil }
@@ -280,7 +294,8 @@ private final class MarkdownEngine: ObservableObject {
         theme: Theme,
         fallbackWidth: CGFloat,
         diagramRegistry: DiagramAdapterRegistry,
-        imageLoadingPolicy: ImageLoadingPolicy
+        imageLoadingPolicy: ImageLoadingPolicy,
+        resourceLimits: MarkdownParser.ResourceLimits
     ) {
         #if canImport(AppKit) && !targetEnvironment(macCatalyst)
         guard currentWidth > 50 else { return }
@@ -290,7 +305,8 @@ private final class MarkdownEngine: ObservableObject {
             theme: theme,
             width: currentWidth,
             diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy
+            imageLoadingPolicy: imageLoadingPolicy,
+            resourceLimits: resourceLimits
         )
         #else
         render(
@@ -299,7 +315,8 @@ private final class MarkdownEngine: ObservableObject {
             theme: theme,
             width: preferredWidth(fallback: fallbackWidth),
             diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy
+            imageLoadingPolicy: imageLoadingPolicy,
+            resourceLimits: resourceLimits
         )
         #endif
     }
@@ -314,7 +331,8 @@ private final class MarkdownEngine: ObservableObject {
         theme: Theme,
         fallbackWidth: CGFloat,
         diagramRegistry: DiagramAdapterRegistry,
-        imageLoadingPolicy: ImageLoadingPolicy
+        imageLoadingPolicy: ImageLoadingPolicy,
+        resourceLimits: MarkdownParser.ResourceLimits
     ) {
         renderTask?.cancel()
         renderTask = Task { [weak self] in
@@ -326,7 +344,8 @@ private final class MarkdownEngine: ObservableObject {
                 theme: theme,
                 fallbackWidth: fallbackWidth,
                 diagramRegistry: diagramRegistry,
-                imageLoadingPolicy: imageLoadingPolicy
+                imageLoadingPolicy: imageLoadingPolicy,
+                resourceLimits: resourceLimits
             )
         }
     }
@@ -342,7 +361,8 @@ private final class MarkdownEngine: ObservableObject {
         plugins: [ASTPlugin],
         theme: Theme,
         diagramRegistry: DiagramAdapterRegistry,
-        imageLoadingPolicy: ImageLoadingPolicy
+        imageLoadingPolicy: ImageLoadingPolicy,
+        resourceLimits: MarkdownParser.ResourceLimits
     ) {
         guard width > 50 else { return }
         guard abs(width - currentWidth) > 0.5 else { return }
@@ -353,7 +373,8 @@ private final class MarkdownEngine: ObservableObject {
             theme: theme,
             width: width,
             diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy
+            imageLoadingPolicy: imageLoadingPolicy,
+            resourceLimits: resourceLimits
         )
     }
     

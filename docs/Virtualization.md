@@ -1,7 +1,9 @@
 # Virtualized Rendering UI
 
 ## Overview
-Phase 3 bridges the Asynchronous Layout Engine (Phase 2) to the actual hardware pixels. The core problem `MarkdownKit` solves is typical Markdown renderers use giant `UITextView` or `WKWebView` containers. When a document has 200,000 words or 50 images, these monolithic views consume hundreds of megabytes of RAM and lock up the main thread during rendering.
+Phase 3 bridges the Asynchronous Layout Engine (Phase 2) to the actual hardware pixels.
+Monolithic text or web views can make mounting and backing-store cost grow with document
+content, so MarkdownKit instead virtualizes top-level layout results through collection views.
 
 We solve this using **Collection View Virtualization** combined with **Texture (AsyncDisplayKit) Display States**.
 
@@ -25,4 +27,4 @@ We solve this using **Collection View Virtualization** combined with **Texture (
 
 4. **Aggressive Purging**
    - Inside `prepareForReuse()`, we immediately nullify background tasks and layer contents.
-   - This ensures memory usage remains completely flat (typically under 20MB) no matter if the Markdown file is 10 lines or 10,000,000 lines long.
+   - This keeps steady-state memory usage tied to what's currently on/near screen rather than total document length, since off-screen backing stores are purged rather than retained. No fixed memory ceiling has been benchmarked or is guaranteed for arbitrarily large documents; separately, `MarkdownParser.ResourceLimits.maximumInputBytes` (default 1,048,576 UTF-8 bytes) bounds the input accepted by the parser itself.

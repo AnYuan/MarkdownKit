@@ -27,7 +27,7 @@
 - [x] Create base `TextKit 2` calculator class running on background queue
 - [x] Implement background sizing solver for standard text blocks
 - [x] Implement caching mechanism for Layout models based on width/Device scale
-- [x] Implement asynchronous yielding logic for giant documents (>10MB)
+- [ ] (Deferred) Implement asynchronous yielding/chunked parsing for very large documents; today `MarkdownParser.ResourceLimits` instead enforces a conservative default input ceiling (`maximumInputBytes` = 1,048,576 UTF-8 bytes) and rejects larger input via `parseOutcome(_:)` rather than streaming or chunking it
 - [x] Add Unit Tests: Verify exact framing dimension logic for varying strings
 
 ## Phase 3: Virtualized Rendering UI
@@ -228,9 +228,20 @@ review the complete diff, then commit and push before starting the next stage.
   scripts/verify_snapshots.sh --determinism` (4/4 record-expected-failures,
   4/4 reverify passed), snapshot directory `git status` identical before and
   after determinism, and `git diff --check` all pass.
-- [ ] `feat: make parser resource limits explicit`
+- [x] `feat: make parser resource limits explicit`
   Replace global input/depth limits and silent truncation with per-parser policy
-  and diagnosable outcomes.
+  and diagnosable outcomes. Review: `MarkdownParser.ResourceLimits` now owns the
+  immutable per-instance 1 MiB / 50-level defaults; `parseOutcome(_:)`
+  distinguishes rejection from parsed documents and reports depth truncation,
+  while legacy `parse(_:)` remains an explicitly lossy logging wrapper. Limits
+  propagate through `MarkdownKitEngine.makeParser` and every `MarkdownView`
+  parse trigger, and unsupported streaming, fixed-memory, and frame-rate claims
+  were removed or marked as deferred targets. Validation: 28 focused parser
+  contract tests, `swift build`, documentation freshness, generated benchmark
+  documentation, the discovery-driven macOS gate (44 suites / 348 tests), the
+  iOS Simulator gate (402 tests), four read-only quality reviews, and
+  `git diff --check` all pass; iOS logs contain no process restarts or private
+  system-font fallback diagnostics.
 - [ ] `fix: reject numeric commit-autolink false positives`
   Preserve issue references while leaving ordinary long numeric identifiers as text.
 - [ ] `fix: transform nested block math uniformly`

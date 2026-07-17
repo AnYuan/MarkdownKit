@@ -1,6 +1,6 @@
 # MarkdownKit 生产级别评估报告（更新版）
 
-> 更新日期: 2026-03-04
+> 更新日期: 2026-07-17
 > 说明: 本报告替代旧版结论；旧版中“缺 URL 净化 / 缺深度限制 / 缺 Fuzz / 缺快照测试”的判断已不再成立。
 
 ## 1. 结论摘要
@@ -22,7 +22,8 @@
 
 ### 2.2 深度与鲁棒性
 
-- `MarkdownKitVisitor` 存在 `maxDepth`（默认 50）限制。
+- `MarkdownParser` 通过 `ResourceLimits`（默认 `maximumInputBytes` 1,048,576 UTF-8 字节、`maximumNestingDepth` 50）限制资源占用；`maximumNestingDepth` 仅约束 `MarkdownKitVisitor` 把已解析的 `swift-markdown` 树映射为原生 AST 时保留的容器嵌套层数。根 `Document` 不计入，达到边界时保留容器但省略其后代；这并非 `swift-markdown` 前端解析器或布局阶段的深度限制。
+- 类型化的 `parseOutcome(_:)` 会区分 `.rejected`（输入超过 `maximumInputBytes`）与 `.parsed`（可能带有深度截断诊断），且不写日志；历史兼容方法 `parse(_:) -> DocumentNode` 是有损的便捷封装，会记录诊断日志，并将拒绝态折叠为历史空文档、深度截断折叠为部分文档。
 - `DepthLimitTests`、`FuzzTests` 已存在并可执行。
 - `CommonMarkSpecTests` 包含大样本解析验证（652 fixture）。
 
@@ -31,7 +32,8 @@
 - 快照框架已接入 (`SnapshotTesting`)。
 - 相关测试文件存在：`SnapshotTests.swift`、`iOSSnapshotTests.swift`、`DiagramSnapshotTests.swift`。
 - `SnapshotTests` 中历史 4 项失败已修复（通过固定 `NSAppearance(.aqua)` 消除动态外观漂移）。
-- 最新 `swift test` 结果：218 执行 / 0 跳过 / 0 失败。
+- 当前测试数量与执行结果由 `scripts/verify_fast.sh`、`scripts/verify_snapshots.sh`
+  和 `docs/TestCoverage.md` 分别记录；本评估报告不再复制易漂移的汇总数字。
 
 ### 2.4 API 与工程化
 

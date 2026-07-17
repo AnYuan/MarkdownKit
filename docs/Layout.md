@@ -1,7 +1,9 @@
 # Asynchronous Layout Engine
 
 ## Overview
-The `MarkdownKit` Layout Engine strictly adheres to the architectural philosophies of Pinterest's Texture (AsyncDisplayKit). Its sole responsibility is measuring text bounds and calculating layout frames entirely off the main thread.
+The `MarkdownKit` Layout Engine follows Texture-inspired separation between measurement and UI
+mounting. It returns UI-detached `LayoutResult` values and is designed to be called off the main
+actor; callers still choose the executor.
 
 ## Components
 
@@ -11,7 +13,7 @@ An immutable, tree-structured model holding:
 2. The pre-styled `NSAttributedString` generated from the `Theme`.
 3. An array of children `LayoutResult` objects.
 
-By keeping `LayoutResult` completely detached from UI layers (like `UIView` or `CALayer`), we can traverse millions of nodes in the background safely.
+By keeping `LayoutResult` completely detached from UI layers (like `UIView` or `CALayer`), tree traversal and measurement can run in the background without touching UIKit/AppKit state. This describes the architecture, not a benchmarked bound on document size.
 
 ### `TextKitCalculator`
 At its core, `TextKitCalculator` wraps Apple's new `TextKit 2` engine (using `NSTextLayoutManager`).
@@ -22,6 +24,7 @@ A recursive tree solver. It visits an AST root (`DocumentNode`), applies the cen
 
 ### `LayoutCache`
 An `NSCache`-backed memoization utility. 
-Because measuring text mathematically is still slightly expensive, we cache the resulting `LayoutResult` models using a composite key of:
-`[NodeUUID] + [ViewportWidth]`.
-This means resizing the device window or rotating an iPad will trigger a fresh layout, but scrolling up and down is effectively free O(1) instantaneous lookups.
+Because text measurement is still expensive, `LayoutCache` keys results by node
+`contentFingerprint`, rounded viewport width, and a rendering-variant fingerprint. Collection
+views answer cell-size queries from already-computed `LayoutResult.size`; a changed width or
+variant can require new layout work.

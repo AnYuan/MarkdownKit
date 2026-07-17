@@ -32,5 +32,6 @@ This document traces the advanced parsing and layout features (defined in Phase 
 | Feature | Status | Covered By Unit/Snapshot Tests |
 | :--- | :---: | :--- |
 | URL Scheme Allow-listing | ✅ | `URLSanitizerTests.swift` |
-| Recursive Depth Limiting (StackOverflow) | ✅ | `DepthLimitTests.swift` |
+| Per-Parser Input Limit and Typed Rejection | ✅ | `ParserResourceLimitTests.swift` |
+| Native-AST Mapping Recursion Limit (`MarkdownParser.ResourceLimits.maximumNestingDepth`, default 50 — bounds only `MarkdownKitVisitor`'s mapping recursion, not `swift-markdown` parsing or layout depth) | ✅ | `DepthLimitTests.swift` |
 | Fuzzing & Malformed Document Testing | ✅ | `FuzzTests.swift` |

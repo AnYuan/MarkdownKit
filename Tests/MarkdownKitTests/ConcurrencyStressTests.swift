@@ -80,27 +80,50 @@ final class ConcurrencyStressTests: XCTestCase {
         }
     }
 
-    /// Validate that MarkdownParser.maxInputBytes reads/writes without corruption.
-    func testMaxInputBytesThreadSafety() async throws {
-        let originalValue = MarkdownParser.maxInputBytes
-        defer { MarkdownParser.maxInputBytes = originalValue }
-
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask {
-                MarkdownParser.maxInputBytes = 2_000_000
-            }
-            for _ in 0..<20 {
-                group.addTask {
-                    let value = MarkdownParser.maxInputBytes
-                    XCTAssertTrue(
-                        value == originalValue || value == 2_000_000,
-                        "maxInputBytes should not be corrupted: \(value)"
-                    )
-                }
-            }
+    /// Constructs each parser (and its plugin-free pipeline) inside its own task with a
+    /// distinct per-instance `ResourceLimits`, proving limits are task-confined and do not
+    /// leak across concurrent parses. `MarkdownParser` is intentionally **not** `Sendable`
+    /// (its `plugins` array may hold non-`Sendable` host types), so each task below
+    /// constructs and uses its own parser value entirely locally — no configured parser or
+    /// plugin instance is shared or copied across tasks.
+    func testConcurrentPerInstanceResourceLimitsDoNotLeak() async throws {
+        struct OutcomeSummary: Sendable, Equatable {
+            let configuredMaxBytes: Int
+            let isRejected: Bool
         }
 
-        MarkdownParser.maxInputBytes = originalValue
+        // Half the tasks use a tiny byte ceiling (so a fixed oversized payload is rejected),
+        // the other half use a generous ceiling (so the same payload is accepted). If limits
+        // leaked between task-confined parser instances, some outcomes would flip.
+        let payload = String(repeating: "a", count: 500)
+
+        let results = await withTaskGroup(of: OutcomeSummary.self, returning: [OutcomeSummary].self) { group in
+            for index in 0..<20 {
+                group.addTask {
+                    let useTinyLimit = index % 2 == 0
+                    let maxBytes = useTinyLimit ? 10 : 1_048_576
+                    let limits = MarkdownParser.ResourceLimits(maximumInputBytes: maxBytes)
+                    let parser = MarkdownParser(plugins: [], limits: limits)
+                    let outcome = parser.parseOutcome(payload)
+                    return OutcomeSummary(configuredMaxBytes: maxBytes, isRejected: outcome.isRejected)
+                }
+            }
+
+            var collected: [OutcomeSummary] = []
+            for await summary in group {
+                collected.append(summary)
+            }
+            return collected
+        }
+
+        XCTAssertEqual(results.count, 20)
+        for summary in results {
+            if summary.configuredMaxBytes == 10 {
+                XCTAssertTrue(summary.isRejected, "Tiny-limit parser should reject the oversized payload")
+            } else {
+                XCTAssertFalse(summary.isRejected, "Generous-limit parser should accept the same payload")
+            }
+        }
     }
 
     /// Exercise concurrent parse + solve on the same markdown at the same width.

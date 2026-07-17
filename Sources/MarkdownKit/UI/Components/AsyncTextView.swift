@@ -10,7 +10,7 @@ import UIKit
 /// This view does NOT use `UITextView` or `UILabel` internally. Instead, it maintains a lightweight `CALayer`.
 /// Upon receiving a `LayoutResult`, it dispatches text drawing to a background GCD queue,
 /// generating a `CGImage` of the text pixel-perfectly, and then sets the `layer.contents` on the main thread.
-/// This utterly eliminates main-thread blocking when scrolling millions of words.
+/// This keeps text rasterization out of the main-thread scroll path.
 ///
 /// Interaction is handled via TextKit 1 hit-testing on the original `NSAttributedString`
 /// (same approach as Texture's ASTextNode2), with a highlight overlay CALayer for pressed state.

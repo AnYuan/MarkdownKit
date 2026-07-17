@@ -36,16 +36,20 @@ public enum MarkdownKitEngine {
     }
 
     /// Builds a parser using either a supplied plugin list or the default plugin pipeline.
+    ///
+    /// - Parameter resourceLimits: The per-parser resource policy bounding input size and
+    ///   native-AST mapping recursion. Defaults to `MarkdownParser.ResourceLimits.default`.
     public static func makeParser(
         plugins: [ASTPlugin]? = nil,
         contextDelegate: MarkdownContextDelegate? = nil,
-        includeGitHubAutolinks: Bool = false
+        includeGitHubAutolinks: Bool = false,
+        resourceLimits: MarkdownParser.ResourceLimits = .default
     ) -> MarkdownParser {
         let resolvedPlugins = plugins ?? defaultPlugins(
             contextDelegate: contextDelegate,
             includeGitHubAutolinks: includeGitHubAutolinks
         )
-        return MarkdownParser(plugins: resolvedPlugins)
+        return MarkdownParser(plugins: resolvedPlugins, limits: resourceLimits)
     }
 
     /// Builds a layout solver with configurable theme/cache/diagram registry.

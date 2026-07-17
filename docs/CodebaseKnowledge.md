@@ -65,7 +65,7 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **347** discoverable tests
+- `swift test list`: **365** discoverable tests
 - `swift test`: no execution log supplied for this refresh
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
@@ -97,7 +97,8 @@ Primary files:
 
 Key facts:
 - Plugin ordering matters.
-- Visitor enforces recursion depth via `maxDepth` (default 50).
+- `MarkdownParser.ResourceLimits.default` bounds resource usage: `maximumInputBytes` = 1,048,576 UTF-8 bytes (inclusive) and `maximumNestingDepth` = 50. The depth budget only bounds `MarkdownKitVisitor` while mapping an already-parsed `swift-markdown` tree into native nodes: the root document is not counted, and a boundary container remains while its descendants are omitted. It is **not** a `swift-markdown` front-end limit or a layout/rendering depth limit.
+- `parseOutcome(_:)` returns `.rejected(diagnostic:)` for oversized input (checked before any `swift-markdown` parsing) and reports depth truncation as a diagnostic on a `.parsed` outcome; it never logs. The legacy `parse(_:) -> DocumentNode` is a lossy compatibility convenience that logs each diagnostic and collapses rejection into the historical empty `DocumentNode`.
 - HTML blocks/inlines are preserved as text and optionally reinterpreted by plugins.
 
 ### 4.2 Nodes and security boundary

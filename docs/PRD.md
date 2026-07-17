@@ -1,7 +1,9 @@
 # Product Requirements Document (PRD): High-Performance Markdown Renderer
 
 ## 1. Overview
-The goal of this project is to implement the **best-in-class Markdown renderer** for macOS and iOS platforms. It aims to provide unparalleled performance—handling exceptionally large Markdown files with zero UI freezing—and offer a comprehensive set of features expected from modern Markdown editors. 
+The goal of this project is to implement a highly responsive Markdown renderer for macOS and
+iOS with explicit, measured resource contracts. Support for documents beyond the current
+default parser policy remains a target rather than a guaranteed capability.
 
 The renderer will native Swift and modern Apple frameworks (TextKit 2 / SwiftUI) to ensure that it feels completely native, lightweight, and highly responsive.
 
@@ -13,7 +15,10 @@ We analyzed several leading open-source Markdown renderers in the Apple ecosyste
 - **Swift Markdown**: Apple's official Swift package built on `cmark-gfm`. It provides robust GitHub Flavored Markdown (GFM) support and an Abstract Syntax Tree (AST) for deeper analysis.
 - **MarkdownUI / Textual**: Great for SwiftUI native declarative UI rendering, but can struggle with massive, multi-megabyte Markdown files if not highly optimized.
 
-**Takeaways**: To achieve the _best performance_, we must leverage a highly optimized C-based parser like `cmark-gfm` (or Apple's `swift-markdown`) to generate the AST asynchronously, and then map that AST directly into native Apple UI text components (TextKit 2 / CoreText) without relying on WebViews (which consume excessive memory and loading time).
+**Takeaways**: MarkdownKit uses Apple's `swift-markdown` (`cmark-gfm`) as the parser foundation.
+The parser API is synchronous; high-level render surfaces schedule parsing and native layout work
+off the main actor before mounting UI. Web views are reserved for adapters that require them,
+such as Mermaid, rather than the core Markdown text pipeline.
 
 ## 3. Core Features
 
@@ -45,24 +50,33 @@ The renderer must support the exact Markdown syntax subset utilized by the offic
 ### 3.4. Security & Robustness (Production-Grade)
 To ensure the renderer is safe for use in production environments with untrusted user-generated content, it must enforce the following constraints:
 - **URL Sanitization**: Strict filtering of potentially dangerous URI schemes (e.g., `javascript:`, `vbscript:`) in links and images to prevent Cross-Site Scripting (XSS). Only allow-listed protocols (such as `http`, `https`, `mailto`) should output actionable URLs by default.
-- **Deep Nesting Defense**: Implementation of a maximum AST recursion depth (e.g., 50-100 levels) during both the parsing and layout phases. This prevents Stack Overflow crashes and Denial of Service (DoS) attacks caused by exponentially nested markdown structures (like unclosed blockquotes or lists).
+- **Deep Nesting Defense**: `MarkdownParser` enforces a configurable native-container nesting limit (`ResourceLimits.maximumNestingDepth`, default 50) while mapping an already-parsed `swift-markdown` tree into MarkdownKit's `MarkdownNode` model. The root document is not counted; a boundary container remains while descendants are omitted. This bounds only MarkdownKit's mapping recursion — it is **not** a `swift-markdown` front-end parser limit and **not** a layout/rendering depth limit. `MarkdownParser` also enforces a maximum input size (`ResourceLimits.maximumInputBytes`, default 1,048,576 UTF-8 bytes) and reports both conditions through a typed `parseOutcome(_:)` API.
 - **Crash Resilience**: The parsing, layout, and rendering pipelines must be engineered to never `fatalError` or crash when fed severely malformed inputs.
 
 ## 4. Performance Requirements
 
 "Even opened with a huge markdown file, we should still have best performance."
 
+> **Target goals vs. current verified capability**: the items below describe the product's
+> aspirational performance direction, not implemented guarantees. What is currently implemented
+> and measured is: `MarkdownParser` runs synchronously and enforces a default `ResourceLimits`
+> policy of 1,048,576 UTF-8 bytes (`maximumInputBytes`) and 50 levels of native-AST mapping
+> recursion (`maximumNestingDepth`), rejecting oversized input via the typed `parseOutcome(_:)`
+> API rather than streaming or chunking it. There is no current benchmark establishing a fixed
+> memory ceiling, a guaranteed frame rate, or an O(1) end-to-end render-time bound; layout work
+> runs off the main thread architecturally, but claims below beyond that are deferred goals.
+
 1. **Zero UI Blocking**: 
    - Parsing the document into an AST must occur on a background thread.
-   - For giant files (e.g., millions of words), parsing should be chunked or yielded so memory doesn't spike.
+   - (Target, not yet implemented) For very large files, parsing should be chunked or yielded so memory doesn't spike. Today, `MarkdownParser` instead enforces a conservative default input ceiling (`ResourceLimits.maximumInputBytes` = 1 MiB) and rejects larger input outright via `parseOutcome(_:)` rather than streaming or chunking it.
 2. **Lazy, Asynchronous Layout (TextureKit Inspired)**:
    - Inspired by the open-source TextureKit / AsyncDisplayKit framework pattern, sizing and text layout calculation (e.g., measuring bounding boxes for string attributes) must be performed **asynchronously on background threads**.
    - Only the visible text and elements (images, code blocks) in the scroll view should be fully rendered and instantiated into views lazily. Content waiting off-screen is stored simply as layout models.
-   - We will utilize `TextKit 2` with non-contiguous layout or `UICollectionView` / `NSTableView` logic to achieve O(1) rendering time relative to file size.
-3. **60 / 120 FPS Scrolling**: 
-   - Scroll performance must be buttery smooth. Heavy operations like syntax highlighting code blocks must be debounced and executed asynchronously.
+   - (Target) We will utilize `TextKit 2` with non-contiguous layout or `UICollectionView` / `NSTableView` logic to keep per-cell sizing cost independent of total document size. This has not yet been benchmarked or guaranteed as a formal O(1) bound.
+3. **Smooth Scrolling**:
+   - (Target) Scroll performance should be smooth. Heavy operations like syntax highlighting code blocks must be debounced and executed asynchronously. No current benchmark suite asserts a specific frame-rate guarantee (e.g. 60/120 FPS).
 4. **Memory Efficiency**:
-   - AST nodes should be dropped or highly compressed if off-screen in massive documents, relying on virtualized ranges. Memory footprint must stay below 100MB even for 10MB+ Markdown strings.
+   - (Target) AST nodes should be dropped or highly compressed if off-screen in massive documents, relying on virtualized ranges. No current benchmark establishes a fixed memory ceiling; the only enforced boundary today is `MarkdownParser.ResourceLimits.maximumInputBytes` (default 1 MiB), which rejects oversized input rather than bounding rendered memory.
 5. **In-Built Performance Benchmarking**:
    - The framework must expose a `PerformanceProfiler` API to statically measure and log precisely how many milliseconds the AST parsing and Layout generations took, ensuring transparency for developers using the library.
 
@@ -80,8 +94,8 @@ To ensure the renderer is safe for use in production environments with untrusted
 
 - **Test Coverage**: The project demands the highest level of stability. We aim for **near 100% test coverage** across the codebase.
 - **Unit Testing**: Comprehensive XCTest suites for all AST parsing logic, layout calculation engines, and text attribute generation. 
-- **Fuzz Testing**: Deterministic fuzz testing and pathological payload rendering suites. The Markdown string input must be robustly tested against randomly permuted garbage and hostile nesting structures to ensure a zero-crash guarantee.
-- **UI/Snapshot Testing**: Automated snapshot tests for the rendering layer (e.g., using `swift-snapshot-testing`) to ensure zero visual regressions across both iOS and macOS platforms when rendering complex Markdown features (like deeply nested lists or LaTeX equations).
+- **Fuzz Testing**: Deterministic fuzz testing and pathological payload suites should detect crash regressions across malformed input and hostile nesting; finite tests do not prove safety for every possible input.
+- **UI/Snapshot Testing**: Automated snapshot contracts (e.g., using `swift-snapshot-testing`) detect visual regressions for the explicitly covered platform baselines.
 - **Comprehensive Documentation**: Generation of complete API and architecture documentation using Apple's `DocC` to facilitate easy integration by host apps.
 
 ### 6.1 Automated Syntax Verification Strategy (Primary Gate)
