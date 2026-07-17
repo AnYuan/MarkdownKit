@@ -19,6 +19,11 @@ By keeping `LayoutResult` completely detached from UI layers (like `UIView` or `
 At its core, `TextKitCalculator` wraps Apple's new `TextKit 2` engine (using `NSTextLayoutManager`).
 We inject the styled string and a mathematical width boundary `(e.g. 400pt wide)`, and `TextKit 2` generates the precise `usageBoundsForTextContainer` which corresponds to the exact pixel footprint the text will consume when rendered.
 
+### Arithmetic text pipeline
+`ArithmeticTextCalculator` remains the pure-text profile, prepared-cache, and public measurement facade. Width-independent preparation is split into internal value types: `ArithmeticTextScanner` streams raw UTF-16 boundaries without buffering spans, `ArithmeticTextSegmentClassifierMerger` applies localized word boundaries and sticky-token merge rules, and `ArithmeticTextMeasurer` resolves platform fonts, line metrics, cached segment widths, and the aligned `PreparedText` payload.
+
+`ArithmeticTextLineBreaker` consumes that width-independent payload for each viewport width, preserving separate fit and paint advances, paragraph indents, hard breaks, discretionary soft hyphens, and CoreText grapheme fallback for oversized tokens. Unsupported scripts and attachment-bearing strings continue to route through `TextKitCalculator`.
+
 ### `LayoutSolver`
 A recursive tree solver. After cache lookup, it classifies each node into a shallow recipe, applies the central `Theme`, measures the output, and packages it into `LayoutResult` trees. Async and sync envelopes remain explicit so cancellation, cache publication, and resource behavior do not leak across modes.
 

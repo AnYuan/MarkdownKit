@@ -401,8 +401,29 @@ review the complete diff, then commit and push before starting the next stage.
   UIKit attributed safety tests, 471 macOS correctness tests, 488
   discoverable-test documentation checks, visual and determinism snapshot gates
   (4/4 each), 521 iOS Simulator tests, and the complete benchmark gate all pass.
-- [ ] `refactor: decompose arithmetic text preparation`
-  Separate scanning, segment classification/merging, measurement, and line breaking.
+- [x] `refactor: decompose arithmetic text preparation`
+  - [x] Q17-A add behavior-level phase contracts for UTF-16 boundaries,
+    glue/soft-hyphen/newline handling, merge order, SoA/font capture, and
+    fit-versus-paint metadata.
+  - [x] Q17-B keep `ArithmeticTextCalculator` as the public/cache facade while
+    extracting internal scanner, segment classifier/merger, measurer, and line
+    breaker value types into dedicated source files.
+  - [x] Q17-C review the integrated refactor and run focused/full
+    macOS/iOS/snapshot/documentation/benchmark gates before one atomic commit
+    and push.
+  Review: `ArithmeticTextCalculator` now owns only profile, prepared-cache, and
+  facade responsibilities. Four internal value types own streaming UTF-16
+  scanning, localized classification/merging, CoreText measurement, and
+  fit-versus-paint line breaking. Reuse/quality/clarity review found no issue;
+  efficiency review identified and removed full-span buffering in favor of a
+  local iterator. Swift 6.2 concurrency and final
+  regression/security/reliability/contracts reviews found no remaining material
+  issue.
+  Validation: 29 focused arithmetic tests, 22 builder-equivalence tests, 106
+  layout/cache/appearance/concurrency integration tests, `swift build`, 475
+  macOS correctness tests, 492 discoverable-test documentation checks, visual
+  and determinism snapshot gates (4/4 each), 525 iOS Simulator tests, and the
+  complete benchmark gate all pass.
 - [ ] `perf: cache repeated highlighter and diagram work`
   Cache generic regex compilation and width-independent Mermaid source renders.
 - [ ] `refactor: curate the pre-1.0 public API`

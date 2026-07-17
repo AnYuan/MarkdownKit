@@ -280,6 +280,24 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         XCTAssertEqual(prepared.lineEndFitAdvances[1], prepared.lineEndPaintAdvances[1], accuracy: 0.001)
     }
 
+    func testPreparePreservesCompoundScannerBoundaries() {
+        let prepared = ArithmeticTextCalculator().prepare(
+            attributedString: makeAttributedString("Alpha\u{200B}Beta\u{00A0}Gamma\u{00AD}Delta\nEpsilon")
+        )
+
+        XCTAssertEqual(
+            prepared.kinds,
+            [.text, .space, .text, .softHyphen, .text, .hardBreak, .text]
+        )
+        XCTAssertEqual(
+            prepared.segmentTexts,
+            ["Alpha", "", "Beta\u{00A0}Gamma", "", "Delta", "", "Epsilon"]
+        )
+        for index in [1, 3, 5] {
+            XCTAssertEqual(prepared.widths[index], 0, accuracy: 0.001)
+        }
+    }
+
     func testPrepareUsesLocalizedWordBoundariesForThai() {
         let calculator = ArithmeticTextCalculator()
         let prepared = calculator.prepare(
@@ -320,6 +338,18 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         XCTAssertEqual(prepared.segmentTexts, ["2025-03-31", "", "10:30"])
     }
 
+    func testPrepareMergesURLClosingAndNumericPunctuationInOrder() {
+        let prepared = ArithmeticTextCalculator().prepare(
+            attributedString: makeAttributedString("Visit example.com/path). 2025-03-31,10:30")
+        )
+
+        XCTAssertEqual(prepared.kinds, [.text, .space, .text, .space, .text])
+        XCTAssertEqual(
+            prepared.segmentTexts,
+            ["Visit", "", "example.com/path).", "", "2025-03-31,10:30"]
+        )
+    }
+
     func testPrepareMergesCJKStickyRuns() {
         let calculator = ArithmeticTextCalculator()
         let prepared = calculator.prepare(
@@ -328,6 +358,61 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
 
         XCTAssertEqual(prepared.kinds, [.text, .space, .text])
         XCTAssertEqual(prepared.segmentTexts, ["你好，世界", "", "第1章"])
+    }
+
+    func testPreparedTextSoAStaysAlignedAndCapturesFontsForTextOnly() {
+        let prepared = ArithmeticTextCalculator().prepare(
+            attributedString: makeAttributedString("Alpha \u{00AD}Beta\nGamma")
+        )
+        let expectedKinds: [ArithmeticTextCalculator.SegmentKind] = [
+            .text, .space, .softHyphen, .text, .hardBreak, .text
+        ]
+
+        XCTAssertEqual(prepared.kinds, expectedKinds)
+        XCTAssertEqual(prepared.segmentTexts, ["Alpha", "", "", "Beta", "", "Gamma"])
+        XCTAssertEqual(prepared.widths.count, expectedKinds.count)
+        XCTAssertEqual(prepared.lineEndFitAdvances.count, expectedKinds.count)
+        XCTAssertEqual(prepared.lineEndPaintAdvances.count, expectedKinds.count)
+        XCTAssertEqual(prepared.segmentTexts.count, expectedKinds.count)
+        XCTAssertEqual(prepared.ctFonts.count, expectedKinds.count)
+        XCTAssertEqual(prepared.heights.count, expectedKinds.count)
+        XCTAssertEqual(prepared.chunks.count, expectedKinds.count)
+        XCTAssertEqual(prepared.chunks.map(\.segmentIndex), Array(expectedKinds.indices))
+        XCTAssertEqual(
+            prepared.chunks.map(\.kind),
+            [.content, .content, .content, .content, .hardBreak, .content]
+        )
+
+        for index in expectedKinds.indices {
+            XCTAssertEqual(prepared.ctFonts[index] != nil, expectedKinds[index] == .text)
+            XCTAssertGreaterThan(prepared.heights[index], 0)
+        }
+    }
+
+    func testPreparedTextLineEndMetadataMatchesEachSegmentKind() {
+        let prepared = ArithmeticTextCalculator().prepare(
+            attributedString: makeAttributedString("Alpha \u{00AD}Beta\nGamma")
+        )
+
+        XCTAssertGreaterThan(prepared.widths[0], 0)
+        XCTAssertEqual(prepared.lineEndFitAdvances[0], prepared.widths[0], accuracy: 0.001)
+        XCTAssertEqual(prepared.lineEndPaintAdvances[0], prepared.widths[0], accuracy: 0.001)
+
+        XCTAssertGreaterThan(prepared.widths[1], 0)
+        XCTAssertEqual(prepared.lineEndFitAdvances[1], 0, accuracy: 0.001)
+        XCTAssertEqual(prepared.lineEndPaintAdvances[1], prepared.widths[1], accuracy: 0.001)
+
+        XCTAssertEqual(prepared.widths[2], 0, accuracy: 0.001)
+        XCTAssertGreaterThan(prepared.lineEndFitAdvances[2], 0)
+        XCTAssertEqual(
+            prepared.lineEndPaintAdvances[2],
+            prepared.lineEndFitAdvances[2],
+            accuracy: 0.001
+        )
+
+        XCTAssertEqual(prepared.widths[4], 0, accuracy: 0.001)
+        XCTAssertEqual(prepared.lineEndFitAdvances[4], 0, accuracy: 0.001)
+        XCTAssertEqual(prepared.lineEndPaintAdvances[4], 0, accuracy: 0.001)
     }
 
     func testExplicitHardBreakUsesTrimmedLineEndWidth() {

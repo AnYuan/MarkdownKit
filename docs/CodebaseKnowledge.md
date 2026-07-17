@@ -5,7 +5,7 @@ This document is a practical snapshot of the current repository, with emphasis o
 ## 1. Repository Snapshot
 
 - Branch at snapshot: `copilot/code-quality-roadmap`
-- HEAD at snapshot: `681d2de`
+- HEAD at snapshot: `0d38364`
 - Swift tools: `6.2`
 - Platforms: `iOS 17+`, `macOS 26.0+`
 - Dependencies:
@@ -14,7 +14,7 @@ This document is a practical snapshot of the current repository, with emphasis o
   - `colinc86/MathJaxSwift` (`>= 3.4.0`)
   - `pointfreeco/swift-snapshot-testing` (`>= 1.17.0`)
 - File counts at snapshot:
-  - Source files (`Sources/MarkdownKit/**/*.swift`): **83**
+  - Source files (`Sources/MarkdownKit/**/*.swift`): **87**
   - Test files (`Tests/MarkdownKitTests/*.swift`): **74**
   - Docs files (`docs/*.md`): **21**
 
@@ -65,7 +65,7 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **488** discoverable tests
+- `swift test list`: **492** discoverable tests
 - `swift test`: no execution log supplied for this refresh
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
@@ -114,6 +114,11 @@ Key facts:
 Primary files:
 - `Sources/MarkdownKit/Layout/LayoutSolver.swift`
 - `Sources/MarkdownKit/Layout/AttributedStringBuilder.swift`
+- `Sources/MarkdownKit/Layout/ArithmeticTextCalculator.swift`
+- `Sources/MarkdownKit/Layout/ArithmeticTextScanner.swift`
+- `Sources/MarkdownKit/Layout/ArithmeticTextSegmentClassifierMerger.swift`
+- `Sources/MarkdownKit/Layout/ArithmeticTextMeasurer.swift`
+- `Sources/MarkdownKit/Layout/ArithmeticTextLineBreaker.swift`
 - `Sources/MarkdownKit/Layout/Builders/TableLayoutShared.swift`
 - `Sources/MarkdownKit/Layout/Builders/TableAttributedStringBuilder.swift`
 - `Sources/MarkdownKit/Layout/Builders/TableCardRenderer.swift`
@@ -127,6 +132,7 @@ Key facts:
 - `LayoutCache` keys are `node.contentFingerprint` + optional interaction fingerprint + rounded width + solver variant hash (theme/diagram/math/image policy/appearance inputs). The separate interaction identity covers source ranges and URLs captured by checkbox/details callbacks without changing semantic stable identity or pixel-render identity.
 - `AttributedStringBuilder` classifies block and inline structure once into an invocation-local flat operation program. Sequential async/sync materializers share structural behavior while keeping image, math, and diagram mode differences explicit.
 - `LayoutSolver` performs cache lookup before classifying a node into a shallow recipe, then shares immediate output, measurement, color resolution, and `LayoutResult` assembly across its explicit async/sync envelopes.
+- `ArithmeticTextCalculator` is the pure-text routing/cache facade. Width-independent preparation streams UTF-16 spans through dedicated scanner, localized classifier/merger, and CoreText measurer value types; `ArithmeticTextLineBreaker` separately owns fit-versus-paint widths, indents, hard breaks, soft hyphens, and oversized-token fallback.
 - `TableLayoutShared` owns the immutable canonical rectangular table grid (cell text/display text, alignment, row role/body index) and sanitized uniform column geometry. Three thin adapters intentionally preserve platform-specific visuals: AppKit native `NSTextTableBlock`, UIKit nested attributed tab/narrow fallback, and UIKit top-level `TableCardRenderer` cards drawn through `CGContext`.
 - `ImageResourceLoader` is the sole production owner of image source resolution, policy gating, file/`URLSession` loading, pre-follow redirect policy, HTTP status, MIME, expected-byte-count, streamed final-byte limits, and typed rejection.
 - `ImageAttachmentBuilder` uses ImageIO to create an oriented, width-constrained thumbnail. Its decoded cache is keyed by policy/source/rounded target width, bounded by count and total cost, and rejects any decoded image above 64 MiB.
@@ -157,6 +163,7 @@ Key facts:
 High-value suites:
 - Parser/plugin correctness: `Parser*Tests`, `ASTPluginTests`, `*ExtractionPluginTests`, `GitHubAutolinkPluginTests`
 - Layout invariants: `LayoutSolverExtendedTests`, `InlineFormattingLayoutTests`, `InteractionCacheIdentityTests`, `CrossPlatformLayoutTests`
+- Arithmetic preparation/layout contracts: `ArithmeticTextCalculatorTests`
 - Table canonicalization/adapters: `TableLayoutSharedTests`, `TableAttributedStringBuilderTests`, `iOSTableLayoutTests`
 - Unified image pipeline: `ImageResourceLoaderTests` (12 injected-`URLProtocol`/local policy and validation tests), `ImageAttachmentBuilderTests` (5 decode/cache tests)
 - Safety and Utils: `URLSanitizerTests`, `DepthLimitTests`, `FuzzTests`, `TableOfContentsBuilderTests`, `PlatformAccessibilityTests`, `PerformanceProfilerTests`
