@@ -424,8 +424,37 @@ review the complete diff, then commit and push before starting the next stage.
   macOS correctness tests, 492 discoverable-test documentation checks, visual
   and determinism snapshot gates (4/4 each), 525 iOS Simulator tests, and the
   complete benchmark gate all pass.
-- [ ] `perf: cache repeated highlighter and diagram work`
+- [x] `perf: cache repeated highlighter and diagram work`
   Cache generic regex compilation and width-independent Mermaid source renders.
+  Q18 scope: cache immutable comment/keyword regex bundles by canonical language
+  family while compiling shared string/number regexes once; cache only successful
+  intrinsic Mermaid images inside the existing MainActor FIFO snapshotter with
+  count/cost bounds, FIFO-safe lookup, failure/cancellation non-poisoning, and
+  fresh attachments per adapter call. Reuse `MarkdownKitEngine.defaultPlugins()`
+  from `MarkdownView` instead of repeating the production default chain. Do not
+  weaken any existing layout, bitmap, render-input, adapter, appearance, width,
+  or sync/async cache identity.
+  - [x] Q18-A add bounded lock-protected compiled-regex bundles, shared
+    string/number expressions, alias-family reuse, and theme-independent cache
+    tests.
+  - [x] Q18-B add bounded MainActor Mermaid source-image caching, FIFO-safe hits,
+    fresh attachments, queued/active cancellation, stale-callback rejection,
+    failure non-poisoning, and WebView reload after timeouts.
+  - [x] Q18-C reuse `MarkdownKitEngine.defaultPlugins()` from `MarkdownView` and
+    preserve the existing details/diagram/math order.
+  - [x] Q18-D complete simplification, Swift concurrency, regression, security,
+    reliability, contracts, focused/full platform, snapshot, documentation, and
+    benchmark review gates.
+  Review: concurrent first use now compiles one generic language-family bundle;
+  cached regexes never retain source/theme output. Mermaid cache lookup occurs
+  only at the FIFO head, successful images are count/cost bounded, AppKit callers
+  receive copied images, canceled/failed work cannot publish cache entries, and
+  timeout recovery reloads/reinjects the bundled script before queued work
+  resumes. Final review passes found no remaining material issue.
+  Validation: 15 highlighter tests, 10 real Mermaid adapter tests, 502 full
+  macOS tests, 485 macOS fast-gate tests, 502 discoverable-test documentation
+  checks, visual and determinism snapshot gates (4/4 each), 535 iOS Simulator
+  tests, and the complete benchmark gate all pass.
 - [ ] `refactor: curate the pre-1.0 public API`
   Internalize implementation details, remove unnecessary re-exports, and document
   the remaining supported surface.

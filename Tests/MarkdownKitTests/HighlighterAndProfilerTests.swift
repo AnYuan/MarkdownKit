@@ -8,6 +8,11 @@ import AppKit
 #endif
 
 final class HighlighterAndProfilerTests: XCTestCase {
+    private struct RangeSnapshot: Equatable {
+        let location: Int
+        let length: Int
+    }
+
 
     // MARK: - SplashHighlighter
 
@@ -75,6 +80,99 @@ final class HighlighterAndProfilerTests: XCTestCase {
 
         XCTAssertGreaterThan(runCount, 1,
             "Python code should have keyword-highlighted attribute runs")
+    }
+
+    func testGenericLanguageAliasesReuseCompiledRegexBundle() {
+        GenericKeywordHighlighter.resetCacheForTesting()
+
+        let highlighter = SplashHighlighter()
+        let code = "def greet():\n    return 42"
+        let canonical = highlighter.highlight(code, language: "python")
+        let alias = highlighter.highlight(code, language: "py")
+        let stats = GenericKeywordHighlighter.cacheStatsForTesting()
+
+        XCTAssertEqual(canonical.string, code)
+        XCTAssertEqual(alias.string, code)
+        XCTAssertEqual(foregroundRunRanges(in: canonical), foregroundRunRanges(in: alias))
+        XCTAssertEqual(stats.misses, 1)
+        XCTAssertEqual(stats.hits, 1)
+    }
+
+    func testGenericRegexCacheIsThemeIndependent() {
+        GenericKeywordHighlighter.resetCacheForTesting()
+
+        let code = "def greet():\n    return 42\n    print('hi')\n# note"
+        let firstTheme = makeGenericTheme(
+            textColor: .darkGray,
+            keywordColor: .systemPink,
+            stringColor: .systemOrange,
+            numberColor: .systemPurple,
+            commentColor: .systemTeal
+        )
+        let secondTheme = makeGenericTheme(
+            textColor: .brown,
+            keywordColor: .systemBlue,
+            stringColor: .systemGreen,
+            numberColor: .systemRed,
+            commentColor: .magenta
+        )
+
+        let first = SplashHighlighter(theme: firstTheme).highlight(code, language: "python")
+        let second = SplashHighlighter(theme: secondTheme).highlight(code, language: "python")
+        let stats = GenericKeywordHighlighter.cacheStatsForTesting()
+
+        XCTAssertEqual(first.string, code)
+        XCTAssertEqual(second.string, code)
+        XCTAssertEqual(foregroundRunRanges(in: first), foregroundRunRanges(in: second))
+
+        assertForegroundColor(firstTheme.syntaxColors.keyword, in: first, for: "def")
+        assertForegroundColor(firstTheme.syntaxColors.keyword, in: first, for: "return")
+        assertForegroundColor(firstTheme.syntaxColors.number, in: first, for: "42")
+        assertForegroundColor(firstTheme.syntaxColors.string, in: first, for: "'hi'")
+        assertForegroundColor(firstTheme.syntaxColors.comment, in: first, for: "# note")
+        assertForegroundColor(firstTheme.colors.textColor.foreground, in: first, for: "greet")
+
+        assertForegroundColor(secondTheme.syntaxColors.keyword, in: second, for: "def")
+        assertForegroundColor(secondTheme.syntaxColors.keyword, in: second, for: "return")
+        assertForegroundColor(secondTheme.syntaxColors.number, in: second, for: "42")
+        assertForegroundColor(secondTheme.syntaxColors.string, in: second, for: "'hi'")
+        assertForegroundColor(secondTheme.syntaxColors.comment, in: second, for: "# note")
+        assertForegroundColor(secondTheme.colors.textColor.foreground, in: second, for: "greet")
+
+        XCTAssertEqual(stats.misses, 1)
+        XCTAssertEqual(stats.hits, 1)
+    }
+
+    func testGenericRegexCacheBuildsOnceUnderConcurrentFirstUse() async {
+        GenericKeywordHighlighter.resetCacheForTesting()
+
+        let code = "def greet():\n    return 42\n# note"
+        let requestCount = 32
+
+        let outputs = await withTaskGroup(of: String.self, returning: [String].self) { group in
+            for _ in 0..<requestCount {
+                group.addTask {
+                    await Task.yield()
+                    let highlighter = SplashHighlighter()
+                    return highlighter.highlight(code, language: "python").string
+                }
+            }
+
+            var collected: [String] = []
+            collected.reserveCapacity(requestCount)
+            for await output in group {
+                collected.append(output)
+            }
+            return collected
+        }
+
+        let stats = GenericKeywordHighlighter.cacheStatsForTesting()
+
+        XCTAssertEqual(outputs.count, requestCount)
+        XCTAssertEqual(Set(outputs), Set([code]))
+        XCTAssertEqual(stats.builds, 1)
+        XCTAssertEqual(stats.misses, 1)
+        XCTAssertEqual(stats.hits, requestCount - 1)
     }
 
     func testHighlightUnlabeledCodeDoesNotUseSplash() {
@@ -151,5 +249,82 @@ final class HighlighterAndProfilerTests: XCTestCase {
         XCTAssertEqual(PerformanceProfiler.Metric.layoutCalculation.rawValue, "Layout Calculation")
         XCTAssertEqual(PerformanceProfiler.Metric.viewMounting.rawValue, "View Mounting")
         XCTAssertEqual(PerformanceProfiler.Metric.totalRendering.rawValue, "Total Rendering Time")
+    }
+
+    private func foregroundRunRanges(in attrString: NSAttributedString) -> [RangeSnapshot] {
+        var ranges: [RangeSnapshot] = []
+        attrString.enumerateAttribute(
+            .foregroundColor,
+            in: NSRange(location: 0, length: attrString.length)
+        ) { _, range, _ in
+            ranges.append(RangeSnapshot(location: range.location, length: range.length))
+        }
+        return ranges
+    }
+
+    private func assertForegroundColor(
+        _ expected: Color,
+        in attrString: NSAttributedString,
+        for substring: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let nsString = attrString.string as NSString
+        let range = nsString.range(of: substring)
+        guard range.location != NSNotFound else {
+            XCTFail("Missing substring \(substring)", file: file, line: line)
+            return
+        }
+
+        guard let actual = attrString.attribute(
+            .foregroundColor,
+            at: range.location,
+            effectiveRange: nil
+        ) as? Color else {
+            XCTFail("Missing foreground color for \(substring)", file: file, line: line)
+            return
+        }
+
+        XCTAssertEqual(actual, expected, file: file, line: line)
+    }
+
+    private func makeGenericTheme(
+        textColor: Color,
+        keywordColor: Color,
+        stringColor: Color,
+        numberColor: Color,
+        commentColor: Color
+    ) -> Theme {
+        let base = Theme.default
+        return Theme(
+            typography: base.typography,
+            colors: Theme.Colors(
+                textColor: ColorToken(foreground: textColor),
+                codeColor: base.colors.codeColor,
+                inlineCodeColor: base.colors.inlineCodeColor,
+                tableColor: base.colors.tableColor,
+                linkColor: base.colors.linkColor,
+                blockQuoteColor: base.colors.blockQuoteColor,
+                thematicBreakColor: base.colors.thematicBreakColor
+            ),
+            codeBlock: base.codeBlock,
+            blockQuote: base.blockQuote,
+            list: base.list,
+            details: base.details,
+            table: base.table,
+            syntaxColors: Theme.SyntaxColors(
+                keyword: keywordColor,
+                string: stringColor,
+                type: base.syntaxColors.type,
+                call: base.syntaxColors.call,
+                number: numberColor,
+                comment: commentColor,
+                property: base.syntaxColors.property,
+                dotAccess: base.syntaxColors.dotAccess,
+                preprocessing: base.syntaxColors.preprocessing
+            ),
+            highlight: base.highlight,
+            thematicBreak: base.thematicBreak
+        )
     }
 }

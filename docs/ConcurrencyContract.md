@@ -13,7 +13,11 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 7. `LayoutSolver.solveSync(...)` is a fully synchronous cached + `buildStringSync` path; it does **not** dispatch detached async work. Sync and async layouts use distinct cache/render variants because sync images intentionally emit alt fallback instead of performing I/O. Canceled async solves do not publish layout-cache entries.
 8. Math rendering goes through `DefaultMathRenderingAdapter.render(from:theme:contextFont:)`. The adapter is `Sendable`; its `Engine` actor wraps `MathJaxSwift` for LaTeX → SVG conversion and `SwiftDraw` rasterization runs synchronously in the calling task.
 9. `MathWarningSuppressor` is an actor that deduplicates noisy MathJax errors across concurrent renders.
-10. `MermaidSnapshotter` is `@MainActor` and serializes all `WKWebView` rendering via an internal FIFO queue.
+10. `MermaidSnapshotter` is `@MainActor` and serializes all `WKWebView`
+    rendering via an internal FIFO queue. Cache lookup occurs only when a
+    request reaches the queue head; successful intrinsic images are retained in
+    a bounded source cache, while failed or canceled requests cannot publish
+    entries. Request identifiers reject late callbacks from older renders.
 11. Inline Markdown image work belongs to the layout task. `ImageResourceLoader.load` is `@concurrent`, rejects disallowed redirects before following them, streams remote bytes under the policy cap, and owns final-response validation plus typed rejection; `ImageAttachmentBuilder` synchronously decodes the returned bytes with ImageIO in the calling layout task.
 12. `ImageAttachmentBuilder` stores decoded, width-constrained thumbnails in a thread-safe `NSCache` keyed by policy/source/rounded target width. Cache entries and each decoded image are bounded; canceled layout tasks do not publish new entries.
 13. `AsyncTextView` rasterizes attributed strings, including `NSTextAttachment` images, off-main; callers must still invoke `configure(with:)` from UI context and final layer mounting remains UI-owned.
@@ -35,7 +39,9 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 1. `MarkdownRenderCoordinatorTests` covers single-flight no-overlap behavior, latest-request publication, parse-key/raw-AST reuse boundaries, and the details stale-configuration regression.
 2. `MarkdownRenderInputTests` covers parse-key boundaries and layout-only dimensions (`width`, `theme`, `appearance`, diagram registry, image policy).
 3. `GitHubAutolinkPluginTests` and `MarkdownKitTests` cover resolver forwarding, fallback destinations, resolver retention, fingerprinting, and detached parser construction/use.
-4. `MermaidDiagramAdapterTests` validates Mermaid snapshot pipeline behavior.
+4. `MermaidDiagramAdapterTests` validates source-cache reuse/isolation, fresh
+   attachments, FIFO ordering, queued and active cancellation, failure
+   non-poisoning, and real `WKWebView` render counts.
 5. `MathWarningSuppressorTests` validates suppression actor semantics.
 6. `SnapshotTests` and `DiagramSnapshotTests` validate end-to-end rendering stability.
 7. `InlineFormattingLayoutTests` validates math fallback behavior when conversion fails.
@@ -45,6 +51,9 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 ## 4. Known Limits and Host Responsibilities
 
 1. `LayoutSolver` and helper types still rely on `@unchecked Sendable` boundaries and require disciplined call-site usage.
-2. Multi-actor stress tests now cover LayoutSolver, LayoutCache, and parser interleaving. Further coverage of `DefaultMathRenderingAdapter` and `MermaidSnapshotter` concurrent usage is deferred.
+2. Multi-actor stress tests cover LayoutSolver, LayoutCache, and parser
+   interleaving; real-WebView Mermaid tests cover serialized cache/cancellation
+   behavior. Further stress of `DefaultMathRenderingAdapter` and WebKit process
+   termination/reinitialization remains deferred.
 3. Attachment upload, permalink/custom action, and issue-keyword workflow semantics have no renderer hooks; they are host/backend responsibilities outside MarkdownKit's parser/layout pipeline.
 4. Markdown image support is inline-only. Changing `imageLoadingPolicy` starts a new layout/render generation and rebuilds attachments; there is no visible-cell or top-level image-loading executor.

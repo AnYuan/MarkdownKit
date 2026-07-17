@@ -44,7 +44,7 @@ public struct MarkdownView: View {
     public init(
         text: String,
         theme: Theme = .default,
-        plugins: [ASTPlugin] = [DetailsExtractionPlugin(), DiagramExtractionPlugin(), MathExtractionPlugin()],
+        plugins: [ASTPlugin] = MarkdownKitEngine.defaultPlugins(),
         diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry(),
         imageLoadingPolicy: ImageLoadingPolicy = .default,
         resourceLimits: MarkdownParser.ResourceLimits = .default

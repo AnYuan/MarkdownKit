@@ -65,8 +65,8 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **492** discoverable tests
-- `swift test`: no execution log supplied for this refresh
+- `swift test list`: **502** discoverable tests
+- `swift test`: **502 tests passed** on 2026-07-18
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -138,12 +138,18 @@ Key facts:
 - `ImageAttachmentBuilder` uses ImageIO to create an oriented, width-constrained thumbnail. Its decoded cache is keyed by policy/source/rounded target width, bounded by count and total cost, and rejects any decoded image above 64 MiB.
 - Parser-produced Markdown images are inline attachments only. There is no top-level/block-image layout or visible-cell image loader.
 - `TextKitCalculator` safely isolates layout passes to avoid concurrent `NSLayoutManager` data dictionary deadlocks via tight locks.
-- Code blocks support optional language badge + Splash highlighting.
+- Code blocks support optional language badges, Splash tokenization for Swift,
+  and regex-based keyword highlighting for the supported non-Swift language
+  families. Generic highlighting reuses bounded, theme-independent compiled
+  regex bundles while constructing attributed output per source and theme.
 - Inline code remains style-focused (no token-level inline lexing).
 
 ### 4.4 Diagram/math backends
 
-- Mermaid: `MermaidDiagramAdapter` renders via `WKWebView` snapshot flow using bundled `mermaid.min.js` resource.
+- Mermaid: `MermaidDiagramAdapter` renders via the MainActor FIFO `WKWebView`
+  snapshot flow using bundled `mermaid.min.js`. Successful intrinsic images are
+  cached by exact source with count/cost bounds; width, attachment bounds,
+  failed renders, and canceled requests remain outside the cache.
 - Math: `DefaultMathRenderingAdapter` uses MathJax → SVG → SwiftDraw rasterization (no WebView). `MathSVGPreprocessor` normalizes `ex` units and `currentColor`.
 
 ### 4.5 UI layer
@@ -175,7 +181,8 @@ High-value suites:
 ## 6. Known Gaps / Risks / Technical Debt
 
 1. Math conversion warnings (notably `\\binom`) are deduplicated but can still emit one warning per unique failure signature.
-2. Syntax highlighting is currently Swift-only; explicit non-Swift fenced languages now fall back to plain code styling.
+2. Generic non-Swift highlighting is intentionally regex/keyword based rather
+   than a full grammar for every advertised language family.
 3. Full `swift test` feedback loop remains relatively heavy due to benchmark suites.
 4. Documentation can drift unless refreshed from repeatable command output.
 

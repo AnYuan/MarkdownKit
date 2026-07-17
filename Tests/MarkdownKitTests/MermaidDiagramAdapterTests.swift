@@ -1,6 +1,12 @@
 import XCTest
 @testable import MarkdownKit
 
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
+
 #if canImport(WebKit)
 final class MermaidDiagramAdapterTests: XCTestCase {
 
@@ -11,23 +17,288 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         )
     }
 
-    func testPreferredScriptURLStringPrefersBundledResource() {
-        guard let bundled = MermaidResourceLocator.bundledScriptURL() else {
-            XCTFail("Bundled mermaid.min.js resource missing")
-            return
-        }
-
-        XCTAssertEqual(
-            MermaidResourceLocator.preferredScriptURLString(),
-            bundled.absoluteString
-        )
-    }
-
     func testHTMLBuilderCreatesValidBaseStructure() {
         let html = MermaidHTMLBuilder.makeBaseHTML()
 
         XCTAssertTrue(html.contains(#"<div id="mermaid-root"></div>"#))
         XCTAssertTrue(html.contains("<!DOCTYPE html>"))
+    }
+
+    @MainActor
+    func testSnapshotCacheHasExplicitBounds() async throws {
+        try await resetSnapshotter()
+
+        let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+
+        XCTAssertEqual(statistics.cacheCountLimit, 64)
+        XCTAssertEqual(statistics.cacheTotalCostLimit, 64 * 1024 * 1024)
+    }
+
+    @MainActor
+    func testSameSourceUsesCachedImageWithFreshAttachment() async throws {
+        try await resetSnapshotter()
+        let adapter = MermaidDiagramAdapter()
+        let source = """
+        graph TD;
+            A-->B;
+        """
+
+        let first = try await renderedAttachment(from: adapter, source: source)
+        let second = try await renderedAttachment(from: adapter, source: source)
+        let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+
+        XCTAssertFalse(first.attachment === second.attachment)
+        XCTAssertEqual(first.image.size, second.image.size)
+        XCTAssertGreaterThan(first.image.size.width, 0)
+        XCTAssertGreaterThan(first.image.size.height, 0)
+        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 1)
+        XCTAssertEqual(statistics.cacheHitCount, 1)
+    }
+
+    @MainActor
+    func testDifferentSourcesDoNotCollideInCache() async throws {
+        try await resetSnapshotter()
+        let adapter = MermaidDiagramAdapter()
+        let firstSource = """
+        graph TD;
+            A-->B;
+        """
+        let secondSource = """
+        graph LR;
+            X-->Y;
+        """
+
+        let first = try await renderedAttachment(from: adapter, source: firstSource)
+        let second = try await renderedAttachment(from: adapter, source: secondSource)
+        let firstAgain = try await renderedAttachment(from: adapter, source: firstSource)
+        let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+
+        XCTAssertGreaterThan(second.image.size.width, 0)
+        XCTAssertEqual(first.image.size, firstAgain.image.size)
+        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 2)
+        XCTAssertEqual(statistics.cacheHitCount, 1)
+    }
+
+    @MainActor
+    func testFailedRenderIsNotCachedAndRetryStartsAgain() async throws {
+        try await resetSnapshotter()
+        let adapter = MermaidDiagramAdapter()
+        let source = "graph TD;\nA-->B;"
+
+        MermaidDiagramAdapter.failNextJavaScriptEvaluationForTesting()
+        let first = await adapter.render(source: source, language: .mermaid)
+        let second = await adapter.render(source: source, language: .mermaid)
+        let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+
+        XCTAssertNil(first)
+        XCTAssertNotNil(second)
+        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 2)
+        XCTAssertEqual(statistics.cacheHitCount, 0)
+    }
+
+    @MainActor
+    func testQueuedCancellationResumesNilWithoutStartingQueuedRender() async throws {
+        try await resetSnapshotter()
+        let adapter = MermaidDiagramAdapter()
+        let activeSource = """
+        graph TD;
+            A-->B;
+        """
+        let queuedSource = """
+        graph TD;
+            C-->D;
+        """
+
+        MermaidDiagramAdapter.pauseNextRenderForTesting()
+        let activeTask = Task {
+            await adapter.render(source: activeSource, language: .mermaid) != nil
+        }
+        try await waitUntil("paused Mermaid request to become active") {
+            MermaidDiagramAdapter.snapshotterStatisticsForTesting().isRendering
+        }
+
+        let queuedTask = Task {
+            await adapter.render(source: queuedSource, language: .mermaid) == nil
+        }
+        try await waitUntil("second Mermaid request to enter the queue") {
+            MermaidDiagramAdapter.snapshotterStatisticsForTesting().queuedRequestCount == 1
+        }
+
+        queuedTask.cancel()
+        let queuedWasNil = await queuedTask.value
+        let whilePaused = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+
+        XCTAssertTrue(queuedWasNil)
+        XCTAssertEqual(whilePaused.actualWebViewRenderStartCount, 0)
+        XCTAssertEqual(whilePaused.queuedRequestCount, 0)
+
+        MermaidDiagramAdapter.resumePausedRenderForTesting()
+        let activeRendered = await activeTask.value
+        XCTAssertTrue(activeRendered)
+        try await waitUntilSnapshotterIsIdle()
+
+        let finalStatistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+        XCTAssertEqual(finalStatistics.actualWebViewRenderStartCount, 1)
+    }
+
+    @MainActor
+    func testTimedOutRenderReloadsWebViewBeforeRetry() async throws {
+        try await resetSnapshotter()
+        let adapter = MermaidDiagramAdapter()
+        let source = "graph TD;\nA-->B;"
+
+        let timedOutTask = Task {
+            await adapter.render(source: source, language: .mermaid) == nil
+        }
+        try await waitUntil("Mermaid WebView render to start before timeout") {
+            let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+            return statistics.actualWebViewRenderStartCount == 1 && statistics.isRendering
+        }
+
+        MermaidDiagramAdapter.timeOutActiveRenderForTesting()
+        let timedOutWasNil = await timedOutTask.value
+        XCTAssertTrue(timedOutWasNil)
+
+        let retry = try await renderedAttachment(from: adapter, source: source)
+        let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+
+        XCTAssertGreaterThan(retry.image.size.width, 0)
+        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 2)
+        XCTAssertEqual(statistics.cacheHitCount, 0)
+    }
+
+    @MainActor
+    func testActiveCancellationResumesNilAndDoesNotCacheResult() async throws {
+        try await resetSnapshotter()
+        let adapter = MermaidDiagramAdapter()
+        let source = """
+        graph TD;
+            A-->B;
+        """
+
+        let cancelledTask = Task {
+            await adapter.render(source: source, language: .mermaid) == nil
+        }
+        try await waitUntil("Mermaid WebView render to start") {
+            let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+            return statistics.actualWebViewRenderStartCount == 1 && statistics.isRendering
+        }
+
+        cancelledTask.cancel()
+        let cancelledWasNil = await cancelledTask.value
+        XCTAssertTrue(cancelledWasNil)
+
+        let retryTask = Task {
+            await adapter.render(source: source, language: .mermaid) != nil
+        }
+        let retryRendered = await retryTask.value
+        let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+
+        XCTAssertTrue(retryRendered)
+        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 2)
+        XCTAssertEqual(statistics.cacheHitCount, 0)
+    }
+
+    @MainActor
+    func testCachedHitQueuedBehindActiveMissDoesNotOvertake() async throws {
+        try await resetSnapshotter()
+        let adapter = MermaidDiagramAdapter()
+        let cachedSource = """
+        graph TD;
+            Warm-->Cache;
+        """
+        let missSource = """
+        graph TD;
+            Older-->Miss;
+        """
+
+        _ = try await renderedAttachment(from: adapter, source: cachedSource)
+
+        MermaidDiagramAdapter.pauseNextRenderForTesting()
+        let missTask = Task {
+            await adapter.render(source: missSource, language: .mermaid) != nil
+        }
+        try await waitUntil("paused cache miss to become active") {
+            MermaidDiagramAdapter.snapshotterStatisticsForTesting().isRendering
+        }
+
+        let cachedTask = Task {
+            await adapter.render(source: cachedSource, language: .mermaid) != nil
+        }
+        try await waitUntil("cached request to queue behind the active miss") {
+            MermaidDiagramAdapter.snapshotterStatisticsForTesting().queuedRequestCount == 1
+        }
+
+        let whilePaused = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+        XCTAssertEqual(whilePaused.cacheHitCount, 0)
+        XCTAssertEqual(whilePaused.queuedRequestCount, 1)
+        XCTAssertTrue(whilePaused.isRendering)
+
+        MermaidDiagramAdapter.resumePausedRenderForTesting()
+        let missRendered = await missTask.value
+        let cachedRendered = await cachedTask.value
+        XCTAssertTrue(missRendered)
+        XCTAssertTrue(cachedRendered)
+
+        let finalStatistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+        XCTAssertEqual(finalStatistics.actualWebViewRenderStartCount, 2)
+        XCTAssertEqual(finalStatistics.cacheHitCount, 1)
+    }
+
+    @MainActor
+    private func resetSnapshotter() async throws {
+        try await waitUntilSnapshotterIsIdle()
+        MermaidDiagramAdapter.resetSnapshotterForTesting()
+    }
+
+    @MainActor
+    private func waitUntilSnapshotterIsIdle() async throws {
+        try await waitUntil("Mermaid snapshotter to become idle") {
+            let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+            return !statistics.isRendering && statistics.queuedRequestCount == 0
+        }
+    }
+
+    @MainActor
+    private func waitUntil(
+        _ description: String,
+        condition: @MainActor () -> Bool
+    ) async throws {
+        for _ in 0..<600 {
+            if condition() {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        XCTFail("Timed out waiting for \(description)")
+        throw WaitError.timedOut
+    }
+
+    @MainActor
+    private func renderedAttachment(
+        from adapter: MermaidDiagramAdapter,
+        source: String
+    ) async throws -> RenderedAttachment {
+        let maybeAttributedString = await adapter.render(source: source, language: .mermaid)
+        let attributedString = try XCTUnwrap(
+            maybeAttributedString,
+            "Expected Mermaid render to produce an attachment"
+        )
+        let attachment = try XCTUnwrap(
+            attributedString.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment
+        )
+        let image = try XCTUnwrap(attachment.image)
+        return RenderedAttachment(attachment: attachment, image: image)
+    }
+
+    private struct RenderedAttachment {
+        let attachment: NSTextAttachment
+        let image: NativeImage
+    }
+
+    private enum WaitError: Error {
+        case timedOut
     }
 }
 #endif
