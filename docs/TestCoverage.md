@@ -2,17 +2,17 @@
 
 > 最近更新: 2026-07-17
 > 生成方式: `python3 scripts/generate_test_coverage_report.py [--run-tests|--from-log <path>]`
-> 生成时间: 2026-07-17 17:41:17
+> 生成时间: 2026-07-17 20:58:30
 
 ## 1. 总览
 
 | 指标 | 当前值 | 说明 |
 | --- | ---: | --- |
-| 源码文件数 (`Sources/MarkdownKit/*.swift`) | 82 | 不含 Demo target |
-| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 69 | 含基准/夹具/辅助文件 |
-| 含 `test*` 方法的测试文件 | 61 | 静态扫描结果 |
-| 静态扫描 `test*` 方法总数 | 485 | 受编译条件影响，可能高于可执行测试数 |
-| 可发现测试数 (`swift test list`) | 405 | 当前平台可执行测试 |
+| 源码文件数 (`Sources/MarkdownKit/*.swift`) | 83 | 不含 Demo target |
+| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 70 | 含基准/夹具/辅助文件 |
+| 含 `test*` 方法的测试文件 | 62 | 静态扫描结果 |
+| 静态扫描 `test*` 方法总数 | 491 | 受编译条件影响，可能高于可执行测试数 |
+| 可发现测试数 (`swift test list`) | 411 | 当前平台可执行测试 |
 | 全量执行结果 (`swift test`) | 未提供 | 未执行或未提供日志 |
 
 ## 2. 本次执行状态
@@ -60,7 +60,8 @@
 | `MacOSUIComponentsTests.swift` | 10 |
 | `MarkdownKitBenchmarkTests.swift` | 4 |
 | `MarkdownKitTests.swift` | 7 |
-| `MarkdownRenderInputTests.swift` | 4 |
+| `MarkdownRenderCoordinatorTests.swift` | 4 |
+| `MarkdownRenderInputTests.swift` | 6 |
 | `MathCacheTests.swift` | 3 |
 | `MathExtractionPluginTests.swift` | 16 |
 | `MathSVGPreprocessorTests.swift` | 9 |

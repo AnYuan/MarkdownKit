@@ -67,6 +67,43 @@ final class MarkdownRenderInputTests: XCTestCase {
         XCTAssertNotEqual(base, makeInput(imageLoadingPolicy: .remoteHTTPS))
     }
 
+    func testParseKeyIgnoresLayoutOnlyVariants() {
+        let base = makeInput()
+
+        XCTAssertEqual(base.parseKey, makeInput(width: 401).parseKey)
+        XCTAssertEqual(base.parseKey, makeInput(theme: theme(textColor: .systemRed)).parseKey)
+        XCTAssertEqual(base.parseKey, makeInput(appearance: .dark).parseKey)
+        XCTAssertEqual(base.parseKey, makeInput(diagramRegistry: registry(adapterValue: 1)).parseKey)
+        XCTAssertEqual(base.parseKey, makeInput(imageLoadingPolicy: .remoteHTTPS).parseKey)
+    }
+
+    func testParseKeyTracksParseAffectingVariants() {
+        let base = makeInput()
+
+        XCTAssertNotEqual(base.parseKey, makeInput(text: "changed").parseKey)
+        XCTAssertNotEqual(
+            base.parseKey,
+            makeInput(resourceLimits: MarkdownParser.ResourceLimits(
+                maximumInputBytes: limits.maximumInputBytes + 1,
+                maximumNestingDepth: limits.maximumNestingDepth
+            )).parseKey
+        )
+        XCTAssertNotEqual(
+            base.parseKey,
+            makeInput(plugins: [FingerprintedPlugin(value: 1)]).parseKey
+        )
+
+        let orderedA = makeInput(plugins: [
+            FingerprintedPlugin(value: 1),
+            FingerprintedPlugin(value: 2)
+        ]).parseKey
+        let orderedB = makeInput(plugins: [
+            FingerprintedPlugin(value: 2),
+            FingerprintedPlugin(value: 1)
+        ]).parseKey
+        XCTAssertNotEqual(orderedA, orderedB)
+    }
+
     func testPluginFingerprintTracksConfigurationAndOrder() {
         XCTAssertNotEqual(
             makeInput(plugins: [FingerprintedPlugin(value: 1)]),

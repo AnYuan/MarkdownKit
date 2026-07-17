@@ -1,20 +1,22 @@
-# MarkdownKit Concurrency Contract (2026-03-04)
+# MarkdownKit Concurrency Contract (2026-07-17)
 
 This document defines the current thread/actor boundaries for parsing, layout, web rendering, host extension points, and UI mounting.
 
 ## 1. Isolation Boundaries
 
-1. `MarkdownParser` is synchronous and intentionally non-`Sendable`; parser/plugin instances are task-confined and must not be shared across concurrent tasks.
-2. `MarkdownAutolinkResolver` is `AnyObject & Sendable` with synchronous mention/reference/commit methods. Resolvers may be invoked off-main during detached render work, so use immutable state or explicit synchronization rather than a main-actor UI object.
-3. `GitHubAutolinkPlugin` strongly retains its optional resolver and fingerprints nil-vs-resolver configuration plus resolver-owned fingerprint state. A resolver must not retain the parser/plugin graph and create a cycle.
-4. `LayoutSolver.solve(node:constrainedToWidth:)` is async and intended for background execution.
-5. `LayoutSolver.solveSync(...)` blocks the caller and dispatches detached async work; use only when async call sites are impossible.
-6. Math rendering goes through `DefaultMathRenderingAdapter.render(from:theme:contextFont:)`. The adapter is `Sendable`; its `Engine` actor wraps `MathJaxSwift` for LaTeX → SVG conversion and `SwiftDraw` rasterization runs synchronously in the calling task.
-7. `MathWarningSuppressor` is an actor that deduplicates noisy MathJax errors across concurrent renders.
-8. `MermaidSnapshotter` is `@MainActor` and serializes all `WKWebView` rendering via an internal FIFO queue.
-9. `AsyncImageView` performs data loading and decode in `Task.detached`, then mounts `layer.contents` on `MainActor`.
-10. `AsyncTextView` may rasterize text off-main; callers must still invoke `configure(with:)` from UI context.
-11. UI interactions (`onLinkTap`, checkbox/detail closures, platform gesture handlers) remain UI-owned and are executed from view layer contexts, not from parser/resolver callbacks.
+1. `MarkdownEngine` (`UI/SwiftUI/MarkdownRenderCoordinator.swift`) is the SwiftUI `@MainActor` coordinator boundary for request coalescing, cancellation, and publication.
+2. Coordinator single-flight rule: only one detached parse/layout task runs at a time, with only one latest pending request retained; newer requests replace older pending work.
+3. Publication is generation-guarded (`output.generation == latestGeneration`), so canceled or stale completions never overwrite current `layouts`.
+4. `MarkdownParser` is synchronous and intentionally non-`Sendable`; parser/plugin instances are constructed inside each detached render task and remain task-confined.
+5. Raw AST reuse is bounded by `MarkdownParseKey` equality (`text`, `resourceLimits`, ordered plugin fingerprint). Width/theme/appearance/diagram/image-policy changes stay on the layout-only path.
+6. `LayoutSolver.solve(node:constrainedToWidth:)` is async and intended for background execution.
+7. `LayoutSolver.solveSync(...)` is a fully synchronous cached + `buildStringSync` path; it does **not** dispatch detached async work.
+8. Math rendering goes through `DefaultMathRenderingAdapter.render(from:theme:contextFont:)`. The adapter is `Sendable`; its `Engine` actor wraps `MathJaxSwift` for LaTeX → SVG conversion and `SwiftDraw` rasterization runs synchronously in the calling task.
+9. `MathWarningSuppressor` is an actor that deduplicates noisy MathJax errors across concurrent renders.
+10. `MermaidSnapshotter` is `@MainActor` and serializes all `WKWebView` rendering via an internal FIFO queue.
+11. `AsyncImageView` performs data loading and decode in `Task.detached`, then mounts `layer.contents` on `MainActor`.
+12. `AsyncTextView` may rasterize text off-main; callers must still invoke `configure(with:)` from UI context.
+13. UI interactions (`onLinkTap`, checkbox/detail closures, platform gesture handlers) remain UI-owned and are executed from view layer contexts, not from parser/resolver callbacks.
 
 ## 2. Rules for New Code
 
@@ -22,18 +24,20 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 2. Avoid sharing mutable renderer state across tasks unless wrapped in an actor.
 3. Any detached background task must marshal final UIKit/AppKit mutations back to main.
 4. If a method is intentionally cross-actor, document the contract at declaration.
-5. Preserve deterministic ordering for queued render operations (diagram/math pipelines).
+5. Preserve deterministic ordering for queued render operations (diagram/math pipelines and SwiftUI render coordinator requests).
 6. If resolver output affects rendered links, include that state in `cacheFingerprint(into:)`.
 7. The deprecated `MarkdownContextDelegate` name is only a migration spelling; conformers still must satisfy `MarkdownAutolinkResolver`'s `Sendable` contract.
 
 ## 3. Verification Coverage
 
-1. `GitHubAutolinkPluginTests` and `MarkdownKitTests` cover resolver forwarding, fallback destinations, resolver retention, fingerprinting, and detached parser construction/use.
-2. `MermaidDiagramAdapterTests` validates Mermaid snapshot pipeline behavior.
-3. `MathWarningSuppressorTests` validates suppression actor semantics.
-4. `SnapshotTests` and `DiagramSnapshotTests` validate end-to-end rendering stability.
-5. `InlineFormattingLayoutTests` validates math fallback behavior when conversion fails.
-6. `ConcurrencyStressTests` validates multi-task LayoutSolver/LayoutCache safety and parser thread safety.
+1. `MarkdownRenderCoordinatorTests` covers single-flight no-overlap behavior, latest-request publication, parse-key/raw-AST reuse boundaries, and the details stale-configuration regression.
+2. `MarkdownRenderInputTests` covers parse-key boundaries and layout-only dimensions (`width`, `theme`, `appearance`, diagram registry, image policy).
+3. `GitHubAutolinkPluginTests` and `MarkdownKitTests` cover resolver forwarding, fallback destinations, resolver retention, fingerprinting, and detached parser construction/use.
+4. `MermaidDiagramAdapterTests` validates Mermaid snapshot pipeline behavior.
+5. `MathWarningSuppressorTests` validates suppression actor semantics.
+6. `SnapshotTests` and `DiagramSnapshotTests` validate end-to-end rendering stability.
+7. `InlineFormattingLayoutTests` validates math fallback behavior when conversion fails.
+8. `ConcurrencyStressTests` validates multi-task LayoutSolver/LayoutCache safety and parser thread safety.
 
 ## 4. Known Limits and Host Responsibilities
 

@@ -95,6 +95,17 @@ case .rejected(let diagnostic):
 Construct task-confined parser/plugin instances rather than sharing one across concurrent
 tasks; host call sites decide whether to invoke it off the main actor.
 
+## SwiftUI Render Coordination
+
+`MarkdownView` funnels updates through `@MainActor` `MarkdownEngine` (`UI/SwiftUI/MarkdownRenderCoordinator.swift`):
+
+- At most one detached parse/layout task is active, plus one latest pending request.
+- Every new request immediately invalidates older generations; debounced updates wait 200ms before submit.
+- Publication is generation-guarded (`output.generation == latestGeneration`), so stale completions never replace current layouts.
+- Raw AST reuse happens only when `MarkdownParseKey` is unchanged (`text`, `resourceLimits`, ordered plugin fingerprint).
+- Layout-only dimensions (`width`, `theme`, `appearance`, `diagramRegistry`, `imageLoadingPolicy`) reuse the raw AST and relayout only.
+- Details disclosure is reapplied as an override onto the latest configuration before layout, preventing stale-config regressions.
+
 ## Autolink Resolver Integration
 
 `MarkdownKitEngine.makeParser(autolinkResolver:includeGitHubAutolinks:)` and

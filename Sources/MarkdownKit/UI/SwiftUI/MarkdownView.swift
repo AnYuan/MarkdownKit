@@ -74,14 +74,7 @@ public struct MarkdownView: View {
             MarkdownViewRepresentable(
                 layouts: engine.layouts,
                 onToggleDetails: { index, details in
-                    engine.toggleDetails(
-                        at: index,
-                        currentlyOpen: details.isOpen,
-                        width: engine.preferredWidth(fallback: geometry.size.width),
-                        diagramRegistry: diagramRegistry,
-                        imageLoadingPolicy: imageLoadingPolicy,
-                        appearance: appearance
-                    )
+                    engine.toggleDetails(at: index, details: details)
                 },
                 onEffectiveContentWidthChange: { newWidth in
                     engine.updateEffectiveContentWidth(
@@ -116,7 +109,7 @@ public struct MarkdownView: View {
                 )
             }
             .onChange(of: renderInput) { _, newInput in
-                engine.scheduleDebouncedTextRender(
+                engine.scheduleDebouncedRender(
                     markdown: newInput.text,
                     plugins: plugins,
                     theme: theme,
@@ -155,15 +148,45 @@ public struct MarkdownView: View {
 }
 
 @available(iOS 14.0, macOS 11.0, *)
-struct MarkdownRenderInput: Equatable {
+struct MarkdownParseKey: Equatable, Sendable {
     let text: String
-    let width: CGFloat
     let resourceLimits: MarkdownParser.ResourceLimits
+    let orderedPluginFingerprint: Int
+
+    init(
+        text: String,
+        resourceLimits: MarkdownParser.ResourceLimits,
+        orderedPluginFingerprint: Int
+    ) {
+        self.text = text
+        self.resourceLimits = resourceLimits
+        self.orderedPluginFingerprint = orderedPluginFingerprint
+    }
+
+    init(
+        text: String,
+        resourceLimits: MarkdownParser.ResourceLimits,
+        plugins: [ASTPlugin]
+    ) {
+        self.init(
+            text: text,
+            resourceLimits: resourceLimits,
+            orderedPluginFingerprint: ASTPluginFingerprint.make(for: plugins)
+        )
+    }
+}
+
+@available(iOS 14.0, macOS 11.0, *)
+struct MarkdownRenderInput: Equatable {
+    let width: CGFloat
     let appearance: MarkdownAppearance
+    let parseKey: MarkdownParseKey
     let themeFingerprint: Int
-    let pluginFingerprint: Int
     let diagramFingerprint: Int
     let imagePolicyFingerprint: Int
+
+    var text: String { parseKey.text }
+    var resourceLimits: MarkdownParser.ResourceLimits { parseKey.resourceLimits }
 
     init(
         text: String,
@@ -175,14 +198,31 @@ struct MarkdownRenderInput: Equatable {
         diagramRegistry: DiagramAdapterRegistry,
         imageLoadingPolicy: ImageLoadingPolicy
     ) {
-        self.text = text
+        let parseKey = MarkdownParseKey(text: text, resourceLimits: resourceLimits, plugins: plugins)
+        self.init(
+            parseKey: parseKey,
+            width: width,
+            appearance: appearance,
+            themeFingerprint: Self.themeFingerprint(theme, appearance: appearance),
+            diagramFingerprint: diagramRegistry.cacheFingerprint,
+            imagePolicyFingerprint: imageLoadingPolicy.cacheFingerprint
+        )
+    }
+
+    init(
+        parseKey: MarkdownParseKey,
+        width: CGFloat,
+        appearance: MarkdownAppearance,
+        themeFingerprint: Int,
+        diagramFingerprint: Int,
+        imagePolicyFingerprint: Int
+    ) {
         self.width = width
-        self.resourceLimits = resourceLimits
         self.appearance = appearance
-        self.themeFingerprint = Self.themeFingerprint(theme, appearance: appearance)
-        self.pluginFingerprint = ASTPluginFingerprint.make(for: plugins)
-        self.diagramFingerprint = diagramRegistry.cacheFingerprint
-        self.imagePolicyFingerprint = imageLoadingPolicy.cacheFingerprint
+        self.parseKey = parseKey
+        self.themeFingerprint = themeFingerprint
+        self.diagramFingerprint = diagramFingerprint
+        self.imagePolicyFingerprint = imagePolicyFingerprint
     }
 
     static func themeFingerprint(_ theme: Theme, appearance: MarkdownAppearance) -> Int {
@@ -197,293 +237,6 @@ struct MarkdownRenderInput: Equatable {
 private extension MarkdownAppearance {
     init(colorScheme: ColorScheme) {
         self = colorScheme == .dark ? .dark : .light
-    }
-}
-
-// MARK: - Async Rendering Engine
-
-@available(iOS 14.0, macOS 11.0, *)
-@MainActor
-private final class MarkdownEngine: ObservableObject {
-    @Published var layouts: [LayoutResult] = []
-
-    // Keep reference to the latest task to cancel on rapid typing/resizing
-    private var renderTask: Task<Void, Never>?
-
-    // Cache the previous successful AST and parser to enable fast sub-tree toggling (Details Node)
-    private var lastAST: DocumentNode?
-    private var lastTheme: Theme?
-    private var currentWidth: CGFloat = 0
-
-    /// Persistent layout cache shared across renders. Without this, streaming /
-    /// per-keystroke re-renders create a fresh LayoutSolver (hence fresh cache)
-    /// and identical un-changed blocks are re-laid out every time.
-    private let layoutCache = LayoutCache()
-
-    /// Cached LayoutSolver reused while theme / diagram registry / image policy
-    /// stay unchanged. Recreating a solver when those *do* change is correct
-    /// because the variant hash they feed into would also change — old cache
-    /// entries simply don't match and sit until evicted.
-    private var cachedSolver: LayoutSolver?
-    private var cachedSolverKey: SolverKey?
-
-    private struct SolverKey: Equatable {
-        let themeFingerprint: Int
-        let diagramFingerprint: Int
-        let policyFingerprint: Int
-        let appearance: MarkdownAppearance
-    }
-
-    private func solver(
-        for theme: Theme,
-        diagramRegistry: DiagramAdapterRegistry,
-        imageLoadingPolicy: ImageLoadingPolicy,
-        appearance: MarkdownAppearance
-    ) -> LayoutSolver {
-        let key = SolverKey(
-            themeFingerprint: MarkdownRenderInput.themeFingerprint(theme, appearance: appearance),
-            diagramFingerprint: diagramRegistry.cacheFingerprint,
-            policyFingerprint: imageLoadingPolicy.cacheFingerprint,
-            appearance: appearance
-        )
-        if let solver = cachedSolver, cachedSolverKey == key {
-            return solver
-        }
-        let solver = LayoutSolver(
-            theme: theme,
-            cache: layoutCache,
-            diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy,
-            appearance: appearance
-        )
-        cachedSolver = solver
-        cachedSolverKey = key
-        return solver
-    }
-
-    private struct RenderJob: @unchecked Sendable {
-        let markdown: String
-        let plugins: [ASTPlugin]
-        let solver: LayoutSolver
-        let width: CGFloat
-        let theme: Theme
-        let resourceLimits: MarkdownParser.ResourceLimits
-    }
-
-    private struct RenderOutput: @unchecked Sendable {
-        let ast: DocumentNode
-        let theme: Theme
-        let childLayouts: [LayoutResult]
-    }
-
-    func preferredWidth(fallback: CGFloat) -> CGFloat {
-        currentWidth > 50 ? currentWidth : fallback
-    }
-
-    func render(
-        markdown: String,
-        plugins: [ASTPlugin],
-        theme: Theme,
-        width: CGFloat,
-        diagramRegistry: DiagramAdapterRegistry,
-        imageLoadingPolicy: ImageLoadingPolicy,
-        resourceLimits: MarkdownParser.ResourceLimits,
-        appearance: MarkdownAppearance
-    ) {
-        guard width > 50 else { return }
-
-        currentWidth = width
-        renderTask?.cancel()
-        let solver = self.solver(
-            for: theme,
-            diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy,
-            appearance: appearance
-        )
-        let job = RenderJob(
-            markdown: markdown,
-            plugins: plugins,
-            solver: solver,
-            width: width,
-            theme: theme,
-            resourceLimits: resourceLimits
-        )
-
-        renderTask = Task {
-            let detached = Task.detached(priority: .userInitiated) {
-                await Self.renderOffMain(job)
-            }
-            let output = await withTaskCancellationHandler {
-                await detached.value
-            } onCancel: {
-                detached.cancel()
-            }
-
-            guard !Task.isCancelled, let output else { return }
-
-            self.lastAST = output.ast
-            self.lastTheme = output.theme
-            self.layouts = output.childLayouts
-        }
-    }
-
-    private nonisolated static func renderOffMain(_ job: RenderJob) async -> RenderOutput? {
-        let parser = MarkdownParser(plugins: job.plugins, limits: job.resourceLimits)
-        let ast = parser.parse(job.markdown)
-
-        guard !Task.isCancelled else { return nil }
-
-        let result = await job.solver.solve(node: ast, constrainedToWidth: job.width)
-
-        guard !Task.isCancelled else { return nil }
-
-        return RenderOutput(
-            ast: ast,
-            theme: job.theme,
-            childLayouts: result.children
-        )
-    }
-
-    func renderForCurrentPlatform(
-        markdown: String,
-        plugins: [ASTPlugin],
-        theme: Theme,
-        fallbackWidth: CGFloat,
-        diagramRegistry: DiagramAdapterRegistry,
-        imageLoadingPolicy: ImageLoadingPolicy,
-        resourceLimits: MarkdownParser.ResourceLimits,
-        appearance: MarkdownAppearance
-    ) {
-        #if canImport(AppKit) && !targetEnvironment(macCatalyst)
-        guard currentWidth > 50 else { return }
-        render(
-            markdown: markdown,
-            plugins: plugins,
-            theme: theme,
-            width: currentWidth,
-            diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy,
-            resourceLimits: resourceLimits,
-            appearance: appearance
-        )
-        #else
-        render(
-            markdown: markdown,
-            plugins: plugins,
-            theme: theme,
-            width: preferredWidth(fallback: fallbackWidth),
-            diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy,
-            resourceLimits: resourceLimits,
-            appearance: appearance
-        )
-        #endif
-    }
-
-    /// Debounced wrapper for text/width changes. Sleeps for `debounceDelay`
-    /// before kicking off the actual parse + layout work. Each new call
-    /// supersedes any pending one, so a fast typist sees a single render
-    /// after they pause instead of one per keystroke.
-    func scheduleDebouncedTextRender(
-        markdown: String,
-        plugins: [ASTPlugin],
-        theme: Theme,
-        fallbackWidth: CGFloat,
-        diagramRegistry: DiagramAdapterRegistry,
-        imageLoadingPolicy: ImageLoadingPolicy,
-        resourceLimits: MarkdownParser.ResourceLimits,
-        appearance: MarkdownAppearance
-    ) {
-        renderTask?.cancel()
-        renderTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
-            guard !Task.isCancelled, let self else { return }
-            self.renderForCurrentPlatform(
-                markdown: markdown,
-                plugins: plugins,
-                theme: theme,
-                fallbackWidth: fallbackWidth,
-                diagramRegistry: diagramRegistry,
-                imageLoadingPolicy: imageLoadingPolicy,
-                resourceLimits: resourceLimits,
-                appearance: appearance
-            )
-        }
-    }
-
-    // `renderOnGeometryChange` lived here until Phase 4.6 collapsed the two
-    // separate `.onChange` handlers (text + width) into one debounced
-    // `scheduleDebouncedTextRender` call. The remaining `updateEffectiveContent-
-    // Width` below still serves the macOS NSScrollView feedback path.
-
-    func updateEffectiveContentWidth(
-        _ width: CGFloat,
-        markdown: String,
-        plugins: [ASTPlugin],
-        theme: Theme,
-        diagramRegistry: DiagramAdapterRegistry,
-        imageLoadingPolicy: ImageLoadingPolicy,
-        resourceLimits: MarkdownParser.ResourceLimits,
-        appearance: MarkdownAppearance
-    ) {
-        guard width > 50 else { return }
-        guard abs(width - currentWidth) > 0.5 else { return }
-
-        render(
-            markdown: markdown,
-            plugins: plugins,
-            theme: theme,
-            width: width,
-            diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy,
-            resourceLimits: resourceLimits,
-            appearance: appearance
-        )
-    }
-    
-    func toggleDetails(
-        at index: Int,
-        currentlyOpen: Bool,
-        width: CGFloat,
-        diagramRegistry: DiagramAdapterRegistry,
-        imageLoadingPolicy: ImageLoadingPolicy,
-        appearance: MarkdownAppearance
-    ) {
-        guard let ast = lastAST,
-              ast.children.indices.contains(index),
-              let details = ast.children[index] as? DetailsNode,
-              let theme = lastTheme else { return }
-
-        let resolvedWidth = preferredWidth(fallback: width)
-
-        var updatedChildren = ast.children
-        updatedChildren[index] = DetailsNode(
-            range: details.range,
-            isOpen: !currentlyOpen,
-            summary: details.summary,
-            children: details.children
-        )
-        let toggledDocument = DocumentNode(range: ast.range, children: updatedChildren)
-
-        // Reuse the persistent solver so unchanged sibling blocks (everything
-        // except the toggled DetailsNode) come back from cache instead of being
-        // re-measured.
-        let solver = self.solver(
-            for: theme,
-            diagramRegistry: diagramRegistry,
-            imageLoadingPolicy: imageLoadingPolicy,
-            appearance: appearance
-        )
-
-        renderTask?.cancel()
-        renderTask = Task {
-            let result = await solver.solve(node: toggledDocument, constrainedToWidth: resolvedWidth)
-
-            if Task.isCancelled { return }
-
-            self.lastAST = toggledDocument
-            self.layouts = result.children
-        }
     }
 }
 #endif

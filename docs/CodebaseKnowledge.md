@@ -65,7 +65,7 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **405** discoverable tests
+- `swift test list`: **411** discoverable tests
 - `swift test`: no execution log supplied for this refresh
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
@@ -73,12 +73,12 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 Pipeline:
 
-1. `MarkdownParser.parse(_:)`
-2. `swift-markdown` produces `Document`
-3. `MarkdownKitVisitor` maps to internal `MarkdownNode` structs
-4. `ASTPlugin` chain rewrites AST (`Details`, `Diagram`, `Math`, optional `GitHubAutolink`)
+1. `MarkdownView` creates `MarkdownRenderInput`; `MarkdownEngine` (`@MainActor`) coalesces single-flight requests (one active detached render + one latest pending request).
+2. Parse boundary uses `MarkdownParseKey` (`text` + `resourceLimits` + ordered plugin fingerprint); only matching keys can reuse cached raw AST.
+3. On parse misses, task-confined `MarkdownParser` + plugin chain produce a fresh internal `DocumentNode`.
+4. Details disclosure overrides are reapplied to the latest configuration before layout.
 5. `LayoutSolver.solve(node:width:)` builds attributed content + measured sizes (`TextKitCalculator`)
-6. `LayoutCache` memoizes `(nodeID, width-bucket)` results
+6. `LayoutCache` memoizes `(node.contentFingerprint, rounded width, solver variant hash)` results
 7. UI containers mount `LayoutResult` rows (`MarkdownCollectionView` iOS/macOS)
 8. Async node views render text/code/image (`AsyncTextView`, `AsyncCodeView`, `AsyncImageView`)
 
@@ -120,7 +120,7 @@ Primary files:
 - `Sources/MarkdownKit/Theme/Theme.swift`
 
 Key facts:
-- `LayoutCache` now uses deterministic width bucketing for hash/equality consistency.
+- `LayoutCache` keys are `node.contentFingerprint` + rounded width + solver variant hash (theme/diagram/math/image policy/appearance inputs).
 - `AttributedStringBuilder` acts as the master coordinator delegating block constructions to isolated async-friendly builders (Table, Math, Image).
 - `TextKitCalculator` safely isolates layout passes to avoid concurrent `NSLayoutManager` data dictionary deadlocks via tight locks.
 - Code blocks support optional language badge + Splash highlighting.
@@ -135,11 +135,12 @@ Key facts:
 
 Primary files:
 - iOS: `UI/iOS/MarkdownCollectionView_iOS.swift`, `UI/iOS/MarkdownCollectionViewCell.swift`
-- Shared components: `UI/Components/AsyncTextView.swift`, `AsyncCodeView.swift`, `AsyncImageView.swift`
+- Shared components: `UI/Components/AsyncTextView.swift`, `AsyncCodeView.swift`, `AsyncImageView.swift`, `UI/SwiftUI/MarkdownRenderCoordinator.swift`
 - macOS: `UI/macOS/MarkdownCollectionView_macOS.swift`, `UI/macOS/MarkdownItemView.swift`
 
 Key facts:
 - `MarkdownCollectionViewCell` (iOS) and `MarkdownItemView` (macOS) natively implement Texture-style view layer recycling, maintaining `AsyncView` allocations and CALayers across high-speed lists.
+- macOS resize updates are coalesced through effective-content-width reporting plus the SwiftUI coordinator's 200ms debounce/latest-request replacement path.
 
 ## 5. Automated Test Strategy (Current State)
 

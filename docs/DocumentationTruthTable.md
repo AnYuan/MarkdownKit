@@ -1,4 +1,4 @@
-# Documentation Truth Table (2026-07-16)
+# Documentation Truth Table (2026-07-17)
 
 本表用于快速判断当前仓库文档的“可依赖程度”，并给出最小修复动作。
 
@@ -37,8 +37,8 @@
 ## 证据锚点（用于核对）
 
 - API facade 已存在: `Sources/MarkdownKit/MarkdownKit.swift`
-- 当前测试文件数量: `find Tests/MarkdownKitTests -maxdepth 1 -type f -name '*.swift' | wc -l`（当前为 69）
-- 当前可发现测试数: `swift test list`（405）；`TestCoverage` 本次未提供全量执行日志: `docs/TestCoverage.md`
+- 当前测试文件数量: `find Tests/MarkdownKitTests -maxdepth 1 -type f -name '*.swift' | wc -l`（当前为 70）
+- 当前可发现测试数: `swift test list`（411）；`TestCoverage` 本次未提供全量执行日志: `docs/TestCoverage.md`
 - Benchmark 文档事实源: `Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json`；生成一致性检查: `python3 scripts/render_benchmark_baseline.py --check`
 - 严格文档新鲜度门禁: `bash scripts/check_doc_freshness.sh`
 - `evaluation_report` 已改为当前风险基线: `docs/evaluation_report.md`

@@ -63,10 +63,12 @@ bash scripts/verify_all.sh --full
 
 ### Phase C: Targeted Regression Pack
 **Goal**: prevent recurrence of known rendering failures.
-1. Add explicit regression tests for details toggle state handling.
+1. ✅ Add explicit regression tests for details toggle stale-configuration handling (`MarkdownRenderCoordinatorTests.testDebouncedDarkToggleUsesLatestConfigurationWithoutReparse`).
 2. Add explicit regression tests for table readability (no column collapse, alignment correctness).
 3. Add explicit regression tests for image attachment rendering and fallback behavior.
 4. Add explicit regression tests for diagram fallback rendering behavior.
+
+Phase C note: this coordinator/details regression fix does **not** claim the separate iOS details tap-gesture gap is fixed.
 
 ### Phase D: Stress and Mixed-Case Reliability
 **Goal**: catch crashers and pathological layout behavior.

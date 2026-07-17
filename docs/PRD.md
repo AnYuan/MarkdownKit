@@ -111,7 +111,7 @@ Required automated coverage dimensions:
 ### 6.2 Test Types and Ownership
 1. **Syntax Fixture Tests** (unit/integration): assert AST shape, node counts, and expected semantic transforms.
 2. **Layout Invariant Tests** (integration): assert finite geometry, stable top-level layout counts, attachment presence rules, and table readability constraints.
-3. **Regression Tests for Known Bugs**: explicit tests for previously fixed issues (details toggle state, table column collapse, image fallback rendering, diagram fallback rendering, inline code visual tokenization).
+3. **Regression Tests for Known Bugs**: explicit tests for previously fixed issues, including the SwiftUI coordinator details stale-config regression (`MarkdownRenderCoordinatorTests.testDebouncedDarkToggleUsesLatestConfigurationWithoutReparse`), table column collapse, image fallback rendering, diagram fallback rendering, and inline code visual tokenization.
 4. **Optional Visual Snapshots** (platform-specific): for high-value visual blocks (tables, code, math, details).
 5. **Stress and Fuzz-like Tests**: deterministic permutation suites that run in CI and fail on crashes or invalid geometry.
 
@@ -126,6 +126,7 @@ Operational constraints:
 1. Default tests must not rely on external network availability.
 2. Fixture tests must be deterministic and reproducible on local machines and CI runners.
 3. Every newly supported syntax feature must add at least one positive test and one fallback or error-path test.
+4. The coordinator stale-config details regression coverage above does **not** imply the separate iOS details tap-gesture gap is fixed.
 
 ## 7. GitHub Advanced Formatting Parity (Source of Truth)
 

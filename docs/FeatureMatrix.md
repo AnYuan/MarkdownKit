@@ -15,7 +15,7 @@ This document traces the advanced parsing and layout features (defined in Phase 
 ## P1: Advanced Formatting Features
 | Feature | Status | Covered By Unit/Snapshot Tests |
 | :--- | :---: | :--- |
-| `<details>/<summary>` Collapsible Blocks | ✅ | `DetailsExtractionPluginTests.testMatchesSummaryAndContent` |
+| `<details>/<summary>` Collapsible Blocks | ✅ | `DetailsExtractionPluginTests.swift`, `MarkdownRenderCoordinatorTests.testDebouncedDarkToggleUsesLatestConfigurationWithoutReparse` |
 | Diagram Fenced Languages (`mermaid`, etc) | ✅ | `DiagramExtractionPluginTests.swift` |
 | GitHub Autolinks (`@mentions`, `#issues`) | ✅ | `GitHubAutolinkPluginTests.swift` |
 | Interactive Task Lists | ✅ | `SnapshotTests.testTasklistRendering` |

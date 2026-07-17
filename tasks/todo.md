@@ -304,8 +304,24 @@ review the complete diff, then commit and push before starting the next stage.
   388 tests), visual and determinism snapshot gates (4/4 each), and the iOS
   Simulator gate (444 tests) all pass. iOS logs contain no XCTest process
   restarts or private-font fallback diagnostics, and `git diff --check` is clean.
-- [ ] `perf: coalesce render jobs and reuse parsed ASTs`
-  Bound in-flight parsing and skip reparsing for width-only layout changes.
+- [x] `perf: coalesce render jobs and reuse parsed ASTs`
+  Replace cancel-and-restart rendering with a latest-request single-flight
+  coordinator: one active detached parse/layout job, one overwrite-only pending
+  request, and generation-guarded publication. Cache raw ASTs by text, parser
+  limits, and ordered plugin configuration so width/theme/appearance/diagram/
+  image-policy changes relayout without reparsing. Route macOS effective-width
+  feedback through the same coalescing path and apply details disclosure as an
+  override on the latest full configuration so toggles cannot publish stale
+  `lastAST`/`lastTheme` state. Review: request preparation occurs immediately
+  before execution so canceled parsing can seed same-key reuse; parse-key
+  changes clear disclosure overrides, while source-state toggles prune them;
+  redundant hot-path state and work were removed. Validation: 10 focused
+  coordinator/render-input tests, 10 consecutive coordinator-suite passes,
+  strict documentation freshness (411 discoverable tests), the complete macOS
+  correctness gate (394 tests), visual and determinism snapshot gates (4/4
+  each), and the iOS Simulator gate (450 tests) all pass. iOS logs contain no
+  XCTest process restarts or private-font fallback diagnostics, and
+  `git diff --check` is clean.
 - [ ] `refactor: establish one image-loading pipeline`
   Decide the supported image surfaces, centralize fetch validation, and downsample
   live inline images before caching.
