@@ -490,3 +490,23 @@ review the complete diff, then commit and push before starting the next stage.
 - [ ] `chore: establish release and repository hygiene`
   Pin moving dependencies, add license/notices/changelog, adopt valid SemVer tags,
   record vendored resource provenance, and remove orphan generated artifacts.
+  Q20 release decisions: MarkdownKit uses the MIT license; the completed release
+  is tagged `v0.4.0`; legacy `0.02` and `0.03` tags remain untouched.
+  - [x] Q20-A pin `swift-markdown` to immutable release `0.8.0`, refresh the
+    resolution, review compatibility, and commit/push independently.
+  - [ ] Q20-B add MIT licensing, third-party notices, provenance metadata, and
+    dependency/Mermaid drift verification; commit/push independently.
+  - [ ] Q20-C add normalized macOS/iOS public API baselines and CI freshness
+    checks with concise diffs; commit/push independently.
+  - [ ] Q20-D remove only verified-unreferenced scratch and stale generated
+    Tuist/Xcode artifacts while preserving supported SwiftPM workflows;
+    commit/push independently.
+  - [ ] Q20-E add the changelog/release procedure, run the complete release
+    matrix, commit/push, and create/push annotated tag `v0.4.0`.
+  Q20-A review: the package now uses canonical
+  `swiftlang/swift-markdown` exact 0.8.0 at
+  `3c6f9523da3a1ec2fd829673e472d95b8097a3b8`. The only transitive lockfile
+  normalization is `swift-cmark` 0.8.0 at its existing revision; every other
+  pin is unchanged. Build, 29 focused parser/plugin tests, 499 macOS
+  correctness tests, 550 iOS Simulator tests, both 4-test snapshot gates, and
+  the complete benchmark gate pass.

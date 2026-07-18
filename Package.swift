@@ -21,7 +21,7 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-markdown.git", branch: "main"),
+        .package(url: "https://github.com/swiftlang/swift-markdown.git", exact: "0.8.0"),
         .package(url: "https://github.com/JohnSundell/Splash.git", from: "0.16.0"),
         .package(url: "https://github.com/colinc86/MathJaxSwift.git", from: "3.4.0"),
         .package(url: "https://github.com/swhitty/SwiftDraw", from: "0.18.0"),
