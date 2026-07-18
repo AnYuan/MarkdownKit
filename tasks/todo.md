@@ -504,7 +504,7 @@ review the complete diff, then commit and push before starting the next stage.
       baselines and report concise added/removed/changed drift.
     - [x] Q20-C3 integrate matching CI/local gates, document refresh workflow,
       review negative fixtures, validate both platforms, then commit/push.
-  - [ ] Q20-D remove only verified-unreferenced scratch and stale generated
+  - [x] Q20-D remove only verified-unreferenced scratch and stale generated
     Tuist/Xcode artifacts while preserving supported SwiftPM workflows;
     commit/push independently.
   - [ ] Q20-E add the changelog/release procedure, run the complete release
@@ -545,3 +545,13 @@ review the complete diff, then commit and push before starting the next stage.
   Pinning Xcode 26.4.1 exposed a pre-existing Mermaid/WebKit cold-start race;
   its reviewed runtime fix was committed and pushed independently as `011cf38`
   before the API baseline commit.
+  Q20-D review: removed the stale `MarkdownKit.xcodeproj`,
+  `MarkdownKitDemo.xcworkspace`, three generated `Derived/` files, and two
+  unreferenced root performance scratch notes. Rooted ignore rules prevent
+  regeneration from re-entering version control. Formal arithmetic/layout/
+  pretext/evaluation reports, snapshot baselines, benchmark JSON, generated
+  benchmark documentation, legal records, and all SwiftPM sources remain.
+  Q20-D validation: `swift package describe`, `swift build`, provenance, 499
+  macOS correctness tests, macOS plus arm64/x86_64 iOS API checks, 516-test
+  documentation freshness, both 4-test snapshot contracts, and 550 iOS
+  Simulator tests pass with the generated project artifacts absent.

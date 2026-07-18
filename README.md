@@ -275,7 +275,7 @@ One-shot full suite (includes all tests, including benchmarks/snapshots):
 bash scripts/verify_all.sh --full
 ```
 
-iOS Simulator correctness lane (builds and runs the package's tests with `xcodebuild` against a dynamically-selected iOS Simulator, since the tracked `MarkdownKit.xcodeproj` has no test action):
+iOS Simulator correctness lane: `verify_ios.sh` creates a package-only workspace from `Package.swift`, `Package.resolved`, `Sources`, and `Tests`, then runs the package's tests with `xcodebuild` against a dynamically-selected iOS Simulator:
 
 ```bash
 bash scripts/verify_ios.sh

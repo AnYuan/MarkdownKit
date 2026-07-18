@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
 #
-# iOS Simulator correctness lane.
+# Supported iOS Simulator correctness lane for the SwiftPM package.
 #
-# The tracked MarkdownKit.xcodeproj is stale: it has no test action and does
-# not track the package test target, so it cannot run the package's tests on
-# an iOS Simulator. This script instead synthesizes an ad hoc, package-only
-# xcodebuild "workspace" (a directory containing only symlinks to
-# Package.swift/Package.resolved/Sources/Tests) so xcodebuild derives the
-# `MarkdownKit-Package` scheme straight from SwiftPM metadata, with no
-# project file in the way to shadow scheme discovery.
+# This script synthesizes a package-only xcodebuild workspace containing
+# symlinks to Package.swift, Package.resolved, Sources, and Tests. xcodebuild
+# derives the `MarkdownKit-Package` scheme directly from SwiftPM metadata;
+# source-tree project and workspace artifacts do not participate.
 #
 # Suite selection is done by statically scanning Tests/MarkdownKitTests for
 # `class X: XCTestCase` declarations rather than via `swift test list`,
@@ -75,9 +72,9 @@ echo "============================================================"
 rm -rf "$WORKSPACE_DIR" "$DERIVED_DATA_DIR"
 mkdir -p "$WORKSPACE_DIR" "$DERIVED_DATA_DIR"
 
-# Symlink only the inputs xcodebuild needs to synthesize the
-# `MarkdownKit-Package` scheme. Deliberately excludes MarkdownKit.xcodeproj
-# and MarkdownKitDemo.xcworkspace so they cannot shadow scheme discovery.
+# Symlink only SwiftPM package inputs so xcodebuild synthesizes the
+# `MarkdownKit-Package` scheme without source-tree project or workspace
+# participation.
 ln -s "$ROOT_DIR/Package.swift" "$WORKSPACE_DIR/Package.swift"
 ln -s "$ROOT_DIR/Package.resolved" "$WORKSPACE_DIR/Package.resolved"
 ln -s "$ROOT_DIR/Sources" "$WORKSPACE_DIR/Sources"
