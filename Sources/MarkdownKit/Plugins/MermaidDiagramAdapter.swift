@@ -85,6 +85,11 @@ extension MermaidDiagramAdapter {
         MermaidSnapshotter.shared.timeOutActiveRenderForTesting()
     }
 
+    @MainActor
+    static func invalidateSnapshotterReadinessForTesting() {
+        MermaidSnapshotter.shared.invalidateReadinessForTesting()
+    }
+
 }
 
 enum MermaidResourceLocator {
@@ -170,6 +175,9 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     }
 
     private var webView: WKWebView
+    private let hasConfiguredBundledScript: Bool
+    private var loadingNavigation: WKNavigation?
+    private var readinessProbeID: UUID?
     private var activeRequest: Request?
     private var queue: [Request] = []
     private var timeoutTask: Task<Void, Never>?
@@ -194,6 +202,27 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     
     override init() {
         let configuration = WKWebViewConfiguration()
+        if let scriptURL = MermaidResourceLocator.bundledScriptURL() {
+            do {
+                let scriptSource = try String(contentsOf: scriptURL, encoding: .utf8)
+                configuration.userContentController.addUserScript(
+                    WKUserScript(
+                        source: scriptSource,
+                        injectionTime: .atDocumentEnd,
+                        forMainFrameOnly: true
+                    )
+                )
+                hasConfiguredBundledScript = true
+            } catch {
+                MermaidDiagramAdapter.logger.error(
+                    "Could not configure Mermaid script source: \(error)"
+                )
+                hasConfiguredBundledScript = false
+            }
+        } else {
+            MermaidDiagramAdapter.logger.error("Could not locate Mermaid script source")
+            hasConfiguredBundledScript = false
+        }
 
         webView = WKWebView(
             frame: CGRect(x: 0, y: 0, width: 640, height: 480),
@@ -210,8 +239,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         webView.setValue(false, forKey: "drawsBackground")
         #endif
 
-        // Load base HTML and inject JS once
-        webView.loadHTMLString(MermaidHTMLBuilder.makeBaseHTML(), baseURL: nil)
+        loadBaseHTML()
     }
     
     func takeSnapshot(source: String) async -> NativeImage? {
@@ -255,9 +283,18 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
 
         queue.append(request)
 
+        guard hasConfiguredBundledScript else {
+            MermaidDiagramAdapter.logger.error(
+                "Mermaid bundled script is unavailable; failing queued renders"
+            )
+            failQueuedRenders()
+            return
+        }
+
         if isWebViewReady {
             processNext()
         } else {
+            ensureWebViewIsLoading()
             scheduleReadinessTimeoutIfNeeded()
         }
     }
@@ -392,24 +429,55 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     }
     
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Once HTML is loaded, inject mermaid.min.js manually to ensure global scope
-        if let scriptURL = MermaidResourceLocator.bundledScriptURL(),
-           let scriptSource = try? String(contentsOf: scriptURL, encoding: .utf8) {
-            webView.evaluateJavaScript(scriptSource) { [weak self] _, error in
-                guard let self else { return }
-                if let error {
-                    MermaidDiagramAdapter.logger.error("Failed to initialize mermaid JS bundle: \(error)")
-                    self.failQueuedRenders()
-                } else {
-                    self.readinessTimeoutTask?.cancel()
-                    self.readinessTimeoutTask = nil
-                    self.isWebViewReady = true
-                    self.processNext()
-                }
-            }
-        } else {
-            MermaidDiagramAdapter.logger.error("Could not load Mermaid script source")
+        guard hasConfiguredBundledScript else {
+            MermaidDiagramAdapter.logger.error(
+                "Mermaid bundled script was not configured; failing queued renders"
+            )
             failQueuedRenders()
+            return
+        }
+        guard !isWebViewReady,
+              readinessProbeID == nil,
+              isCurrentLoadingNavigation(navigation) else {
+            return
+        }
+
+        let probeID = UUID()
+        readinessProbeID = probeID
+        webView.callAsyncJavaScript(
+            "return typeof window.mermaid !== 'undefined';",
+            arguments: [:],
+            in: nil,
+            in: .page
+        ) { [weak self, weak webView] result in
+            guard let self, let webView,
+                  self.webView === webView,
+                  self.readinessProbeID == probeID else {
+                return
+            }
+
+            switch result {
+            case .failure(let error):
+                MermaidDiagramAdapter.logger.error(
+                    "Mermaid WebView readiness probe failed: \(error)"
+                )
+                self.failQueuedRenders()
+            case .success(let result):
+                guard let isMermaidAvailable = result as? Bool, isMermaidAvailable else {
+                    MermaidDiagramAdapter.logger.error(
+                        "Mermaid WebView readiness probe did not find window.mermaid"
+                    )
+                    self.failQueuedRenders()
+                    return
+                }
+
+                self.readinessProbeID = nil
+                self.loadingNavigation = nil
+                self.readinessTimeoutTask?.cancel()
+                self.readinessTimeoutTask = nil
+                self.isWebViewReady = true
+                self.processNext()
+            }
         }
     }
 
@@ -418,12 +486,9 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         didFail navigation: WKNavigation!,
         withError error: Error
     ) {
+        guard isCurrentLoadingNavigation(navigation) else { return }
         MermaidDiagramAdapter.logger.error("Mermaid WebView failed navigation: \(error)")
-        if isWebViewReady {
-            finishCurrentActiveRequest(image: nil)
-        } else {
-            failQueuedRenders()
-        }
+        failQueuedRenders()
     }
 
     func webView(
@@ -431,12 +496,9 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         didFailProvisionalNavigation navigation: WKNavigation!,
         withError error: Error
     ) {
+        guard isCurrentLoadingNavigation(navigation) else { return }
         MermaidDiagramAdapter.logger.error("Mermaid WebView failed provisional navigation: \(error)")
-        if isWebViewReady {
-            finishCurrentActiveRequest(image: nil)
-        } else {
-            failQueuedRenders()
-        }
+        failQueuedRenders()
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
@@ -483,6 +545,9 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     }
 
     private func failQueuedRenders() {
+        isWebViewReady = false
+        loadingNavigation = nil
+        readinessProbeID = nil
         readinessTimeoutTask?.cancel()
         readinessTimeoutTask = nil
 
@@ -586,10 +651,45 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     }
 
     private func reloadWebView() {
+        loadBaseHTML()
+    }
+
+    private func ensureWebViewIsLoading() {
+        guard !isWebViewReady,
+              loadingNavigation == nil,
+              readinessProbeID == nil else {
+            return
+        }
+        loadBaseHTML()
+    }
+
+    private func loadBaseHTML() {
         isWebViewReady = false
+        readinessProbeID = nil
         readinessTimeoutTask?.cancel()
         readinessTimeoutTask = nil
-        webView.loadHTMLString(MermaidHTMLBuilder.makeBaseHTML(), baseURL: nil)
+
+        guard hasConfiguredBundledScript else {
+            MermaidDiagramAdapter.logger.error(
+                "Mermaid bundled script is unavailable; failing queued renders"
+            )
+            failQueuedRenders()
+            return
+        }
+
+        loadingNavigation = webView.loadHTMLString(
+            MermaidHTMLBuilder.makeBaseHTML(),
+            baseURL: nil
+        )
+    }
+
+    private func isCurrentLoadingNavigation(_ navigation: WKNavigation?) -> Bool {
+        guard let navigation, let loadingNavigation else { return false }
+        return navigation === loadingNavigation
+    }
+
+    func invalidateReadinessForTesting() {
+        failQueuedRenders()
     }
 
     private func finish(_ request: Request, image: NativeImage?) {

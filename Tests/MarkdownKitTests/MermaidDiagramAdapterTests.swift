@@ -143,7 +143,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
     }
 
     @MainActor
-    func testTimedOutRenderReloadsWebViewBeforeRetry() async throws {
+    func testTimedOutRenderAndInitializationFailureRecoverBeforeRetry() async throws {
         try await resetSnapshotter()
         let adapter = MermaidDiagramAdapter()
         let source = "graph TD;\nA-->B;"
@@ -162,6 +162,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         let timedOutWasNil = await timedOutTask.value
         XCTAssertTrue(timedOutWasNil)
 
+        MermaidDiagramAdapter.invalidateSnapshotterReadinessForTesting()
         let retry = try await renderedAttachment(from: adapter, source: source)
         let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
 
