@@ -275,7 +275,7 @@ One-shot full suite (includes all tests, including benchmarks/snapshots):
 bash scripts/verify_all.sh --full
 ```
 
-iOS Simulator correctness lane: `verify_ios.sh` creates a package-only workspace from `Package.swift`, `Package.resolved`, `Sources`, and `Tests`, then runs the package's tests with `xcodebuild` against a dynamically-selected iOS Simulator:
+iOS Simulator correctness lane: `verify_ios.sh` creates a package-only workspace from `Package.swift`, `Package.resolved`, `Sources`, and `Tests`, then runs the package's tests with `xcodebuild` against an iOS Simulator matching the active Xcode iPhone Simulator SDK. Set `MARKDOWNKIT_IOS_SIMULATOR_UDID` to explicitly override that selection:
 
 ```bash
 bash scripts/verify_ios.sh
@@ -293,7 +293,7 @@ Verification is split into seven honestly-scoped contracts rather than one monol
   - `--visual` diffs the current run against the *committed* baseline PNGs. Although Xcode is pinned, the `macos-26` runner's fonts and OS point releases can still move under us, so this is a genuine visual-regression signal but is **non-blocking** (`continue-on-error: true`) since environment drift alone can flip it.
   - `--determinism` records fresh baselines and immediately re-verifies against them in the *same* run/environment, then restores the original snapshot directory. This proves the renderer is internally deterministic and is **blocking**.
   - `iOSSnapshotTests` currently has no committed baseline or dedicated CI lane; it is intentionally excluded from both `verify_fast.sh` and `verify_snapshots.sh` and should not be read as covered by either gate.
-- **iOS Simulator suite** (`verify_ios.sh`, CI job `verify-ios`): Discovers the same correctness suites by scanning source (minus benchmarks and true snapshot suites), verifies the compiled iOS test bundle contains every UIKit-bearing suite, and runs the enumerated tests on a dynamically-selected iOS Simulator via `xcodebuild`, with exact executed-count validation, per-test timeouts, crash/restart detection, and a private system-font fallback check.
+- **iOS Simulator suite** (`verify_ios.sh`, CI job `verify-ios`): Discovers the same correctness suites by scanning source (minus benchmarks and true snapshot suites), verifies the compiled iOS test bundle contains every UIKit-bearing suite, and runs the enumerated tests via `xcodebuild` on an iOS Simulator matching the active Xcode iPhone Simulator SDK (unless `MARKDOWNKIT_IOS_SIMULATOR_UDID` explicitly overrides it), with exact executed-count validation, per-test timeouts, crash/restart detection, and a private system-font fallback check.
 - **Benchmark suite** (`verify_benchmarks.sh`): Heavy performance regression tests. Run locally or through deliberately configured manual/scheduled automation; they are not part of PR CI. The gate first checks that `docs/BENCHMARK_BASELINE.md` is up to date with `Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json` (the authoritative, machine-readable baseline consumed by both the docs and `BenchmarkRegressionGuard`) via `python3 scripts/render_benchmark_baseline.py --check`, failing fast before any timing suite runs if the baseline is malformed or the doc is stale. After editing the baseline JSON, refresh the doc with `python3 scripts/render_benchmark_baseline.py`.
 - Running bare `swift test` executes everything including benchmarks and true snapshot suites. Prefer `verify_fast.sh` for daily iteration.
 

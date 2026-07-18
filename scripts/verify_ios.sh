@@ -109,46 +109,59 @@ echo "============================================================"
 echo "[DISCOVER] Selecting an iOS Simulator destination"
 echo "============================================================"
 
-select_newest_phone_simulator() {
+IPHONE_SIMULATOR_SDK_VERSION="$(xcrun --sdk iphonesimulator --show-sdk-version 2>/dev/null)" || {
+  echo "ERROR: could not determine the active iPhone Simulator SDK version with 'xcrun --sdk iphonesimulator --show-sdk-version'." >&2
+  exit 1
+}
+if [[ ! "$IPHONE_SIMULATOR_SDK_VERSION" =~ ^([0-9]+)\.([0-9]+)(\.[0-9]+)?$ ]]; then
+  echo "ERROR: active iPhone Simulator SDK version '$IPHONE_SIMULATOR_SDK_VERSION' is not a supported major.minor version." >&2
+  exit 1
+fi
+IPHONE_SIMULATOR_SDK_MAJOR="${BASH_REMATCH[1]}"
+IPHONE_SIMULATOR_SDK_MINOR="${BASH_REMATCH[2]}"
+TARGET_SIMULATOR_RUNTIME="com.apple.CoreSimulator.SimRuntime.iOS-${IPHONE_SIMULATOR_SDK_MAJOR}-${IPHONE_SIMULATOR_SDK_MINOR}"
+
+select_sdk_matched_phone_simulator() {
   xcrun simctl list devices available -j 2>/dev/null | jq -r '
-    .devices
-    | to_entries[]
-    | select(.key | test("com\\.apple\\.CoreSimulator\\.SimRuntime\\.iOS"))
-    | . as $e
-    | ($e.key | capture("iOS-(?<maj>[0-9]+)-(?<min>[0-9]+)")) as $v
-    | $e.value[]
-    | select(.isAvailable == true)
-    | {
-        runtime: $e.key,
-        major: ($v.maj | tonumber),
-        minor: ($v.min | tonumber),
-        isPhone: (.deviceTypeIdentifier | test("iPhone")),
-        name: .name,
-        udid: .udid
-      }
-  ' | jq -s -r '
-    sort_by([-.major, -.minor, (if .isPhone then 0 else 1 end), .name])
+    .devices[$runtime] // []
+    | map(
+        select(.isAvailable == true)
+        | {
+            isPhone: ((.deviceTypeIdentifier // "") | test("iPhone")),
+            name: .name,
+            udid: .udid
+          }
+      )
+    | sort_by([(if .isPhone then 0 else 1 end), .name, .udid])
     | .[0]
-    | if . == null then empty else "\(.udid)|\(.name)|\(.runtime)" end
-  '
+    | if . == null then empty else "\(.udid)|\(.name)|\($runtime)" end
+  ' --arg runtime "$TARGET_SIMULATOR_RUNTIME"
 }
 
 if [[ -n "${MARKDOWNKIT_IOS_SIMULATOR_UDID:-}" ]]; then
   SIMULATOR_UDID="$MARKDOWNKIT_IOS_SIMULATOR_UDID"
-  SIMULATOR_NAME="$(xcrun simctl list devices available -j 2>/dev/null | jq -r \
+  OVERRIDE_SELECTION="$(xcrun simctl list devices available -j 2>/dev/null | jq -r \
     --arg udid "$SIMULATOR_UDID" \
-    '.devices | to_entries[] | .value[] | select(.udid == $udid) | .name' | head -1)"
-  if [[ -z "$SIMULATOR_NAME" ]]; then
+    '.devices
+     | to_entries[]
+     | . as $entry
+     | $entry.value[]
+     | select(.udid == $udid)
+     | "\(.name)|\($entry.key)"' | head -1)"
+  if [[ -z "$OVERRIDE_SELECTION" ]]; then
     echo "ERROR: MARKDOWNKIT_IOS_SIMULATOR_UDID='$SIMULATOR_UDID' does not match any available simulator." >&2
     echo "Run 'xcrun simctl list devices available' to see valid UDIDs." >&2
     exit 1
   fi
-  echo "Using operator-overridden simulator: $SIMULATOR_NAME ($SIMULATOR_UDID)"
+  SIMULATOR_NAME="${OVERRIDE_SELECTION%%|*}"
+  SIMULATOR_RUNTIME="${OVERRIDE_SELECTION#*|}"
+  echo "Using operator-overridden simulator: $SIMULATOR_NAME ($SIMULATOR_UDID) on $SIMULATOR_RUNTIME"
+  echo "Active iPhone Simulator SDK $IPHONE_SIMULATOR_SDK_VERSION selects $TARGET_SIMULATOR_RUNTIME; the explicit override is allowed to differ."
 else
-  SELECTION="$(select_newest_phone_simulator)"
+  SELECTION="$(select_sdk_matched_phone_simulator)"
   if [[ -z "$SELECTION" ]]; then
-    echo "ERROR: no available iOS Simulator device found via 'xcrun simctl list devices available -j'." >&2
-    echo "Install an iOS simulator runtime, or set MARKDOWNKIT_IOS_SIMULATOR_UDID to an existing device UDID." >&2
+    echo "ERROR: no available iOS Simulator device was found for active iPhone Simulator SDK $IPHONE_SIMULATOR_SDK_VERSION (runtime $TARGET_SIMULATOR_RUNTIME)." >&2
+    echo "Install or create a device for that runtime, or set MARKDOWNKIT_IOS_SIMULATOR_UDID to an available device UDID." >&2
     exit 1
   fi
   SIMULATOR_UDID="${SELECTION%%|*}"
@@ -159,6 +172,17 @@ else
 fi
 
 DESTINATION="platform=iOS Simulator,id=$SIMULATOR_UDID"
+
+echo
+echo "============================================================"
+echo "[SETUP] Waiting for the selected iOS Simulator to fully boot"
+echo "============================================================"
+
+if ! xcrun simctl bootstatus "$SIMULATOR_UDID" -b; then
+  echo "ERROR: simulator '$SIMULATOR_NAME' ($SIMULATOR_UDID) did not complete a full boot." >&2
+  echo "Resolve the simulator boot failure, or set MARKDOWNKIT_IOS_SIMULATOR_UDID to an available device UDID." >&2
+  exit 1
+fi
 
 echo
 echo "============================================================"
