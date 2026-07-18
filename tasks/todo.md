@@ -494,7 +494,7 @@ review the complete diff, then commit and push before starting the next stage.
   is tagged `v0.4.0`; legacy `0.02` and `0.03` tags remain untouched.
   - [x] Q20-A pin `swift-markdown` to immutable release `0.8.0`, refresh the
     resolution, review compatibility, and commit/push independently.
-  - [ ] Q20-B add MIT licensing, third-party notices, provenance metadata, and
+  - [x] Q20-B add MIT licensing, third-party notices, provenance metadata, and
     dependency/Mermaid drift verification; commit/push independently.
   - [ ] Q20-C add normalized macOS/iOS public API baselines and CI freshness
     checks with concise diffs; commit/push independently.
@@ -510,3 +510,16 @@ review the complete diff, then commit and push before starting the next stage.
   pin is unchanged. Build, 29 focused parser/plugin tests, 499 macOS
   correctness tests, 550 iOS Simulator tests, both 4-test snapshot gates, and
   the complete benchmark gate pass.
+  Q20-B review: MarkdownKit now has an MIT license, exact top-level notices,
+  checked-in upstream legal texts, a closed machine-readable provenance lock,
+  and a complete 62-package Mermaid UMD inventory/license report. Reviewed
+  policy digests independently anchor the manifest/resolution metadata, legal
+  file set, Mermaid inventory, report, and bundle so updating only the lock
+  cannot approve drift. The CI/wrapper path resolves `Package.swift` before the
+  offline verifier, while the Mermaid refresh procedure remains explicit and
+  separate from normal CI.
+  Q20-B validation: the positive resolve/provenance gate and 9 isolated negative
+  drift fixtures pass; final independent review found no material issue. The
+  macOS correctness gate ran 499 tests, documentation freshness matched 516
+  discoverable tests, both 4-test snapshot contracts passed, and the iOS
+  Simulator gate ran 550 tests without failures or private-font diagnostics.

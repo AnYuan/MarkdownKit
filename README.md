@@ -206,6 +206,18 @@ Strict documentation freshness gate:
 bash scripts/check_doc_freshness.sh
 ```
 
+Release metadata / provenance gate:
+
+```bash
+bash scripts/verify_provenance.sh
+```
+
+The wrapper first resolves the package graph from `Package.swift`, then runs the
+offline Python verifier against `Package.resolved`, checked-in legal files, and
+vendored-resource policy anchors. See
+[`docs/MERMAID_PROVENANCE.md`](docs/MERMAID_PROVENANCE.md) for the separate,
+networked Mermaid rebuild and inventory-refresh procedure.
+
 Snapshot contracts (macOS only, two independent modes — see below):
 
 ```bash
@@ -224,6 +236,9 @@ Combined wrapper (fast + optional heavy):
 ```bash
 bash scripts/verify_all.sh
 ```
+
+`verify_all.sh` always resolves dependencies and runs the provenance gate first.
+`--full` then runs `swift test`.
 
 Optional heavy benchmark suites:
 
@@ -245,8 +260,9 @@ bash scripts/verify_ios.sh
 
 ### Test Split Strategy
 
-CI enforces four separate, honestly-scoped contracts rather than one monolithic test run:
+Verification is split into six honestly-scoped contracts rather than one monolithic test run:
 
+- **Provenance gate** (`verify_provenance.sh`, all CI jobs): Resolves the manifest-derived package graph before invoking the read-only, offline `verify_provenance.py` drift check for `Package.resolved`, the vendored Mermaid artifact, and checked-in third-party notice coverage.
 - **Correctness gate** (`verify_fast.sh`, CI job `verify`): Discovers every `XCTestCase` suite in `MarkdownKitTests` via `swift test list` and runs all of them except the benchmark suites and the two true snapshot suites (`SnapshotTests`, `iOSSnapshotTests`). It is correctness-only in every environment — it never records or verifies snapshots, locally or in CI — so newly added test classes are covered automatically instead of relying on a hand-maintained allow-list. `DiagramSnapshotTests` is a deterministic suite and stays in this gate.
 - **Documentation freshness gate** (`check_doc_freshness.sh`, CI job `verify`): A strict, Bash 3.2-compatible, read-only check that the discoverable test count and generated benchmark docs match their sources. Runs after the correctness gate as its own explicit CI step.
 - **Snapshot contracts** (`verify_snapshots.sh`, CI job `verify-snapshots`): Owns `SnapshotTests` exclusively, split into two independent, honestly-labeled modes:
@@ -262,6 +278,13 @@ CI enforces four separate, honestly-scoped contracts rather than one monolithic 
 - `Sources/MarkdownKit`: core parser, AST nodes, plugins, layout engine, UI components
 - `Sources/MarkdownKitDemo`: demo app
 - `Tests/MarkdownKitTests`: unit/integration tests
+- `ThirdParty/`: checked-in third-party licenses/notices and `provenance.lock.json`
 - `docs/`: PRD, feature notes, roadmap
 - `scripts/`: local automation and verification entrypoints
 - `tasks/`: implementation checklist
+
+## License
+
+MarkdownKit is licensed under the MIT License. Third-party redistribution notices live in
+`THIRD_PARTY_NOTICES.md`, and the machine-readable dependency/resource provenance lock lives at
+`ThirdParty/provenance.lock.json`.

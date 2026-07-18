@@ -14,9 +14,10 @@ usage() {
 Usage: bash scripts/verify_all.sh [--with-benchmarks|-b] [--full|-f]
 
 Runs layered verification.
+- always: resolve package graph + release provenance (`scripts/verify_provenance.sh`)
 - default: fast regression suites (`scripts/verify_fast.sh`)
 - --with-benchmarks: add heavy benchmark suites (`scripts/verify_benchmarks.sh`)
-- --full: one-shot full validation via `swift test`
+- --full: provenance + one-shot full validation via `swift test`
 EOF
 }
 
@@ -40,6 +41,19 @@ for arg in "$@"; do
   esac
 done
 
+run_provenance() {
+  echo
+  echo "============================================================"
+  echo "[START] Provenance"
+  echo "Command: bash scripts/verify_provenance.sh"
+  echo "============================================================"
+  if ! bash scripts/verify_provenance.sh; then
+    echo "[FAIL] Provenance"
+    exit 1
+  fi
+  echo "[PASS] Provenance"
+}
+
 run_full_suite() {
   echo
   echo "============================================================"
@@ -56,6 +70,8 @@ run_full_suite() {
   echo "[FAIL] Full Suite"
   exit 1
 }
+
+run_provenance
 
 if [[ "$FULL_SUITE" -eq 1 ]]; then
   run_full_suite

@@ -27,6 +27,9 @@ jobs:
       - name: Swift version
         run: swift --version
 
+      - name: Provenance gate
+        run: bash scripts/verify_provenance.sh
+
       - name: Build
         run: swift build
 
@@ -55,6 +58,9 @@ jobs:
 
       - name: Swift version
         run: swift --version
+
+      - name: Provenance gate
+        run: bash scripts/verify_provenance.sh
 
       - name: Build
         run: swift build
@@ -88,6 +94,9 @@ jobs:
 
       - name: Xcode version
         run: xcodebuild -version
+
+      - name: Provenance gate
+        run: bash scripts/verify_provenance.sh
 
       - name: iOS Simulator correctness lane
         run: bash scripts/verify_ios.sh

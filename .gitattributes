@@ -1,0 +1,2 @@
+# Preserve upstream legal and notice texts byte-for-byte.
+ThirdParty/Licenses/** -text -whitespace

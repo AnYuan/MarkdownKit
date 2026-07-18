@@ -1,0 +1,455 @@
+{
+  "checked_in_files": [
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/MathJaxSwift-embedded/commander/LICENSE",
+      "sha256": "04512a63dce4d2d506ad612dc0bd7681ccf6e3655f7b6eaef7dfac8323d1ec0b",
+      "source": "https://registry.npmjs.org/commander/-/commander-9.2.0.tgz#package/LICENSE"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/MathJaxSwift-embedded/esm/LICENSE",
+      "sha256": "fe315c4bce49df19bf06297ca372b2b486f4351d09a487918711c8ed624dcbe8",
+      "source": "https://registry.npmjs.org/esm/-/esm-3.2.25.tgz#package/LICENSE"
+    },
+    {
+      "kind": "notice",
+      "path": "ThirdParty/Licenses/MathJaxSwift-embedded/generated/chtml.bundle.js.LICENSE.txt",
+      "sha256": "bf244d3f7b0b74c6c3279459baee3d57f6e3d2823bee119d5f39d111008e992e",
+      "source": "https://raw.githubusercontent.com/colinc86/MathJaxSwift/e23d6eab941da699ac4a60fb0e60f3ba5c937459/Sources/MathJaxSwift/Resources/mjn/dist/chtml.bundle.js.LICENSE.txt"
+    },
+    {
+      "kind": "notice",
+      "path": "ThirdParty/Licenses/MathJaxSwift-embedded/generated/mml.bundle.js.LICENSE.txt",
+      "sha256": "bf244d3f7b0b74c6c3279459baee3d57f6e3d2823bee119d5f39d111008e992e",
+      "source": "https://raw.githubusercontent.com/colinc86/MathJaxSwift/e23d6eab941da699ac4a60fb0e60f3ba5c937459/Sources/MathJaxSwift/Resources/mjn/dist/mml.bundle.js.LICENSE.txt"
+    },
+    {
+      "kind": "notice",
+      "path": "ThirdParty/Licenses/MathJaxSwift-embedded/generated/svg.bundle.js.LICENSE.txt",
+      "sha256": "bf244d3f7b0b74c6c3279459baee3d57f6e3d2823bee119d5f39d111008e992e",
+      "source": "https://raw.githubusercontent.com/colinc86/MathJaxSwift/e23d6eab941da699ac4a60fb0e60f3ba5c937459/Sources/MathJaxSwift/Resources/mjn/dist/svg.bundle.js.LICENSE.txt"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/MathJaxSwift-embedded/mathjax-full/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "source": "https://registry.npmjs.org/mathjax-full/-/mathjax-full-3.2.2.tgz#package/LICENSE"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/MathJaxSwift-embedded/mhchemparser/LICENSE.txt",
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+      "source": "https://registry.npmjs.org/mhchemparser/-/mhchemparser-4.2.1.tgz#package/LICENSE.txt"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/MathJaxSwift-embedded/speech-rule-engine/LICENSE",
+      "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+      "source": "https://registry.npmjs.org/speech-rule-engine/-/speech-rule-engine-4.0.7.tgz#package/LICENSE"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/MathJaxSwift-embedded/wicked-good-xpath/LICENSE",
+      "sha256": "1691999de7a5de50698e735c25506ea8ab6b71d008d27ef9e1400a5075000e78",
+      "source": "https://registry.npmjs.org/wicked-good-xpath/-/wicked-good-xpath-1.3.0.tgz#package/LICENSE"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/MathJaxSwift-embedded/xmldom-sre/LICENSE",
+      "sha256": "16205905d57a91f1cf7e32298f96a511ef8da80446dacb111e1adf6654799e4c",
+      "source": "https://registry.npmjs.org/xmldom-sre/-/xmldom-sre-0.1.31.tgz#package/LICENSE"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/MathJaxSwift/LICENSE.md",
+      "sha256": "e6242b3d8099531d00387cdfa63525d95382a64a4ae9b5fdd53d57600f76640d",
+      "source": "https://raw.githubusercontent.com/colinc86/MathJaxSwift/e23d6eab941da699ac4a60fb0e60f3ba5c937459/LICENSE.md"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/Splash/LICENSE",
+      "sha256": "f9991c39e961e771241a669e9146933687567bb26d36f9a4838afb06fe6273a9",
+      "source": "https://raw.githubusercontent.com/JohnSundell/Splash/7f4df436eb78fe64fe2c32c58006e9949fa28ad8/LICENSE"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/SwiftDraw/LICENSE.txt",
+      "sha256": "0952fa14f101b00996c24fd6a678611feef5cb0902e8ce28949cea7cb0eb2aa7",
+      "source": "https://raw.githubusercontent.com/swhitty/SwiftDraw/776456051ea2b099343e18ed8a53fca9dd2e9807/LICENSE.txt"
+    },
+    {
+      "kind": "notice",
+      "path": "ThirdParty/Licenses/mermaid/BUNDLE_NOTICES.txt",
+      "sha256": "735287df96596174308ba5c3fd214e52e9d68b1d1b3a3b4f0b960f1add0b8932",
+      "source": "https://unpkg.com/mermaid@10.9.5/dist/mermaid.min.js#inline-license-notices"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/mermaid/LICENSE",
+      "sha256": "ec9fb67dcb25eccc416ed56e1aab819222c805a2a4bfe4cb19e7556bf2ffde80",
+      "source": "https://registry.npmjs.org/mermaid/-/mermaid-10.9.5.tgz#package/LICENSE"
+    },
+    {
+      "kind": "notice",
+      "path": "ThirdParty/Licenses/mermaid/THIRD_PARTY_LICENSE_REPORT.md",
+      "sha256": "1bafdaedd1dc0412f752fe42ff44825246286cf0bb36b61dbbd5b7564d34c397",
+      "source": "https://github.com/mermaid-js/mermaid/tree/665b3d05cbe1ac7b78b154a464de39c5d17ba7b9#generated-from-frozen-lock-and-umd-module-map"
+    },
+    {
+      "kind": "notice",
+      "path": "ThirdParty/Licenses/swift-cmark/COPYING",
+      "sha256": "c22e885f33b821bddb24cf007145e5540655b6c0f403e49e6c76a93c28e6d9a9",
+      "source": "https://raw.githubusercontent.com/swiftlang/swift-cmark/924936d0427cb25a61169739a7660230bffa6ea6/COPYING"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/swift-custom-dump/LICENSE",
+      "sha256": "e26e14493356d7abf33f426942a1c451832a8a4a309297d44c5b8a03af1d9ea1",
+      "source": "https://raw.githubusercontent.com/pointfreeco/swift-custom-dump/2a2a938798236b8fa0bc57c453ee9de9f9ec3ab0/LICENSE"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/swift-markdown/LICENSE.txt",
+      "sha256": "167beb36f181bd163c93c6feb45c68e5f9462fe1af55b278f7bfd1df20e673a3",
+      "source": "https://raw.githubusercontent.com/swiftlang/swift-markdown/3c6f9523da3a1ec2fd829673e472d95b8097a3b8/LICENSE.txt"
+    },
+    {
+      "kind": "notice",
+      "path": "ThirdParty/Licenses/swift-markdown/NOTICE.txt",
+      "sha256": "ee7da43afcac4a52196a2141024573ec2ceb84b14e74dfed38522d94586fbc52",
+      "source": "https://raw.githubusercontent.com/swiftlang/swift-markdown/3c6f9523da3a1ec2fd829673e472d95b8097a3b8/NOTICE.txt"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/swift-snapshot-testing/LICENSE",
+      "sha256": "5b31e3500e1add0ccd688abaa98c9a4086200a4a738e780760b57be97f5f6a4d",
+      "source": "https://raw.githubusercontent.com/pointfreeco/swift-snapshot-testing/bf8d8c27f0f0c6d5e77bff0db76ab68f2050d15d/LICENSE"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/swift-syntax/LICENSE.txt",
+      "sha256": "770af8291f708538d8ff885a0bbc4e045cd700531741c4f99528d435c14d7f55",
+      "source": "https://raw.githubusercontent.com/swiftlang/swift-syntax/4799286537280063c85a32f09884cfbca301b1a1/LICENSE.txt"
+    },
+    {
+      "kind": "license",
+      "path": "ThirdParty/Licenses/xctest-dynamic-overlay/LICENSE",
+      "sha256": "e26e14493356d7abf33f426942a1c451832a8a4a309297d44c5b8a03af1d9ea1",
+      "source": "https://raw.githubusercontent.com/pointfreeco/xctest-dynamic-overlay/dfd70507def84cb5fb821278448a262c6ff2bbad/LICENSE"
+    }
+  ],
+  "embedded_inventories": [
+    {
+      "components": [
+        {
+          "license_files": [
+            "ThirdParty/Licenses/MathJaxSwift-embedded/commander/LICENSE"
+          ],
+          "license_identifier": "MIT",
+          "license_source": "https://registry.npmjs.org/commander/9.2.0",
+          "name": "commander",
+          "notice_files": [],
+          "resolved": "https://registry.npmjs.org/commander/-/commander-9.2.0.tgz",
+          "runtime_relevance": "Runtime dependency of speech-rule-engine bundled inside MathJaxSwift generated MathJax assets.",
+          "scope": "runtime",
+          "version": "9.2.0"
+        },
+        {
+          "license_files": [
+            "ThirdParty/Licenses/MathJaxSwift-embedded/esm/LICENSE"
+          ],
+          "license_identifier": "MIT",
+          "license_source": "https://registry.npmjs.org/esm/3.2.25",
+          "name": "esm",
+          "notice_files": [],
+          "resolved": "https://registry.npmjs.org/esm/-/esm-3.2.25.tgz",
+          "runtime_relevance": "Runtime dependency of mathjax-full bundled inside MathJaxSwift generated MathJax assets.",
+          "scope": "runtime",
+          "version": "3.2.25"
+        },
+        {
+          "license_files": [
+            "ThirdParty/Licenses/MathJaxSwift-embedded/mathjax-full/LICENSE"
+          ],
+          "license_identifier": "Apache-2.0",
+          "license_source": "https://registry.npmjs.org/mathjax-full/3.2.2",
+          "name": "mathjax-full",
+          "notice_files": [],
+          "resolved": "https://registry.npmjs.org/mathjax-full/-/mathjax-full-3.2.2.tgz",
+          "runtime_relevance": "Primary JavaScript math rendering engine bundled by MathJaxSwift.",
+          "scope": "runtime",
+          "version": "3.2.2"
+        },
+        {
+          "license_files": [
+            "ThirdParty/Licenses/MathJaxSwift-embedded/mhchemparser/LICENSE.txt"
+          ],
+          "license_identifier": "Apache-2.0",
+          "license_source": "https://registry.npmjs.org/mhchemparser/4.2.1",
+          "name": "mhchemparser",
+          "notice_files": [
+            "ThirdParty/Licenses/MathJaxSwift-embedded/generated/chtml.bundle.js.LICENSE.txt",
+            "ThirdParty/Licenses/MathJaxSwift-embedded/generated/mml.bundle.js.LICENSE.txt",
+            "ThirdParty/Licenses/MathJaxSwift-embedded/generated/svg.bundle.js.LICENSE.txt"
+          ],
+          "resolved": "https://registry.npmjs.org/mhchemparser/-/mhchemparser-4.2.1.tgz",
+          "runtime_relevance": "Chemical-equation parser bundled transitively by mathjax-full.",
+          "scope": "runtime",
+          "version": "4.2.1"
+        },
+        {
+          "license_files": [
+            "ThirdParty/Licenses/MathJaxSwift-embedded/mathjax-full/LICENSE"
+          ],
+          "license_identifier": "Apache-2.0",
+          "license_source": "https://registry.npmjs.org/mj-context-menu/0.6.1",
+          "name": "mj-context-menu",
+          "notice_files": [],
+          "resolved": "https://registry.npmjs.org/mj-context-menu/-/mj-context-menu-0.6.1.tgz",
+          "runtime_relevance": "MathJax contextual menu support bundled transitively by mathjax-full.",
+          "scope": "runtime",
+          "version": "0.6.1"
+        },
+        {
+          "license_files": [
+            "ThirdParty/Licenses/MathJaxSwift-embedded/speech-rule-engine/LICENSE"
+          ],
+          "license_identifier": "Apache-2.0",
+          "license_source": "https://registry.npmjs.org/speech-rule-engine/4.0.7",
+          "name": "speech-rule-engine",
+          "notice_files": [],
+          "resolved": "https://registry.npmjs.org/speech-rule-engine/-/speech-rule-engine-4.0.7.tgz",
+          "runtime_relevance": "Math accessibility and speech rules bundled transitively by mathjax-full.",
+          "scope": "runtime",
+          "version": "4.0.7"
+        },
+        {
+          "license_files": [
+            "ThirdParty/Licenses/MathJaxSwift-embedded/wicked-good-xpath/LICENSE"
+          ],
+          "license_identifier": "MIT",
+          "license_source": "https://registry.npmjs.org/wicked-good-xpath/1.3.0",
+          "name": "wicked-good-xpath",
+          "notice_files": [],
+          "resolved": "https://registry.npmjs.org/wicked-good-xpath/-/wicked-good-xpath-1.3.0.tgz",
+          "runtime_relevance": "XPath helper bundled transitively by speech-rule-engine.",
+          "scope": "runtime",
+          "version": "1.3.0"
+        },
+        {
+          "license_files": [
+            "ThirdParty/Licenses/MathJaxSwift-embedded/xmldom-sre/LICENSE"
+          ],
+          "license_identifier": "(LGPL-2.0 or MIT)",
+          "license_source": "https://registry.npmjs.org/xmldom-sre/0.1.31",
+          "name": "xmldom-sre",
+          "notice_files": [],
+          "resolved": "https://registry.npmjs.org/xmldom-sre/-/xmldom-sre-0.1.31.tgz",
+          "runtime_relevance": "XML DOM support bundled transitively by speech-rule-engine.",
+          "scope": "runtime",
+          "version": "0.1.31"
+        }
+      ],
+      "generated_notice_files": [
+        "ThirdParty/Licenses/MathJaxSwift-embedded/generated/chtml.bundle.js.LICENSE.txt",
+        "ThirdParty/Licenses/MathJaxSwift-embedded/generated/mml.bundle.js.LICENSE.txt",
+        "ThirdParty/Licenses/MathJaxSwift-embedded/generated/svg.bundle.js.LICENSE.txt"
+      ],
+      "inventory_name": "MathJaxSwift mjn generated MathJax resources",
+      "inventory_source": "https://raw.githubusercontent.com/colinc86/MathJaxSwift/e23d6eab941da699ac4a60fb0e60f3ba5c937459/Sources/MathJaxSwift/Resources/mjn/package-lock.json",
+      "owner_identity": "mathjaxswift",
+      "owner_version": "3.4.0"
+    }
+  ],
+  "package_resolved": {
+    "origin_hash": "6f6f329836311ed51ff52d7002c32bfe65bd5388482c405878091423d465cb3e",
+    "path": "Package.resolved",
+    "pins": [
+      {
+        "identity": "mathjaxswift",
+        "kind": "remoteSourceControl",
+        "license_files": [
+          "ThirdParty/Licenses/MathJaxSwift/LICENSE.md"
+        ],
+        "license_identifier": "MIT",
+        "location": "https://github.com/colinc86/MathJaxSwift.git",
+        "notice_files": [],
+        "runtime_relevance": "Direct MarkdownKit runtime dependency for MathJax-backed math rendering and bundled generated MathJax resources.",
+        "scope": "runtime",
+        "state": {
+          "revision": "e23d6eab941da699ac4a60fb0e60f3ba5c937459",
+          "version": "3.4.0"
+        }
+      },
+      {
+        "identity": "splash",
+        "kind": "remoteSourceControl",
+        "license_files": [
+          "ThirdParty/Licenses/Splash/LICENSE"
+        ],
+        "license_identifier": "MIT",
+        "location": "https://github.com/JohnSundell/Splash.git",
+        "notice_files": [],
+        "runtime_relevance": "Direct MarkdownKit runtime dependency for Swift syntax highlighting.",
+        "scope": "runtime",
+        "state": {
+          "revision": "7f4df436eb78fe64fe2c32c58006e9949fa28ad8",
+          "version": "0.16.0"
+        }
+      },
+      {
+        "identity": "swift-cmark",
+        "kind": "remoteSourceControl",
+        "license_files": [],
+        "license_identifier": "BSD-2-Clause + MIT + CC-BY-SA-4.0 notices (see COPYING)",
+        "location": "https://github.com/swiftlang/swift-cmark.git",
+        "notice_files": [
+          "ThirdParty/Licenses/swift-cmark/COPYING"
+        ],
+        "runtime_relevance": "Transitive runtime dependency of swift-markdown that provides the underlying cmark-gfm parser implementation.",
+        "scope": "runtime",
+        "state": {
+          "revision": "924936d0427cb25a61169739a7660230bffa6ea6",
+          "version": "0.8.0"
+        }
+      },
+      {
+        "identity": "swift-custom-dump",
+        "kind": "remoteSourceControl",
+        "license_files": [
+          "ThirdParty/Licenses/swift-custom-dump/LICENSE"
+        ],
+        "license_identifier": "MIT",
+        "location": "https://github.com/pointfreeco/swift-custom-dump",
+        "notice_files": [],
+        "runtime_relevance": "Test-only transitive dependency pulled in by swift-snapshot-testing.",
+        "scope": "test",
+        "state": {
+          "revision": "2a2a938798236b8fa0bc57c453ee9de9f9ec3ab0",
+          "version": "1.4.1"
+        }
+      },
+      {
+        "identity": "swift-markdown",
+        "kind": "remoteSourceControl",
+        "license_files": [
+          "ThirdParty/Licenses/swift-markdown/LICENSE.txt"
+        ],
+        "license_identifier": "Apache-2.0 with Swift Runtime Library Exception",
+        "location": "https://github.com/swiftlang/swift-markdown.git",
+        "notice_files": [
+          "ThirdParty/Licenses/swift-markdown/NOTICE.txt"
+        ],
+        "runtime_relevance": "Direct MarkdownKit runtime dependency for Markdown parsing and AST construction.",
+        "scope": "runtime",
+        "state": {
+          "revision": "3c6f9523da3a1ec2fd829673e472d95b8097a3b8",
+          "version": "0.8.0"
+        }
+      },
+      {
+        "identity": "swift-snapshot-testing",
+        "kind": "remoteSourceControl",
+        "license_files": [
+          "ThirdParty/Licenses/swift-snapshot-testing/LICENSE"
+        ],
+        "license_identifier": "MIT",
+        "location": "https://github.com/pointfreeco/swift-snapshot-testing.git",
+        "notice_files": [],
+        "runtime_relevance": "Direct test-only dependency used by snapshot and visual-regression suites.",
+        "scope": "test",
+        "state": {
+          "revision": "bf8d8c27f0f0c6d5e77bff0db76ab68f2050d15d",
+          "version": "1.18.9"
+        }
+      },
+      {
+        "identity": "swift-syntax",
+        "kind": "remoteSourceControl",
+        "license_files": [
+          "ThirdParty/Licenses/swift-syntax/LICENSE.txt"
+        ],
+        "license_identifier": "Apache-2.0 with Swift Runtime Library Exception",
+        "location": "https://github.com/swiftlang/swift-syntax",
+        "notice_files": [],
+        "runtime_relevance": "Test-only transitive dependency pulled in by swift-snapshot-testing.",
+        "scope": "test",
+        "state": {
+          "revision": "4799286537280063c85a32f09884cfbca301b1a1",
+          "version": "602.0.0"
+        }
+      },
+      {
+        "identity": "swiftdraw",
+        "kind": "remoteSourceControl",
+        "license_files": [
+          "ThirdParty/Licenses/SwiftDraw/LICENSE.txt"
+        ],
+        "license_identifier": "zlib",
+        "location": "https://github.com/swhitty/SwiftDraw",
+        "notice_files": [],
+        "runtime_relevance": "Direct MarkdownKit runtime dependency for SVG rendering in the math pipeline.",
+        "scope": "runtime",
+        "state": {
+          "revision": "776456051ea2b099343e18ed8a53fca9dd2e9807",
+          "version": "0.27.0"
+        }
+      },
+      {
+        "identity": "xctest-dynamic-overlay",
+        "kind": "remoteSourceControl",
+        "license_files": [
+          "ThirdParty/Licenses/xctest-dynamic-overlay/LICENSE"
+        ],
+        "license_identifier": "MIT",
+        "location": "https://github.com/pointfreeco/xctest-dynamic-overlay",
+        "notice_files": [],
+        "runtime_relevance": "Test-only transitive dependency pulled in by swift-snapshot-testing.",
+        "scope": "test",
+        "state": {
+          "revision": "dfd70507def84cb5fb821278448a262c6ff2bbad",
+          "version": "1.9.0"
+        }
+      }
+    ],
+    "version": 3
+  },
+  "project_license": {
+    "copyright": "Copyright (c) 2026 AnYuan",
+    "license_identifier": "MIT",
+    "path": "LICENSE",
+    "sha256": "cd72d4c8fad71306d4bed3fb41e694e015b2121c5b393ed06b23a3ea5dd4202d"
+  },
+  "project_notice": {
+    "path": "THIRD_PARTY_NOTICES.md",
+    "sha256": "f3c4289ac504bbc09dc1d85d601f5b6e0a0341a6f3dcdc858480569fcc001b38"
+  },
+  "schema_version": 1,
+  "vendored_resources": [
+    {
+      "id": "mermaid-dist",
+      "license_files": [
+        "ThirdParty/Licenses/mermaid/LICENSE"
+      ],
+      "license_identifier": "MIT",
+      "notice_files": [
+        "ThirdParty/Licenses/mermaid/BUNDLE_NOTICES.txt",
+        "ThirdParty/Licenses/mermaid/THIRD_PARTY_LICENSE_REPORT.md"
+      ],
+      "path": "Sources/MarkdownKit/Resources/mermaid.min.js",
+      "runtime_relevance": "Bundled Mermaid runtime used by the WKWebView-backed diagram adapter path.",
+      "scope": "runtime",
+      "sha256": "616a109f19cd186842e11d45b35ac07456b3a75513310f6ea075351aa430b1e2",
+      "source_url": "https://unpkg.com/mermaid@10.9.5/dist/mermaid.min.js",
+      "third_party_closure": {
+        "inventory_path": "ThirdParty/Inventories/mermaid-10.9.5-umd-bundled-inventory.json",
+        "inventory_sha256": "085cd421067d7007c7208afc3e1fed1ff15c57b63f4724ec25d30c090ba97f75",
+        "report_path": "ThirdParty/Licenses/mermaid/THIRD_PARTY_LICENSE_REPORT.md",
+        "report_sha256": "1bafdaedd1dc0412f752fe42ff44825246286cf0bb36b61dbbd5b7564d34c397",
+        "policy_sha256": "3ac06b65bcbba2139ea089e4a43df9b3a1912f31d282e0d5f411f5f1bb03e5a7"
+      },
+      "version": "10.9.5"
+    }
+  ]
+}
