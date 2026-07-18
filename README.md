@@ -262,6 +262,8 @@ bash scripts/verify_all.sh
 
 `verify_all.sh` always resolves dependencies and runs the provenance gate first, then checks both
 platform API baselines. `--full` uses `swift test` instead of the fast correctness split.
+Release owners should use the complete [release procedure](docs/RELEASE.md), not this convenience
+wrapper alone.
 
 Optional heavy benchmark suites:
 
@@ -275,7 +277,15 @@ One-shot full suite (includes all tests, including benchmarks/snapshots):
 bash scripts/verify_all.sh --full
 ```
 
-iOS Simulator correctness lane: `verify_ios.sh` creates a package-only workspace from `Package.swift`, `Package.resolved`, `Sources`, and `Tests`, then runs the package's tests with `xcodebuild` against an iOS Simulator matching the active Xcode iPhone Simulator SDK. Set `MARKDOWNKIT_IOS_SIMULATOR_UDID` to explicitly override that selection:
+iOS Simulator correctness lane: `verify_ios.sh` creates a package-only workspace from
+`Package.swift`, `Package.resolved`, `Sources`, and `Tests`, then runs the package's tests with
+`xcodebuild` against an iOS Simulator matching the active Xcode iPhone Simulator SDK. The app-less
+XCTest process runs the 10 Mermaid state-machine contracts with an explicitly injected
+deterministic image backend, so it never constructs `WKWebView`. After all 550 XCTest tests pass,
+the script assembles the SwiftPM demo executable into an ad-hoc-signed Simulator app and requires
+exactly one PASS marker from a real WebKit Mermaid attachment render. The smoke is additional and
+is not counted as XCTest. Set `MARKDOWNKIT_IOS_SIMULATOR_UDID` to explicitly override simulator
+selection:
 
 ```bash
 bash scripts/verify_ios.sh
@@ -293,7 +303,7 @@ Verification is split into seven honestly-scoped contracts rather than one monol
   - `--visual` diffs the current run against the *committed* baseline PNGs. Although Xcode is pinned, the `macos-26` runner's fonts and OS point releases can still move under us, so this is a genuine visual-regression signal but is **non-blocking** (`continue-on-error: true`) since environment drift alone can flip it.
   - `--determinism` records fresh baselines and immediately re-verifies against them in the *same* run/environment, then restores the original snapshot directory. This proves the renderer is internally deterministic and is **blocking**.
   - `iOSSnapshotTests` currently has no committed baseline or dedicated CI lane; it is intentionally excluded from both `verify_fast.sh` and `verify_snapshots.sh` and should not be read as covered by either gate.
-- **iOS Simulator suite** (`verify_ios.sh`, CI job `verify-ios`): Discovers the same correctness suites by scanning source (minus benchmarks and true snapshot suites), verifies the compiled iOS test bundle contains every UIKit-bearing suite, and runs the enumerated tests via `xcodebuild` on an iOS Simulator matching the active Xcode iPhone Simulator SDK (unless `MARKDOWNKIT_IOS_SIMULATOR_UDID` explicitly overrides it), with exact executed-count validation, per-test timeouts, crash/restart detection, and a private system-font fallback check.
+- **iOS Simulator suite** (`verify_ios.sh`, CI job `verify-ios`): Discovers the same correctness suites by scanning source (minus benchmarks and true snapshot suites), verifies the compiled iOS test bundle contains every UIKit-bearing suite, and runs exactly 550 tests via `xcodebuild` on an SDK-matched iOS Simulator (unless `MARKDOWNKIT_IOS_SIMULATOR_UDID` explicitly overrides it), with exact enumeration/execution validation, per-test timeouts, crash/restart detection, and a private system-font fallback check. Mermaid's FIFO/cache/cancellation contracts use an explicit deterministic image driver only in this app-less XCTest host. The same script then builds and packages the SwiftPM demo product, launches it with a real `UIApplication`, and requires exactly one real-WebKit Mermaid PASS marker.
 - **Benchmark suite** (`verify_benchmarks.sh`): Heavy performance regression tests. Run locally or through deliberately configured manual/scheduled automation; they are not part of PR CI. The gate first checks that `docs/BENCHMARK_BASELINE.md` is up to date with `Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json` (the authoritative, machine-readable baseline consumed by both the docs and `BenchmarkRegressionGuard`) via `python3 scripts/render_benchmark_baseline.py --check`, failing fast before any timing suite runs if the baseline is malformed or the doc is stale. After editing the baseline JSON, refresh the doc with `python3 scripts/render_benchmark_baseline.py`.
 - Running bare `swift test` executes everything including benchmarks and true snapshot suites. Prefer `verify_fast.sh` for daily iteration.
 
@@ -304,7 +314,7 @@ Verification is split into seven honestly-scoped contracts rather than one monol
 - `Tests/MarkdownKitTests`: unit/integration tests
 - `API/PublicAPI`: committed macOS and iOS Simulator public symbol-graph baselines
 - `ThirdParty/`: checked-in third-party licenses/notices and `provenance.lock.json`
-- `docs/`: PRD, feature notes, roadmap
+- `docs/`: PRD, feature notes, roadmap, and the [release procedure](docs/RELEASE.md)
 - `scripts/`: local automation and verification entrypoints
 - `tasks/`: implementation checklist
 
@@ -312,4 +322,5 @@ Verification is split into seven honestly-scoped contracts rather than one monol
 
 MarkdownKit is licensed under the MIT License. Third-party redistribution notices live in
 `THIRD_PARTY_NOTICES.md`, and the machine-readable dependency/resource provenance lock lives at
-`ThirdParty/provenance.lock.json`.
+`ThirdParty/provenance.lock.json`. See [CHANGELOG.md](CHANGELOG.md) for consumer-facing release
+changes and migration notes.

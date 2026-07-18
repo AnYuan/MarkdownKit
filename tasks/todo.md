@@ -487,7 +487,7 @@ review the complete diff, then commit and push before starting the next stage.
   and iOS Simulator (550) tests, the fast gate, both 4-test snapshot gates,
   documentation freshness at 516 discoverable tests, and the complete benchmark
   gate all pass.
-- [ ] `chore: establish release and repository hygiene`
+- [x] `chore: establish release and repository hygiene`
   Pin moving dependencies, add license/notices/changelog, adopt valid SemVer tags,
   record vendored resource provenance, and remove orphan generated artifacts.
   Q20 release decisions: MarkdownKit uses the MIT license; the completed release
@@ -507,7 +507,7 @@ review the complete diff, then commit and push before starting the next stage.
   - [x] Q20-D remove only verified-unreferenced scratch and stale generated
     Tuist/Xcode artifacts while preserving supported SwiftPM workflows;
     commit/push independently.
-  - [ ] Q20-E add the changelog/release procedure, run the complete release
+  - [x] Q20-E add the changelog/release procedure, run the complete release
     matrix, commit/push, and create/push annotated tag `v0.4.0`.
     - [x] Q20-E-W1 keep Mermaid FIFO/cache/cancellation/timeout ownership in the
       production snapshotter while injecting only deterministic image generation
@@ -515,7 +515,7 @@ review the complete diff, then commit and push before starting the next stage.
     - [x] Q20-E-W2 add a SwiftPM demo launch mode and extend `verify_ios.sh` to
       assemble, sign, install, launch, observe, and clean up a real
       `UIApplication`-hosted WebKit smoke.
-    - [ ] Q20-E-W3 finish README/plan/release-contract updates, run the complete
+    - [x] Q20-E-W3 finish README/plan/release-contract updates, run the complete
       release matrix, and publish the reviewed release metadata and tag.
   Q20-A review: the package now uses canonical
   `swiftlang/swift-markdown` exact 0.8.0 at
@@ -572,3 +572,17 @@ review the complete diff, then commit and push before starting the next stage.
   ad-hoc-signed Simulator app and requires exactly one real-WebKit PASS marker.
   Focused macOS Mermaid tests (10), the 499-test fast gate, and the integrated
   550-test-plus-smoke iOS gate pass.
+  Q20-E release review: `CHANGELOG.md` records the consumer-visible additions,
+  fixes, migration notes, security changes, performance work, and release
+  engineering shipped since `0.03`. `docs/RELEASE.md` pins Xcode 26.4.1, makes
+  every local gate and expected count explicit, forbids baseline refreshes, and
+  verifies the non-blocking visual snapshot step separately before tag creation.
+  README and plan guidance now distinguish the 550 deterministic iOS XCTest
+  contracts from the additional app-hosted real-WebKit smoke.
+  Q20-E validation: package description/build, 10 normal-import smoke tests,
+  provenance, 453-symbol/599-relationship macOS API, 499 fast correctness tests,
+  516-test documentation freshness, both four-test snapshot contracts, 550 iOS
+  XCTest tests plus exactly one app-hosted Mermaid PASS marker, both
+  454-symbol/610-relationship iOS Simulator API graphs, and the complete
+  benchmark gate pass. Exact-SHA CI run `29645680543` for the host-separation
+  commit passed all three jobs, including the visual snapshot step.

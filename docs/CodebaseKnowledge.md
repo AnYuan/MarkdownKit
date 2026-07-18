@@ -5,7 +5,7 @@ This document is a practical snapshot of the current repository, with emphasis o
 ## 1. Repository Snapshot
 
 - Branch at snapshot: `main`
-- Release track: `v0.4.0` candidate (`Q20-E`)
+- Release: `v0.4.0`
 - Swift tools: `6.2`
 - Platforms: `iOS 17+`, `macOS 26.0+`
 - Dependencies:

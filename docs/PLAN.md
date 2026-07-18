@@ -36,11 +36,14 @@ bash scripts/verify_all.sh
 
 The combined wrapper always runs fast suites first, then optionally runs benchmark suites with `--with-benchmarks`.
 
-For release-level validation, run:
+For release-level validation, follow the [release procedure](RELEASE.md). Its full matrix includes
+package/build checks, macOS and iOS public API checks, provenance, fast and iOS correctness,
+documentation freshness, visual and determinism snapshots, and benchmarks; `verify_all.sh --full`
+alone is not release validation.
 
-```bash
-bash scripts/verify_all.sh --full
-```
+The iOS release gate is deliberately two-part: 550 app-less XCTest tests exercise Mermaid's
+queue/cache/cancellation state machine through a deterministic image driver, then a separately
+assembled SwiftUI Simulator app proves one real WebKit Mermaid attachment render.
 
 ### Phase A: Test Strategy Baseline (Docs + Scope Lock)
 **Goal**: lock verification scope and merge criteria.
