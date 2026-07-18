@@ -174,7 +174,9 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     private var queue: [Request] = []
     private var timeoutTask: Task<Void, Never>?
     private var readinessTimeoutTask: Task<Void, Never>?
-    private let renderTimeout: TimeInterval = 4.0
+    // Cold WebKit navigation and bundled Mermaid script initialization can take several seconds in CI.
+    private let readinessTimeout: TimeInterval = 15.0
+    private let renderTimeout: TimeInterval = 15.0
     private let snapshotDimensionLimit: CGFloat = 2048
     private var isWebViewReady = false
     private let cacheTotalCostLimit = 64 * 1024 * 1024
@@ -329,35 +331,31 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         let requestID = request.id
         let sourceBase64 = Data(request.source.utf8).base64EncodedString()
         let renderJS = """
-        (function() {
-            try {
-                if (!window.mermaid) {
-                    console.error("window.mermaid is missing");
-                    return null;
-                }
-                const root = document.getElementById('mermaid-root');
-                if (!root) { return null; }
-                
-                // Clear old diagram
-                root.innerHTML = '';
-                root.removeAttribute('data-processed');
-                
-                const source = window.atob('\(sourceBase64)');
-                root.textContent = source;
-                
-                window.mermaid.initialize({
-                    startOnLoad: false,
-                    theme: 'default',
-                    securityLevel: 'strict'
-                });
-                
-                // Must be sync in order for execution to finish
-                window.mermaid.run({ nodes: [root] });
-                return "OK";
-            } catch (e) {
-                return e.toString();
+        try {
+            if (!window.mermaid) {
+                console.error("window.mermaid is missing");
+                return null;
             }
-        })();
+            const root = document.getElementById('mermaid-root');
+            if (!root) { return null; }
+
+            root.innerHTML = '';
+            root.removeAttribute('data-processed');
+
+            const source = window.atob(sourceBase64);
+            root.textContent = source;
+
+            window.mermaid.initialize({
+                startOnLoad: false,
+                theme: 'default',
+                securityLevel: 'strict'
+            });
+
+            await window.mermaid.run({ nodes: [root] });
+            return "OK";
+        } catch (e) {
+            return e.toString();
+        }
         """
 
         let evaluatedScript: String
@@ -369,25 +367,26 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         }
 
         actualWebViewRenderStartCount += 1
-        webView.evaluateJavaScript(evaluatedScript) { [weak self, weak webView] result, error in
+        webView.callAsyncJavaScript(
+            evaluatedScript,
+            arguments: ["sourceBase64": sourceBase64],
+            in: nil,
+            in: .page
+        ) { [weak self, weak webView] result in
             guard let self, let webView else { return }
             guard self.isActiveRequest(id: requestID) else { return }
-            
-            if let error {
+
+            switch result {
+            case .failure(let error):
                 MermaidDiagramAdapter.logger.error("Mermaid inline JS evaluation error: \(error)")
                 self.finishActiveRequest(id: requestID, image: nil)
-                return
-            }
-            
-            if let resultStr = result as? String, resultStr == "OK" {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak webView] in
-                    guard let self, let webView else { return }
-                    guard self.isActiveRequest(id: requestID) else { return }
+            case .success(let result):
+                if let resultStr = result as? String, resultStr == "OK" {
                     self.snapshotRenderedSVG(from: webView, requestID: requestID)
+                } else {
+                    MermaidDiagramAdapter.logger.error("Mermaid inline JS failed: \(String(describing: result))")
+                    self.finishActiveRequest(id: requestID, image: nil)
                 }
-            } else {
-                MermaidDiagramAdapter.logger.error("Mermaid inline JS failed: \(String(describing: result))")
-                self.finishActiveRequest(id: requestID, image: nil)
             }
         }
     }
@@ -457,7 +456,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     private func scheduleReadinessTimeoutIfNeeded() {
         guard !isWebViewReady, readinessTimeoutTask == nil, !queue.isEmpty else { return }
 
-        let timeoutMilliseconds = Int(renderTimeout * 1_000)
+        let timeoutMilliseconds = Int(readinessTimeout * 1_000)
         readinessTimeoutTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(timeoutMilliseconds))
             guard !Task.isCancelled, let self, !self.isWebViewReady else { return }

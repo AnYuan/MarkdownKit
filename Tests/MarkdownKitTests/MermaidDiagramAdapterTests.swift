@@ -100,6 +100,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
     func testQueuedCancellationResumesNilWithoutStartingQueuedRender() async throws {
         try await resetSnapshotter()
         let adapter = MermaidDiagramAdapter()
+        try await prepareReadySnapshotter(using: adapter)
         let activeSource = """
         graph TD;
             A-->B;
@@ -147,12 +148,14 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         let adapter = MermaidDiagramAdapter()
         let source = "graph TD;\nA-->B;"
 
+        try await prepareReadySnapshotter(using: adapter)
+        MermaidDiagramAdapter.pauseNextRenderForTesting()
         let timedOutTask = Task {
             await adapter.render(source: source, language: .mermaid) == nil
         }
-        try await waitUntil("Mermaid WebView render to start before timeout") {
+        try await waitUntil("paused Mermaid render to become active before timeout") {
             let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
-            return statistics.actualWebViewRenderStartCount == 1 && statistics.isRendering
+            return statistics.actualWebViewRenderStartCount == 0 && statistics.isRendering
         }
 
         MermaidDiagramAdapter.timeOutActiveRenderForTesting()
@@ -163,7 +166,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
 
         XCTAssertGreaterThan(retry.image.size.width, 0)
-        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 2)
+        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 1)
         XCTAssertEqual(statistics.cacheHitCount, 0)
     }
 
@@ -171,22 +174,29 @@ final class MermaidDiagramAdapterTests: XCTestCase {
     func testActiveCancellationResumesNilAndDoesNotCacheResult() async throws {
         try await resetSnapshotter()
         let adapter = MermaidDiagramAdapter()
+        try await prepareReadySnapshotter(using: adapter)
         let source = """
         graph TD;
             A-->B;
         """
 
+        MermaidDiagramAdapter.pauseNextRenderForTesting()
         let cancelledTask = Task {
             await adapter.render(source: source, language: .mermaid) == nil
         }
-        try await waitUntil("Mermaid WebView render to start") {
+        try await waitUntil("paused Mermaid request to become active") {
             let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
-            return statistics.actualWebViewRenderStartCount == 1 && statistics.isRendering
+            return statistics.actualWebViewRenderStartCount == 0 && statistics.isRendering
         }
 
         cancelledTask.cancel()
         let cancelledWasNil = await cancelledTask.value
         XCTAssertTrue(cancelledWasNil)
+
+        let whileCancelled = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
+        XCTAssertTrue(whileCancelled.isRendering)
+        MermaidDiagramAdapter.resumePausedRenderForTesting()
+        try await waitUntilSnapshotterIsIdle()
 
         let retryTask = Task {
             await adapter.render(source: source, language: .mermaid) != nil
@@ -195,7 +205,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
 
         XCTAssertTrue(retryRendered)
-        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 2)
+        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 1)
         XCTAssertEqual(statistics.cacheHitCount, 0)
     }
 
@@ -243,6 +253,15 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         let finalStatistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
         XCTAssertEqual(finalStatistics.actualWebViewRenderStartCount, 2)
         XCTAssertEqual(finalStatistics.cacheHitCount, 1)
+    }
+
+    @MainActor
+    private func prepareReadySnapshotter(using adapter: MermaidDiagramAdapter) async throws {
+        _ = try await renderedAttachment(
+            from: adapter,
+            source: "graph TD;\nWarm-->Up;"
+        )
+        try await resetSnapshotter()
     }
 
     @MainActor
