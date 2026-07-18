@@ -410,6 +410,7 @@ enum SyntaxPage: String, CaseIterable, Hashable {
 }
 #elseif os(iOS)
 import SwiftUI
+import UIKit
 import MarkdownKit
 
 /// Minimal iOS entry point so the `MarkdownKitDemo` executable links when the
@@ -418,13 +419,79 @@ import MarkdownKit
 /// full AppKit UI.
 @main
 struct DemoApp: App {
+    private let isMermaidSmoke = ProcessInfo.processInfo.arguments.contains(
+        "--markdownkit-mermaid-smoke"
+    )
+
     var body: some Scene {
         WindowGroup {
-            NavigationStack {
-                MarkdownView(text: iOSDemoMarkdown)
-                    .navigationTitle("MarkdownKit Demo")
+            if isMermaidSmoke {
+                MermaidSmokeView()
+            } else {
+                NavigationStack {
+                    MarkdownView(text: iOSDemoMarkdown)
+                        .navigationTitle("MarkdownKit Demo")
+                }
             }
         }
+    }
+}
+
+private struct MermaidSmokeView: View {
+    @State private var hasStarted = false
+
+    var body: some View {
+        Text("Running Mermaid smoke test…")
+            .task {
+                guard !hasStarted else { return }
+                hasStarted = true
+                await MermaidSmoke.runIfNeeded()
+            }
+    }
+}
+
+@MainActor
+private enum MermaidSmoke {
+    private static var hasStarted = false
+    private static var hasReported = false
+
+    static func runIfNeeded() async {
+        guard !hasStarted else { return }
+        hasStarted = true
+
+        let rendered = await MermaidDiagramAdapter().render(
+            source: """
+            graph TD
+                A["Grüße"] --> B[Pass]
+            """,
+            language: .mermaid
+        )
+
+        let passed = rendered.map { attributedString in
+            guard attributedString.length > 0,
+                  let attachment = attributedString.attribute(
+                      .attachment,
+                      at: 0,
+                      effectiveRange: nil
+                  ) as? NSTextAttachment,
+                  let image = attachment.image else {
+                return false
+            }
+
+            return image.size.width > 0 && image.size.height > 0
+        } ?? false
+
+        report(passed)
+    }
+
+    private static func report(_ passed: Bool) {
+        guard !hasReported else { return }
+        hasReported = true
+        NSLog(
+            passed
+                ? "MARKDOWNKIT_IOS_MERMAID_SMOKE_PASS"
+                : "MARKDOWNKIT_IOS_MERMAID_SMOKE_FAIL"
+        )
     }
 }
 

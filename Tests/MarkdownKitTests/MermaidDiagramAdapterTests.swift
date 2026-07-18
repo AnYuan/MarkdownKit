@@ -58,7 +58,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         XCTAssertEqual(first.image.size, second.image.size)
         XCTAssertGreaterThan(first.image.size.width, 0)
         XCTAssertGreaterThan(first.image.size.height, 0)
-        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 1)
+        XCTAssertEqual(statistics.actualRenderStartCount, 1)
         XCTAssertEqual(statistics.cacheHitCount, 1)
     }
 
@@ -68,7 +68,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         let adapter = MermaidDiagramAdapter()
         let firstSource = """
         graph TD;
-            A-->B;
+            A["Grüße"]-->B;
         """
         let secondSource = """
         graph LR;
@@ -76,13 +76,22 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         """
 
         let first = try await renderedAttachment(from: adapter, source: firstSource)
+
+        #if os(macOS)
+        let renderedText = await MermaidDiagramAdapter.renderedDiagramTextForTesting()
+        XCTAssertTrue(
+            renderedText?.contains("Grüße") == true,
+            "Expected rendered Mermaid DOM to contain Grüße, got \(String(describing: renderedText))"
+        )
+        #endif
+
         let second = try await renderedAttachment(from: adapter, source: secondSource)
         let firstAgain = try await renderedAttachment(from: adapter, source: firstSource)
         let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
 
         XCTAssertGreaterThan(second.image.size.width, 0)
         XCTAssertEqual(first.image.size, firstAgain.image.size)
-        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 2)
+        XCTAssertEqual(statistics.actualRenderStartCount, 2)
         XCTAssertEqual(statistics.cacheHitCount, 1)
     }
 
@@ -92,14 +101,14 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         let adapter = MermaidDiagramAdapter()
         let source = "graph TD;\nA-->B;"
 
-        MermaidDiagramAdapter.failNextJavaScriptEvaluationForTesting()
+        MermaidDiagramAdapter.failNextRenderForTesting()
         let first = await adapter.render(source: source, language: .mermaid)
         let second = await adapter.render(source: source, language: .mermaid)
         let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
 
         XCTAssertNil(first)
         XCTAssertNotNil(second)
-        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 2)
+        XCTAssertEqual(statistics.actualRenderStartCount, 2)
         XCTAssertEqual(statistics.cacheHitCount, 0)
     }
 
@@ -137,7 +146,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         let whilePaused = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
 
         XCTAssertTrue(queuedWasNil)
-        XCTAssertEqual(whilePaused.actualWebViewRenderStartCount, 0)
+        XCTAssertEqual(whilePaused.actualRenderStartCount, 0)
         XCTAssertEqual(whilePaused.queuedRequestCount, 0)
 
         MermaidDiagramAdapter.resumePausedRenderForTesting()
@@ -146,7 +155,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         try await waitUntilSnapshotterIsIdle()
 
         let finalStatistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
-        XCTAssertEqual(finalStatistics.actualWebViewRenderStartCount, 1)
+        XCTAssertEqual(finalStatistics.actualRenderStartCount, 1)
     }
 
     @MainActor
@@ -162,7 +171,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         }
         try await waitUntil("paused Mermaid render to become active before timeout") {
             let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
-            return statistics.actualWebViewRenderStartCount == 0 && statistics.isRendering
+            return statistics.actualRenderStartCount == 0 && statistics.isRendering
         }
 
         MermaidDiagramAdapter.timeOutActiveRenderForTesting()
@@ -174,7 +183,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
 
         XCTAssertGreaterThan(retry.image.size.width, 0)
-        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 1)
+        XCTAssertEqual(statistics.actualRenderStartCount, 1)
         XCTAssertEqual(statistics.cacheHitCount, 0)
     }
 
@@ -194,7 +203,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         }
         try await waitUntil("paused Mermaid request to become active") {
             let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
-            return statistics.actualWebViewRenderStartCount == 0 && statistics.isRendering
+            return statistics.actualRenderStartCount == 0 && statistics.isRendering
         }
 
         cancelledTask.cancel()
@@ -213,7 +222,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         let statistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
 
         XCTAssertTrue(retryRendered)
-        XCTAssertEqual(statistics.actualWebViewRenderStartCount, 1)
+        XCTAssertEqual(statistics.actualRenderStartCount, 1)
         XCTAssertEqual(statistics.cacheHitCount, 0)
     }
 
@@ -259,7 +268,7 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         XCTAssertTrue(cachedRendered)
 
         let finalStatistics = MermaidDiagramAdapter.snapshotterStatisticsForTesting()
-        XCTAssertEqual(finalStatistics.actualWebViewRenderStartCount, 2)
+        XCTAssertEqual(finalStatistics.actualRenderStartCount, 2)
         XCTAssertEqual(finalStatistics.cacheHitCount, 1)
     }
 
@@ -274,6 +283,11 @@ final class MermaidDiagramAdapterTests: XCTestCase {
 
     @MainActor
     private func resetSnapshotter() async throws {
+        #if os(iOS)
+        MermaidDiagramAdapter.installSnapshotRenderDriverFactoryForTesting {
+            DeterministicMermaidSnapshotRenderDriver()
+        }
+        #endif
         try await waitUntilSnapshotterIsIdle()
         MermaidDiagramAdapter.resetSnapshotterForTesting()
     }
@@ -328,4 +342,20 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         case timedOut
     }
 }
+
+#if os(iOS)
+@MainActor
+private final class DeterministicMermaidSnapshotRenderDriver: MermaidSnapshotRenderDriver {
+    func render(
+        source _: String,
+        completion: @escaping @MainActor (NativeImage?) -> Void
+    ) {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 48, height: 32)).image { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 48, height: 32))
+        }
+        completion(image)
+    }
+}
+#endif
 #endif

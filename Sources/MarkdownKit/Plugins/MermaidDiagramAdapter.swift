@@ -45,8 +45,18 @@ public struct MermaidDiagramAdapter: DiagramRenderingAdapter {
     }
 }
 
+@MainActor
+protocol MermaidSnapshotRenderDriver: AnyObject {
+    func render(
+        source: String,
+        completion: @escaping @MainActor (NativeImage?) -> Void
+    )
+}
+
+typealias MermaidSnapshotRenderDriverFactory = () -> any MermaidSnapshotRenderDriver
+
 struct MermaidSnapshotterStatistics: Equatable, Sendable {
-    let actualWebViewRenderStartCount: Int
+    let actualRenderStartCount: Int
     let cacheHitCount: Int
     let cacheCountLimit: Int
     let cacheTotalCostLimit: Int
@@ -76,8 +86,8 @@ extension MermaidDiagramAdapter {
     }
 
     @MainActor
-    static func failNextJavaScriptEvaluationForTesting() {
-        MermaidSnapshotter.shared.failNextJavaScriptEvaluationForTesting()
+    static func failNextRenderForTesting() {
+        MermaidSnapshotter.shared.failNextRenderForTesting()
     }
 
     @MainActor
@@ -90,6 +100,17 @@ extension MermaidDiagramAdapter {
         MermaidSnapshotter.shared.invalidateReadinessForTesting()
     }
 
+    @MainActor
+    static func installSnapshotRenderDriverFactoryForTesting(
+        _ factory: @escaping MermaidSnapshotRenderDriverFactory
+    ) {
+        MermaidSnapshotter.installSnapshotRenderDriverFactoryForTesting(factory)
+    }
+
+    @MainActor
+    static func renderedDiagramTextForTesting() async -> String? {
+        await MermaidSnapshotter.shared.renderedDiagramTextForTesting()
+    }
 }
 
 enum MermaidResourceLocator {
@@ -120,7 +141,34 @@ enum MermaidResourceLocator {
 @MainActor
 private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     
-    static let shared = MermaidSnapshotter()
+    private static var sharedInstance: MermaidSnapshotter?
+    private static var snapshotRenderDriverFactory: MermaidSnapshotRenderDriverFactory?
+
+    static var shared: MermaidSnapshotter {
+        if let sharedInstance {
+            return sharedInstance
+        }
+
+        let snapshotter = MermaidSnapshotter(
+            snapshotRenderDriver: snapshotRenderDriverFactory?()
+        )
+        sharedInstance = snapshotter
+        return snapshotter
+    }
+
+    static func installSnapshotRenderDriverFactoryForTesting(
+        _ factory: @escaping MermaidSnapshotRenderDriverFactory
+    ) {
+        if let sharedInstance {
+            precondition(
+                sharedInstance.snapshotRenderDriver != nil,
+                "Cannot install a Mermaid snapshot render driver after the production snapshotter is created"
+            )
+            return
+        }
+
+        snapshotRenderDriverFactory = factory
+    }
 
     private final class Request {
         let id: UUID
@@ -165,7 +213,8 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         }
     }
 
-    private var webView: WKWebView
+    private let snapshotRenderDriver: (any MermaidSnapshotRenderDriver)?
+    private var webView: WKWebView?
     private let hasBundledResources: Bool
     private var loadingNavigation: WKNavigation?
     private var readinessProbeID: UUID?
@@ -181,7 +230,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     private let bootstrapHardTimeout: TimeInterval = 120.0
     private let renderTimeout: TimeInterval = 15.0
     private let snapshotDimensionLimit: CGFloat = 2048
-    private var isWebViewReady = false
+    private var isRenderBackendReady = false
     private let cacheTotalCostLimit = 64 * 1024 * 1024
     private let imageCache: NSCache<NSString, NativeImage> = {
         let cache = NSCache<NSString, NativeImage>()
@@ -189,22 +238,37 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         cache.totalCostLimit = 64 * 1024 * 1024
         return cache
     }()
-    private var actualWebViewRenderStartCount = 0
+    private var actualRenderStartCount = 0
     private var cacheHitCount = 0
     private var shouldPauseNextRenderForTesting = false
-    private var shouldFailNextJavaScriptEvaluationForTesting = false
+    private var shouldFailNextRenderForTesting = false
     private weak var pausedRequestForTesting: Request?
+
+    private var isRenderBackendAvailable: Bool {
+        snapshotRenderDriver != nil || hasBundledResources
+    }
     
-    override init() {
-        let configuration = WKWebViewConfiguration()
+    private init(snapshotRenderDriver: (any MermaidSnapshotRenderDriver)?) {
+        self.snapshotRenderDriver = snapshotRenderDriver
         hasBundledResources = MermaidResourceLocator.bundledScriptURL() != nil
             && MermaidResourceLocator.bundledBootstrapURL() != nil
 
-        webView = WKWebView(
-            frame: CGRect(x: 0, y: 0, width: 640, height: 480),
-            configuration: configuration
-        )
+        if snapshotRenderDriver == nil {
+            let configuration = WKWebViewConfiguration()
+            webView = WKWebView(
+                frame: CGRect(x: 0, y: 0, width: 640, height: 480),
+                configuration: configuration
+            )
+        } else {
+            webView = nil
+        }
         super.init()
+
+        guard let webView else {
+            isRenderBackendReady = true
+            return
+        }
+
         webView.navigationDelegate = self
         
         #if canImport(UIKit)
@@ -259,7 +323,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
 
         queue.append(request)
 
-        guard hasBundledResources else {
+        guard isRenderBackendAvailable else {
             MermaidDiagramAdapter.logger.error(
                 "Mermaid bundled resources are unavailable; failing queued renders"
             )
@@ -267,10 +331,10 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
             return
         }
 
-        if isWebViewReady {
+        if isRenderBackendReady {
             processNext()
         } else {
-            ensureWebViewIsLoading()
+            ensureRenderBackendIsLoading()
             scheduleReadinessTimeoutIfNeeded()
         }
     }
@@ -279,9 +343,8 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         if let activeRequest, activeRequest.id == id {
             activeRequest.cancel()
             resume(activeRequest, image: nil)
-            // The caller can stop waiting immediately, but this shared WebView
-            // must drain the in-flight JS/snapshot callbacks before the next
-            // request mutates the same DOM.
+            // The caller can stop waiting immediately, but the shared backend
+            // must drain the in-flight completion before the next request.
             return
         }
 
@@ -297,7 +360,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     
     private func processNext() {
         guard activeRequest == nil else { return }
-        guard isWebViewReady else {
+        guard isRenderBackendReady else {
             scheduleReadinessTimeoutIfNeeded()
             return
         }
@@ -342,6 +405,32 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         }
 
         let requestID = request.id
+        actualRenderStartCount += 1
+
+        if shouldFailNextRenderForTesting {
+            shouldFailNextRenderForTesting = false
+            finishActiveRequest(id: requestID, image: nil)
+            return
+        }
+
+        if let snapshotRenderDriver {
+            snapshotRenderDriver.render(source: request.source) { [weak self] image in
+                guard let self, self.isActiveRequest(id: requestID) else { return }
+                self.finishActiveRequest(id: requestID, image: image)
+            }
+            return
+        }
+
+        renderInWebView(request)
+    }
+
+    private func renderInWebView(_ request: Request) {
+        guard let webView else {
+            finishActiveRequest(id: request.id, image: nil)
+            return
+        }
+
+        let requestID = request.id
         let sourceBase64 = Data(request.source.utf8).base64EncodedString()
         let renderJS = """
         try {
@@ -355,7 +444,10 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
             root.innerHTML = '';
             root.removeAttribute('data-processed');
 
-            const source = window.atob(sourceBase64);
+            const sourceBytes = window.atob(sourceBase64);
+            const source = new TextDecoder('utf-8').decode(
+                Uint8Array.from(sourceBytes, byte => byte.charCodeAt(0))
+            );
             root.textContent = source;
 
             window.mermaid.initialize({
@@ -371,17 +463,8 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         }
         """
 
-        let evaluatedScript: String
-        if shouldFailNextJavaScriptEvaluationForTesting {
-            shouldFailNextJavaScriptEvaluationForTesting = false
-            evaluatedScript = "throw new Error('MarkdownKit forced Mermaid test failure')"
-        } else {
-            evaluatedScript = renderJS
-        }
-
-        actualWebViewRenderStartCount += 1
         webView.callAsyncJavaScript(
-            evaluatedScript,
+            renderJS,
             arguments: ["sourceBase64": sourceBase64],
             in: nil,
             in: .page
@@ -412,7 +495,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
             failQueuedRenders()
             return
         }
-        guard !isWebViewReady,
+        guard !isRenderBackendReady,
               readinessProbeID == nil,
               isCurrentLoadingNavigation(navigation) else {
             return
@@ -454,7 +537,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
                 self.bootstrapGeneration = nil
                 self.cancelReadinessTimeout()
                 self.cancelBootstrapWatchdog()
-                self.isWebViewReady = true
+                self.isRenderBackendReady = true
                 self.processNext()
             }
         }
@@ -486,7 +569,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     }
 
     private func scheduleReadinessTimeoutIfNeeded() {
-        guard !isWebViewReady, readinessTimeoutTask == nil, !queue.isEmpty else { return }
+        guard !isRenderBackendReady, readinessTimeoutTask == nil, !queue.isEmpty else { return }
 
         let timeoutID = UUID()
         readinessTimeoutID = timeoutID
@@ -500,7 +583,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
             }
             self.readinessTimeoutTask = nil
             self.readinessTimeoutID = nil
-            guard !self.isWebViewReady else { return }
+            guard !self.isRenderBackendReady else { return }
 
             let phase = self.readinessProbeID == nil ? "loading document" : "probing"
             MermaidDiagramAdapter.logger.error(
@@ -522,7 +605,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     }
 
     private func cancelReadinessTimeoutIfNoPendingRequests() {
-        guard !isWebViewReady, activeRequest == nil, queue.isEmpty else { return }
+        guard !isRenderBackendReady, activeRequest == nil, queue.isEmpty else { return }
         cancelReadinessTimeout()
     }
 
@@ -539,7 +622,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     }
 
     private func failQueuedRenders(stopLoading: Bool = false) {
-        isWebViewReady = false
+        isRenderBackendReady = false
         loadingNavigation = nil
         readinessProbeID = nil
         bootstrapGeneration = nil
@@ -557,7 +640,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         pausedRequestForTesting = nil
 
         if stopLoading {
-            webView.stopLoading()
+            webView?.stopLoading()
         }
 
         if let active {
@@ -650,11 +733,21 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     }
 
     private func reloadWebView() {
+        guard snapshotRenderDriver == nil else {
+            isRenderBackendReady = true
+            return
+        }
         loadBaseHTML()
     }
 
-    private func ensureWebViewIsLoading() {
-        guard !isWebViewReady,
+    private func ensureRenderBackendIsLoading() {
+        if snapshotRenderDriver != nil {
+            isRenderBackendReady = true
+            processNext()
+            return
+        }
+
+        guard !isRenderBackendReady,
               loadingNavigation == nil,
               readinessProbeID == nil else {
             return
@@ -663,12 +756,13 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     }
 
     private func loadBaseHTML() {
-        isWebViewReady = false
+        isRenderBackendReady = false
         readinessProbeID = nil
         cancelReadinessTimeout()
         cancelBootstrapWatchdog()
 
         guard hasBundledResources,
+              let webView,
               let bootstrapURL = MermaidResourceLocator.bundledBootstrapURL(),
               let resourceDirectory = MermaidResourceLocator.bundledResourceDirectory() else {
             MermaidDiagramAdapter.logger.error(
@@ -699,7 +793,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
             guard !Task.isCancelled,
                   let self,
                   self.bootstrapGeneration == generation,
-                  !self.isWebViewReady else {
+                  !self.isRenderBackendReady else {
                 return
             }
             self.bootstrapWatchdogTask = nil
@@ -841,15 +935,35 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         cancelReadinessTimeout()
         pausedRequestForTesting = nil
         shouldPauseNextRenderForTesting = false
-        shouldFailNextJavaScriptEvaluationForTesting = false
+        shouldFailNextRenderForTesting = false
         imageCache.removeAllObjects()
-        actualWebViewRenderStartCount = 0
+        actualRenderStartCount = 0
         cacheHitCount = 0
+    }
+
+    func renderedDiagramTextForTesting() async -> String? {
+        guard snapshotRenderDriver == nil, let webView else { return nil }
+
+        return await withCheckedContinuation { continuation in
+            webView.callAsyncJavaScript(
+                "return document.querySelector('#mermaid-root')?.textContent ?? null;",
+                arguments: [:],
+                in: nil,
+                in: .page
+            ) { result in
+                switch result {
+                case .success(let value):
+                    continuation.resume(returning: value as? String)
+                case .failure:
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
     }
 
     func statisticsForTesting() -> MermaidSnapshotterStatistics {
         MermaidSnapshotterStatistics(
-            actualWebViewRenderStartCount: actualWebViewRenderStartCount,
+            actualRenderStartCount: actualRenderStartCount,
             cacheHitCount: cacheHitCount,
             cacheCountLimit: imageCache.countLimit,
             cacheTotalCostLimit: imageCache.totalCostLimit,
@@ -869,12 +983,12 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         render(request)
     }
 
-    func failNextJavaScriptEvaluationForTesting() {
+    func failNextRenderForTesting() {
         precondition(
             activeRequest == nil && queue.isEmpty,
-            "Can only force the next Mermaid JavaScript failure while idle"
+            "Can only force the next Mermaid render failure while idle"
         )
-        shouldFailNextJavaScriptEvaluationForTesting = true
+        shouldFailNextRenderForTesting = true
     }
 
     func timeOutActiveRenderForTesting() {

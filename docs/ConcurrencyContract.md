@@ -13,11 +13,14 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 7. `LayoutSolver.solveSync(...)` is a fully synchronous cached + `buildStringSync` path; it does **not** dispatch detached async work. Sync and async layouts use distinct cache/render variants because sync images intentionally emit alt fallback instead of performing I/O. Canceled async solves do not publish layout-cache entries.
 8. Math rendering goes through `DefaultMathRenderingAdapter.render(from:theme:contextFont:)`. The adapter is `Sendable`; its `Engine` actor wraps `MathJaxSwift` for LaTeX → SVG conversion and `SwiftDraw` rasterization runs synchronously in the calling task.
 9. `MathWarningSuppressor` is an actor that deduplicates noisy MathJax errors across concurrent renders.
-10. `MermaidSnapshotter` is `@MainActor` and serializes all `WKWebView`
-    rendering via an internal FIFO queue. Cache lookup occurs only when a
-    request reaches the queue head; successful intrinsic images are retained in
-    a bounded source cache, while failed or canceled requests cannot publish
-    entries. Request identifiers reject late callbacks from older renders.
+10. `MermaidSnapshotter` is `@MainActor` and owns Mermaid FIFO ordering, cache
+    lookup/publication, cancellation, continuation resumption, and deadlines.
+    Its default production backend is the file-backed `WKWebView` renderer. An
+    internal factory can install a deterministic image driver before lazy
+    singleton construction in iOS `@testable` tests; that driver replaces only
+    source-to-image production, so the production queue/cache/cancellation state
+    machine remains under test without constructing WebKit in an app-less XCTest
+    process. Request identifiers reject late callbacks from older renders.
 11. Inline Markdown image work belongs to the layout task. `ImageResourceLoader.load` is `@concurrent`, rejects disallowed redirects before following them, streams remote bytes under the policy cap, and owns final-response validation plus typed rejection; `ImageAttachmentBuilder` synchronously decodes the returned bytes with ImageIO in the calling layout task.
 12. `ImageAttachmentBuilder` stores decoded, width-constrained thumbnails in a thread-safe `NSCache` keyed by policy/source/rounded target width. Cache entries and each decoded image are bounded; canceled layout tasks do not publish new entries.
 13. The internal `AsyncTextView` rasterizes attributed strings, including `NSTextAttachment` images, off-main; MarkdownKit's collection-view layer invokes `configure(with:)` from UI context and keeps final layer mounting UI-owned.
@@ -33,6 +36,9 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 6. If resolver output affects rendered links, include that state in `cacheFingerprint(into:)`.
 7. The deprecated `MarkdownContextDelegate` name is only a migration spelling; conformers still must satisfy `MarkdownAutolinkResolver`'s `Sendable` contract.
 8. Preserve the unified inline image boundary: do not add source resolution, network/file loading, redirect checks, or independent image caches to UI cells.
+9. Keep the Mermaid test driver explicit and test-only: install it before the
+   lazy snapshotter exists, and never select it through environment or runtime
+   host detection in production.
 
 ## 3. Verification Coverage
 
@@ -40,20 +46,26 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 2. `MarkdownRenderInputTests` covers parse-key boundaries and layout-only dimensions (`width`, `theme`, `appearance`, diagram registry, image policy).
 3. `GitHubAutolinkPluginTests` and `MarkdownKitTests` cover resolver forwarding, fallback destinations, resolver retention, fingerprinting, and detached parser construction/use.
 4. `MermaidDiagramAdapterTests` validates source-cache reuse/isolation, fresh
-   attachments, FIFO ordering, queued and active cancellation, failure
-   non-poisoning, and real `WKWebView` render counts.
+   attachments, FIFO ordering, queued and active cancellation, and failure
+   non-poisoning. macOS executes those contracts against the real `WKWebView`
+   backend (including UTF-8 source preservation); iOS executes the same state
+   machine against the deterministic injected image driver.
 5. `MathWarningSuppressorTests` validates suppression actor semantics.
 6. `SnapshotTests` and `DiagramSnapshotTests` validate end-to-end rendering stability.
 7. `InlineFormattingLayoutTests` validates math fallback behavior when conversion fails.
 8. `ConcurrencyStressTests` validates multi-task LayoutSolver/LayoutCache safety and parser thread safety.
 9. `ImageResourceLoaderTests` validates policy, pre-follow redirect rejection, streamed byte limits, and response handling with injected `URLProtocol` responses plus local fixtures; it does not depend on the public network. `ImageAttachmentBuilderTests` validates bounded decode and cache isolation, while `InlineFormattingLayoutTests` verifies sync fallback cannot poison a later async attachment layout.
+10. `scripts/verify_ios.sh` separately assembles the SwiftPM demo executable as
+    a signed Simulator app and requires exactly one success marker from a real
+    Mermaid attachment render inside a running SwiftUI application.
 
 ## 4. Known Limits and Host Responsibilities
 
 1. `LayoutSolver` and helper types still rely on `@unchecked Sendable` boundaries and require disciplined call-site usage.
 2. Multi-actor stress tests cover LayoutSolver, LayoutCache, and parser
-   interleaving; real-WebView Mermaid tests cover serialized cache/cancellation
-   behavior. Further stress of `DefaultMathRenderingAdapter` and WebKit process
+   interleaving. The app-hosted iOS Mermaid gate is a one-render WebKit smoke
+   contract, while macOS retains the deeper real-WebKit state-machine tests.
+   Further stress of `DefaultMathRenderingAdapter` and WebKit process
    termination/reinitialization remains deferred.
 3. Attachment upload, permalink/custom action, and issue-keyword workflow semantics have no renderer hooks; they are host/backend responsibilities outside MarkdownKit's parser/layout pipeline.
 4. Markdown image support is inline-only. Changing `imageLoadingPolicy` starts a new layout/render generation and rebuilds attachments; there is no visible-cell or top-level image-loading executor.

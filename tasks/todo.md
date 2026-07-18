@@ -509,6 +509,14 @@ review the complete diff, then commit and push before starting the next stage.
     commit/push independently.
   - [ ] Q20-E add the changelog/release procedure, run the complete release
     matrix, commit/push, and create/push annotated tag `v0.4.0`.
+    - [x] Q20-E-W1 keep Mermaid FIFO/cache/cancellation/timeout ownership in the
+      production snapshotter while injecting only deterministic image generation
+      into app-less iOS tests before lazy singleton construction.
+    - [x] Q20-E-W2 add a SwiftPM demo launch mode and extend `verify_ios.sh` to
+      assemble, sign, install, launch, observe, and clean up a real
+      `UIApplication`-hosted WebKit smoke.
+    - [ ] Q20-E-W3 finish README/plan/release-contract updates, run the complete
+      release matrix, and publish the reviewed release metadata and tag.
   Q20-A review: the package now uses canonical
   `swiftlang/swift-markdown` exact 0.8.0 at
   `3c6f9523da3a1ec2fd829673e472d95b8097a3b8`. The only transitive lockfile
@@ -555,3 +563,12 @@ review the complete diff, then commit and push before starting the next stage.
   macOS correctness tests, macOS plus arm64/x86_64 iOS API checks, 516-test
   documentation freshness, both 4-test snapshot contracts, and 550 iOS
   Simulator tests pass with the generated project artifacts absent.
+  Q20-E host separation review: the deterministic iOS driver replaces only
+  source-to-image generation; the MainActor snapshotter still owns FIFO order,
+  cache hits/publication, cancellation, deadlines, continuations, and late
+  callback rejection. Production and macOS continue to use file-backed WebKit.
+  The iOS gate now runs exactly 550 hostless XCTest tests without constructing a
+  Mermaid `WKWebView`, then assembles the SwiftPM demo executable into an
+  ad-hoc-signed Simulator app and requires exactly one real-WebKit PASS marker.
+  Focused macOS Mermaid tests (10), the 499-test fast gate, and the integrated
+  550-test-plus-smoke iOS gate pass.

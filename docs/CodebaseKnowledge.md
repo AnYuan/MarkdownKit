@@ -4,19 +4,19 @@ This document is a practical snapshot of the current repository, with emphasis o
 
 ## 1. Repository Snapshot
 
-- Branch at snapshot: `copilot/code-quality-roadmap`
-- HEAD at snapshot: `0d38364`
+- Branch at snapshot: `main`
+- Release track: `v0.4.0` candidate (`Q20-E`)
 - Swift tools: `6.2`
 - Platforms: `iOS 17+`, `macOS 26.0+`
 - Dependencies:
-  - `apple/swift-markdown` (branch `main`)
+  - `swiftlang/swift-markdown` (exact `0.8.0`)
   - `JohnSundell/Splash` (`>= 0.16.0`)
   - `colinc86/MathJaxSwift` (`>= 3.4.0`)
   - `pointfreeco/swift-snapshot-testing` (`>= 1.17.0`)
 - File counts at snapshot:
   - Source files (`Sources/MarkdownKit/**/*.swift`): **87**
-  - Test files (`Tests/MarkdownKitTests/*.swift`): **74**
-  - Docs files (`docs/*.md`): **21**
+  - Test files (`Tests/MarkdownKitTests/*.swift`): **75**
+  - Docs files (`docs/*.md`): **23**
 
 ## 2. Build / Run / Test Commands
 
@@ -33,6 +33,9 @@ swift run MarkdownKitDemo
 ```bash
 # Fast regression gate (recommended default)
 bash scripts/verify_fast.sh
+
+# iOS XCTest contracts plus app-hosted real-WebKit Mermaid smoke
+bash scripts/verify_ios.sh
 
 # Heavy benchmarks only
 bash scripts/verify_benchmarks.sh
@@ -67,6 +70,8 @@ swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
 
 - `swift test list`: **516** discoverable tests
 - `swift test`: **516 tests passed** on 2026-07-18
+- `verify_fast.sh`: **499** correctness tests
+- `verify_ios.sh`: **550** XCTest tests plus one app-hosted Mermaid PASS marker
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -146,10 +151,14 @@ Key facts:
 
 ### 4.4 Diagram/math backends
 
-- Mermaid: `MermaidDiagramAdapter` renders via the MainActor FIFO `WKWebView`
-  snapshot flow using bundled `mermaid.min.js`. Successful intrinsic images are
-  cached by exact source with count/cost bounds; width, attachment bounds,
-  failed renders, and canceled requests remain outside the cache.
+- Mermaid: `MermaidSnapshotter` owns one MainActor FIFO/cache/cancellation state
+  machine. Production and macOS integration tests render through the file-backed
+  `WKWebView` using bundled `mermaid.min.js`; app-less iOS XCTest installs a
+  deterministic image driver before lazy singleton creation, and
+  `verify_ios.sh` separately proves the real backend in a running SwiftUI app.
+  Successful intrinsic images are cached by exact source with count/cost bounds;
+  width, attachment bounds, failed renders, and canceled requests remain outside
+  the cache.
 - Math: `DefaultMathRenderingAdapter` uses MathJax → SVG → SwiftDraw rasterization (no WebView). `MathSVGPreprocessor` normalizes `ex` units and `currentColor`.
 
 ### 4.5 UI layer
@@ -176,6 +185,9 @@ High-value suites:
 - Committed visual regression: macOS `SnapshotTests`
 - Deferred visual coverage: `iOSSnapshotTests` has no committed baseline or dedicated lane
 - Deterministic diagram rendering integration (not image snapshot assertions): `DiagramSnapshotTests`
+- Mermaid backend contracts: `MermaidDiagramAdapterTests` uses real WebKit on
+  macOS and a deterministic image driver on iOS; the iOS verification script
+  adds a separate app-hosted real-WebKit smoke after its 550 XCTest tests.
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`, `BenchmarkCacheTests`
 
 ## 6. Known Gaps / Risks / Technical Debt
@@ -185,6 +197,9 @@ High-value suites:
    than a full grammar for every advertised language family.
 3. Full `swift test` feedback loop remains relatively heavy due to benchmark suites.
 4. Documentation can drift unless refreshed from repeatable command output.
+5. Real iOS WebKit is intentionally outside the app-less XCTest process; the
+   current app-hosted gate is a smoke contract rather than a full WebKit
+   lifecycle stress suite.
 
 ## 7. Extension Points
 

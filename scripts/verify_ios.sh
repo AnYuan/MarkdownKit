@@ -15,6 +15,10 @@
 # source text sees every suite regardless of platform guards.
 #
 # Diagnosability/determinism hardening:
+#   - The hostless XCTest process injects a deterministic Mermaid image driver
+#     before the lazy snapshotter is created. After the exact XCTest count
+#     passes, this script assembles the SwiftPM demo executable into a signed
+#     Simulator app and requires a real WebKit Mermaid render there.
 #   - Per-test XCTest timeouts (`-test-timeouts-enabled`) are enabled so a
 #     hung test fails with its own name instead of the whole job timing out.
 #   - DerivedData is pinned under the repo-local, gitignored build/
@@ -40,6 +44,7 @@ cd "$ROOT_DIR"
 
 SCHEME="MarkdownKit-Package"
 TEST_TARGET="MarkdownKitTests"
+EXPECTED_IOS_TEST_COUNT=550
 WORKSPACE_DIR="$ROOT_DIR/build/ios-package-workspace"
 BUILD_LOG_DIR="$ROOT_DIR/build"
 LOG_FILE="$BUILD_LOG_DIR/ios-verify-xcodebuild.log"
@@ -51,13 +56,22 @@ TEST_ENUMERATION_LOG_FILE="$BUILD_LOG_DIR/ios-test-enumeration.log"
 # ~/Library/Developer/Xcode/DerivedData default, so a run is reproducible
 # and fully cleaned up by deleting build/.
 DERIVED_DATA_DIR="$ROOT_DIR/build/DerivedData"
+DEMO_SCHEME="MarkdownKitDemo"
+DEMO_PRODUCTS_DIR="$DERIVED_DATA_DIR/Build/Products/Debug-iphonesimulator"
+DEMO_BUILD_LOG_FILE="$BUILD_LOG_DIR/ios-mermaid-smoke-build.log"
+SMOKE_APP_DIR="$BUILD_LOG_DIR/MarkdownKitDemoSmoke.app"
+SMOKE_BUNDLE_ID="com.anyuan.MarkdownKitDemoSmoke"
+SMOKE_LAUNCH_ARGUMENT="--markdownkit-mermaid-smoke"
+SMOKE_LOG_FILE="$BUILD_LOG_DIR/ios-mermaid-smoke.log"
+SMOKE_LOG_PID=""
+SMOKE_CLEANUP_ARMED=0
 
 # This lane assumes a macOS runner with Xcode command line tools (xcodebuild,
 # xcrun) and jq preinstalled, matching GitHub Actions' macOS images. jq is
 # required (not optional) to parse `xcodebuild -list -json` and
 # `simctl list devices -j` output; fail fast and loudly rather than falling
 # back to fragile text parsing if any tool is missing.
-for tool in xcodebuild xcrun jq; do
+for tool in xcodebuild xcrun jq codesign plutil ditto; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "ERROR: required tool '$tool' was not found on PATH." >&2
     echo "This script assumes a macOS runner with Xcode command line tools and jq preinstalled (e.g. GitHub Actions' macos-* images). Install '$tool' or run on such a runner." >&2
@@ -260,6 +274,46 @@ join_with_comma() {
   echo "$*"
 }
 
+print_mermaid_smoke_diagnostics() {
+  if [[ -s "$DEMO_BUILD_LOG_FILE" ]]; then
+    echo "MarkdownKitDemo smoke build log:" >&2
+    cat "$DEMO_BUILD_LOG_FILE" >&2
+  fi
+  if [[ -s "$SMOKE_LOG_FILE" ]]; then
+    echo "MarkdownKitDemo smoke simulator log:" >&2
+    cat "$SMOKE_LOG_FILE" >&2
+  fi
+}
+
+fail_mermaid_smoke() {
+  echo "ERROR: $*" >&2
+  print_mermaid_smoke_diagnostics
+  exit 1
+}
+
+stop_mermaid_smoke_log_stream() {
+  if [[ -n "${SMOKE_LOG_PID:-}" ]]; then
+    if kill -0 "$SMOKE_LOG_PID" >/dev/null 2>&1; then
+      kill "$SMOKE_LOG_PID" >/dev/null 2>&1 || true
+    fi
+    wait "$SMOKE_LOG_PID" >/dev/null 2>&1 || true
+    SMOKE_LOG_PID=""
+  fi
+}
+
+cleanup_mermaid_smoke() {
+  local exit_status=$?
+  trap - EXIT INT TERM
+
+  if [[ "$SMOKE_CLEANUP_ARMED" -eq 1 ]]; then
+    xcrun simctl terminate "$SIMULATOR_UDID" "$SMOKE_BUNDLE_ID" >/dev/null 2>&1 || true
+    xcrun simctl uninstall "$SIMULATOR_UDID" "$SMOKE_BUNDLE_ID" >/dev/null 2>&1 || true
+    stop_mermaid_smoke_log_stream
+  fi
+
+  exit "$exit_status"
+}
+
 echo "Discovered ${#ALL_SUITES[@]} suite(s) total."
 echo "Excluded (benchmark suites + true snapshot suites, out of scope for this lane): $(join_with_comma "${EXCLUDED_SUITES[@]:-}")"
 echo "Included iOS correctness suites (${#INCLUDED_SUITES[@]}): $(join_with_comma "${INCLUDED_SUITES[@]}")"
@@ -312,6 +366,12 @@ fi
 # compiled test methods). Count only identifiers shaped as target/suite/test.
 ENUMERATED_TEST_COUNT="$(jq '[.values[]?.enabledTests[]?
   | select(.identifier | split("/") | length >= 3)] | length' "$TEST_ENUMERATION_FILE")"
+if [[ "$ENUMERATED_TEST_COUNT" -ne "$EXPECTED_IOS_TEST_COUNT" ]]; then
+  echo "ERROR: compiled iOS test bundle enumerated $ENUMERATED_TEST_COUNT enabled test(s); expected exactly $EXPECTED_IOS_TEST_COUNT." >&2
+  echo "Update the reviewed release/test-count contract together with any intentional test inventory change." >&2
+  exit 1
+fi
+
 MISSING_UIKIT_SUITES=()
 for suite in "${REQUIRED_UIKIT_SUITES[@]}"; do
   if ! jq -e --arg prefix "$TEST_TARGET/$suite/" \
@@ -333,7 +393,7 @@ rm -f "$LOG_FILE"
 
 echo
 echo "============================================================"
-echo "[START] iOS Simulator correctness lane"
+echo "[START] iOS Simulator XCTest correctness contracts"
 echo "Scheme:       $SCHEME"
 echo "Destination:  $DESTINATION"
 echo "DerivedData:  $DERIVED_DATA_DIR"
@@ -385,8 +445,8 @@ if [[ -z "${EXECUTED_COUNT:-}" ]] || [[ "$EXECUTED_COUNT" -eq 0 ]]; then
   echo "ERROR: zero tests executed on the iOS Simulator lane. Treating as a failure." >&2
   exit 1
 fi
-if [[ "$EXECUTED_COUNT" -ne "$ENUMERATED_TEST_COUNT" ]]; then
-  echo "ERROR: xcodebuild enumerated $ENUMERATED_TEST_COUNT enabled iOS test(s), but the run reported $EXECUTED_COUNT executed." >&2
+if [[ "$EXECUTED_COUNT" -ne "$ENUMERATED_TEST_COUNT" ]] || [[ "$EXECUTED_COUNT" -ne "$EXPECTED_IOS_TEST_COUNT" ]]; then
+  echo "ERROR: xcodebuild enumerated $ENUMERATED_TEST_COUNT enabled iOS test(s), expected $EXPECTED_IOS_TEST_COUNT, but the run reported $EXECUTED_COUNT executed." >&2
   exit 1
 fi
 
@@ -413,4 +473,185 @@ fi
 echo "No private system-font fallback diagnostics detected."
 
 echo
-echo "iOS Simulator verification passed ($EXECUTED_COUNT test(s) executed on $SIMULATOR_NAME)."
+echo "[PASS] iOS Simulator XCTest correctness contracts passed ($EXECUTED_COUNT test(s) executed on $SIMULATOR_NAME; Mermaid uses its injected deterministic backend in this hostless process)."
+
+echo
+echo "============================================================"
+echo "[START] App-hosted real WebKit Mermaid smoke"
+echo "Scheme:       $DEMO_SCHEME"
+echo "Destination:  $DESTINATION"
+echo "DerivedData:  $DERIVED_DATA_DIR (reuses the XCTest package build)"
+echo "App bundle:   $SMOKE_APP_DIR"
+echo "Log:          $SMOKE_LOG_FILE"
+echo "============================================================"
+
+SMOKE_CLEANUP_ARMED=1
+trap cleanup_mermaid_smoke EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+rm -rf "$SMOKE_APP_DIR"
+mkdir -p "$SMOKE_APP_DIR"
+rm -f "$DEMO_BUILD_LOG_FILE" "$SMOKE_LOG_FILE"
+
+if ! (
+  cd "$WORKSPACE_DIR" && \
+  xcodebuild build \
+    -scheme "$DEMO_SCHEME" \
+    -configuration Debug \
+    -destination "$DESTINATION" \
+    -derivedDataPath "$DERIVED_DATA_DIR" \
+    -skipMacroValidation \
+    CODE_SIGNING_ALLOWED=NO \
+    CODE_SIGNING_REQUIRED=NO \
+    CODE_SIGN_IDENTITY=""
+) >"$DEMO_BUILD_LOG_FILE" 2>&1; then
+  fail_mermaid_smoke "xcodebuild could not build '$DEMO_SCHEME' for the selected iOS Simulator."
+fi
+
+DEMO_EXECUTABLE="$DEMO_PRODUCTS_DIR/MarkdownKitDemo"
+MARKDOWNKIT_RESOURCE_BUNDLE="$DEMO_PRODUCTS_DIR/MarkdownKit_MarkdownKit.bundle"
+if [[ ! -x "$DEMO_EXECUTABLE" ]]; then
+  fail_mermaid_smoke "required MarkdownKitDemo executable is missing or not executable at '$DEMO_EXECUTABLE'."
+fi
+if [[ ! -d "$MARKDOWNKIT_RESOURCE_BUNDLE" ]]; then
+  fail_mermaid_smoke "required MarkdownKit resource bundle is missing at '$MARKDOWNKIT_RESOURCE_BUNDLE'."
+fi
+
+if ! ditto "$DEMO_EXECUTABLE" "$SMOKE_APP_DIR/MarkdownKitDemo"; then
+  fail_mermaid_smoke "could not copy the MarkdownKitDemo executable into the smoke app bundle."
+fi
+
+COPIED_RESOURCE_BUNDLES=0
+for resource_bundle in "$DEMO_PRODUCTS_DIR"/*.bundle; do
+  [[ -d "$resource_bundle" ]] || continue
+  if ! ditto "$resource_bundle" "$SMOKE_APP_DIR/$(basename "$resource_bundle")"; then
+    fail_mermaid_smoke "could not copy generated resource bundle '$resource_bundle' into the smoke app bundle."
+  fi
+  COPIED_RESOURCE_BUNDLES=$((COPIED_RESOURCE_BUNDLES + 1))
+done
+
+if [[ "$COPIED_RESOURCE_BUNDLES" -eq 0 ]]; then
+  fail_mermaid_smoke "no top-level generated resource bundles were found in '$DEMO_PRODUCTS_DIR'."
+fi
+if [[ ! -d "$SMOKE_APP_DIR/MarkdownKit_MarkdownKit.bundle" ]]; then
+  fail_mermaid_smoke "MarkdownKit_MarkdownKit.bundle was not copied into the smoke app bundle."
+fi
+if [[ ! -f "$SMOKE_APP_DIR/MarkdownKit_MarkdownKit.bundle/mermaid.min.js" ]]; then
+  fail_mermaid_smoke "the smoke app is missing the bundled Mermaid runtime."
+fi
+if [[ ! -f "$SMOKE_APP_DIR/MarkdownKit_MarkdownKit.bundle/mermaid-bootstrap.html" ]]; then
+  fail_mermaid_smoke "the smoke app is missing the Mermaid bootstrap document."
+fi
+
+cat >"$SMOKE_APP_DIR/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>MarkdownKitDemo</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.anyuan.MarkdownKitDemoSmoke</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>MarkdownKitDemoSmoke</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>iPhoneSimulator</string>
+    </array>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>MinimumOSVersion</key>
+    <string>17.0</string>
+    <key>UIDeviceFamily</key>
+    <array>
+        <integer>1</integer>
+        <integer>2</integer>
+    </array>
+    <key>UILaunchScreen</key>
+    <dict/>
+</dict>
+</plist>
+PLIST
+
+if ! plutil -lint "$SMOKE_APP_DIR/Info.plist" >/dev/null; then
+  fail_mermaid_smoke "generated smoke app Info.plist is invalid."
+fi
+if ! codesign --force --sign - --timestamp=none "$SMOKE_APP_DIR"; then
+  fail_mermaid_smoke "could not ad-hoc sign the assembled smoke app bundle."
+fi
+if ! codesign --verify --deep --strict --verbose=2 "$SMOKE_APP_DIR"; then
+  fail_mermaid_smoke "ad-hoc signature verification failed for the assembled smoke app bundle."
+fi
+
+if ! xcrun simctl uninstall "$SIMULATOR_UDID" "$SMOKE_BUNDLE_ID" >/dev/null 2>&1; then
+  echo "No stale '$SMOKE_BUNDLE_ID' app was installed on $SIMULATOR_NAME."
+fi
+if ! xcrun simctl install "$SIMULATOR_UDID" "$SMOKE_APP_DIR"; then
+  fail_mermaid_smoke "could not install the assembled smoke app bundle."
+fi
+
+xcrun simctl spawn "$SIMULATOR_UDID" log stream \
+  --style compact \
+  --predicate 'process == "MarkdownKitDemo"' \
+  >"$SMOKE_LOG_FILE" 2>&1 &
+SMOKE_LOG_PID=$!
+sleep 1
+if ! kill -0 "$SMOKE_LOG_PID" >/dev/null 2>&1; then
+  wait "$SMOKE_LOG_PID" >/dev/null 2>&1 || true
+  SMOKE_LOG_PID=""
+  fail_mermaid_smoke "simulator-scoped log stream exited before the smoke app launched."
+fi
+
+if ! xcrun simctl launch \
+  "$SIMULATOR_UDID" \
+  "$SMOKE_BUNDLE_ID" \
+  --args \
+  "$SMOKE_LAUNCH_ARGUMENT"; then
+  fail_mermaid_smoke "could not launch '$SMOKE_BUNDLE_ID' with '$SMOKE_LAUNCH_ARGUMENT'."
+fi
+
+SMOKE_PASS_MARKER="MARKDOWNKIT_IOS_MERMAID_SMOKE_PASS"
+SMOKE_FAIL_MARKER="MARKDOWNKIT_IOS_MERMAID_SMOKE_FAIL"
+SMOKE_DEADLINE=$(( $(date +%s) + 60 ))
+SMOKE_PASSED=0
+while [[ "$(date +%s)" -lt "$SMOKE_DEADLINE" ]]; do
+  SMOKE_FAIL_COUNT="$(grep -cF "$SMOKE_FAIL_MARKER" "$SMOKE_LOG_FILE" || true)"
+  SMOKE_PASS_COUNT="$(grep -cF "$SMOKE_PASS_MARKER" "$SMOKE_LOG_FILE" || true)"
+
+  if [[ "$SMOKE_FAIL_COUNT" -ne 0 ]]; then
+    fail_mermaid_smoke "the smoke app emitted '$SMOKE_FAIL_MARKER'."
+  fi
+  if [[ "$SMOKE_PASS_COUNT" -gt 1 ]]; then
+    fail_mermaid_smoke "the smoke app emitted '$SMOKE_PASS_MARKER' more than once."
+  fi
+  if [[ "$SMOKE_PASS_COUNT" -eq 1 ]]; then
+    SMOKE_PASSED=1
+    break
+  fi
+
+  sleep 1
+done
+
+if [[ "$SMOKE_PASSED" -ne 1 ]]; then
+  fail_mermaid_smoke "timed out waiting 60 seconds for '$SMOKE_PASS_MARKER'."
+fi
+
+sleep 1
+SMOKE_FAIL_COUNT="$(grep -cF "$SMOKE_FAIL_MARKER" "$SMOKE_LOG_FILE" || true)"
+SMOKE_PASS_COUNT="$(grep -cF "$SMOKE_PASS_MARKER" "$SMOKE_LOG_FILE" || true)"
+if [[ "$SMOKE_FAIL_COUNT" -ne 0 ]] || [[ "$SMOKE_PASS_COUNT" -ne 1 ]]; then
+  fail_mermaid_smoke "the smoke app did not emit exactly one '$SMOKE_PASS_MARKER' and no '$SMOKE_FAIL_MARKER'."
+fi
+
+echo "[PASS] App-hosted real WebKit Mermaid smoke emitted exactly one $SMOKE_PASS_MARKER marker."
