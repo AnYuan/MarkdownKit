@@ -35,3 +35,9 @@ and cached accessibility metadata are computed and managed inside MarkdownKit.
 ## Imports
 
 SwiftUI hosts must explicitly import SwiftUI alongside MarkdownKit. MarkdownKit does not re-export SwiftUI. Splash is an internal syntax-highlighting dependency and is not re-exported or part of the supported public API.
+
+## Platform API Baselines
+
+Committed, normalized symbol-graph baselines guard every source-declared public symbol and its
+compiler-emitted public relationships for macOS 26.0 and both iOS 17.0 Simulator architectures.
+They complement `PublicAPISmokeTests`, which remains the fast normal-import consumer contract.

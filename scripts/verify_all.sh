@@ -15,9 +15,9 @@ Usage: bash scripts/verify_all.sh [--with-benchmarks|-b] [--full|-f]
 
 Runs layered verification.
 - always: resolve package graph + release provenance (`scripts/verify_provenance.sh`)
-- default: fast regression suites (`scripts/verify_fast.sh`)
+- default: fast regression suites (`scripts/verify_fast.sh`) + both public API baselines
 - --with-benchmarks: add heavy benchmark suites (`scripts/verify_benchmarks.sh`)
-- --full: provenance + one-shot full validation via `swift test`
+- --full: provenance + one-shot full validation via `swift test` + both public API baselines
 EOF
 }
 
@@ -62,37 +62,53 @@ run_full_suite() {
   echo "============================================================"
   if swift test; then
     echo "[PASS] Full Suite"
-    echo
-    echo "Verification passed: full suite completed successfully."
-    exit 0
+    return
   fi
 
   echo "[FAIL] Full Suite"
   exit 1
 }
 
+run_public_api() {
+  local platform="$1"
+  local label="$2"
+  echo
+  echo "============================================================"
+  echo "[START] Public API Baseline ($label)"
+  echo "Command: bash scripts/verify_public_api.sh --platform $platform --check"
+  echo "============================================================"
+  if ! bash scripts/verify_public_api.sh --platform "$platform" --check; then
+    echo "[FAIL] Public API Baseline ($label)"
+    exit 1
+  fi
+  echo "[PASS] Public API Baseline ($label)"
+}
+
 run_provenance
 
 if [[ "$FULL_SUITE" -eq 1 ]]; then
   run_full_suite
-fi
-
-echo
-echo "Running fast verification suites..."
-if ! bash scripts/verify_fast.sh; then
-  exit 1
-fi
-
-if [[ "$WITH_BENCHMARKS" -eq 1 ]]; then
-  echo
-  echo "Running benchmark verification suites..."
-  if ! bash scripts/verify_benchmarks.sh; then
-    exit 1
-  fi
 else
   echo
-  echo "[SKIP] Benchmark suites (pass --with-benchmarks to include them)."
+  echo "Running fast verification suites..."
+  if ! bash scripts/verify_fast.sh; then
+    exit 1
+  fi
+
+  if [[ "$WITH_BENCHMARKS" -eq 1 ]]; then
+    echo
+    echo "Running benchmark verification suites..."
+    if ! bash scripts/verify_benchmarks.sh; then
+      exit 1
+    fi
+  else
+    echo
+    echo "[SKIP] Benchmark suites (pass --with-benchmarks to include them)."
+  fi
 fi
+
+run_public_api "macos" "macOS"
+run_public_api "ios-simulator" "iOS Simulator"
 
 echo
 echo "Verification passed: selected suites completed successfully."

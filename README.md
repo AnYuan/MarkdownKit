@@ -200,6 +200,29 @@ Fast regression gate (recommended for daily iteration, correctness-only in every
 bash scripts/verify_fast.sh
 ```
 
+Platform public API baselines:
+
+```bash
+bash scripts/verify_public_api.sh --platform macos --check
+bash scripts/verify_public_api.sh --platform ios-simulator --check
+```
+
+After an intentional, reviewed public API change or an approved toolchain update, regenerate the
+matching baseline explicitly:
+
+```bash
+bash scripts/verify_public_api.sh --platform macos --record
+bash scripts/verify_public_api.sh --platform ios-simulator --record
+```
+
+`PublicAPISmokeTests` remains the fast normal-import compile and behavior contract for a consumer.
+The committed symbol-graph baselines in `API/PublicAPI/` contain every source-declared public
+symbol plus its compiler-emitted public relationships, including protocol requirements,
+extensions, overloads, availability, inherited platform conformances, and platform-conditional
+APIs. The iOS gate verifies both arm64 and x86_64 Simulator graphs against one
+architecture-neutral baseline. Recording is intentionally explicit and pinned to Xcode 26.4.1;
+review baseline diffs rather than treating `--record` as normal verification.
+
 Strict documentation freshness gate:
 
 ```bash
@@ -237,8 +260,8 @@ Combined wrapper (fast + optional heavy):
 bash scripts/verify_all.sh
 ```
 
-`verify_all.sh` always resolves dependencies and runs the provenance gate first.
-`--full` then runs `swift test`.
+`verify_all.sh` always resolves dependencies and runs the provenance gate first, then checks both
+platform API baselines. `--full` uses `swift test` instead of the fast correctness split.
 
 Optional heavy benchmark suites:
 
@@ -260,13 +283,14 @@ bash scripts/verify_ios.sh
 
 ### Test Split Strategy
 
-Verification is split into six honestly-scoped contracts rather than one monolithic test run:
+Verification is split into seven honestly-scoped contracts rather than one monolithic test run:
 
 - **Provenance gate** (`verify_provenance.sh`, all CI jobs): Resolves the manifest-derived package graph before invoking the read-only, offline `verify_provenance.py` drift check for `Package.resolved`, the vendored Mermaid artifact, and checked-in third-party notice coverage.
 - **Correctness gate** (`verify_fast.sh`, CI job `verify`): Discovers every `XCTestCase` suite in `MarkdownKitTests` via `swift test list` and runs all of them except the benchmark suites and the two true snapshot suites (`SnapshotTests`, `iOSSnapshotTests`). It is correctness-only in every environment — it never records or verifies snapshots, locally or in CI — so newly added test classes are covered automatically instead of relying on a hand-maintained allow-list. `DiagramSnapshotTests` is a deterministic suite and stays in this gate.
+- **Public API graph baselines** (`verify_public_api.sh`, macOS `verify` and iOS `verify-ios` CI jobs): SwiftPM builds and `swift-symbolgraph-extract` produce every source-declared public symbol and its compiler-emitted public relationships for macOS 26.0 and iOS 17.0 Simulator. The iOS gate checks both simulator architectures. `PublicAPISmokeTests` remains the complementary fast normal-import compile/behavior contract. Checks are read-only; recording a baseline is an intentional, reviewed Xcode 26.4.1 operation.
 - **Documentation freshness gate** (`check_doc_freshness.sh`, CI job `verify`): A strict, Bash 3.2-compatible, read-only check that the discoverable test count and generated benchmark docs match their sources. Runs after the correctness gate as its own explicit CI step.
 - **Snapshot contracts** (`verify_snapshots.sh`, CI job `verify-snapshots`): Owns `SnapshotTests` exclusively, split into two independent, honestly-labeled modes:
-  - `--visual` diffs the current run against the *committed* baseline PNGs. Because CI runs on `macos-26`/`latest-stable` — a rendering environment that moves under us (fonts, OS point releases) — this is a genuine visual-regression signal but is **non-blocking** (`continue-on-error: true`) since environment drift alone can flip it.
+  - `--visual` diffs the current run against the *committed* baseline PNGs. Although Xcode is pinned, the `macos-26` runner's fonts and OS point releases can still move under us, so this is a genuine visual-regression signal but is **non-blocking** (`continue-on-error: true`) since environment drift alone can flip it.
   - `--determinism` records fresh baselines and immediately re-verifies against them in the *same* run/environment, then restores the original snapshot directory. This proves the renderer is internally deterministic and is **blocking**.
   - `iOSSnapshotTests` currently has no committed baseline or dedicated CI lane; it is intentionally excluded from both `verify_fast.sh` and `verify_snapshots.sh` and should not be read as covered by either gate.
 - **iOS Simulator suite** (`verify_ios.sh`, CI job `verify-ios`): Discovers the same correctness suites by scanning source (minus benchmarks and true snapshot suites), verifies the compiled iOS test bundle contains every UIKit-bearing suite, and runs the enumerated tests on a dynamically-selected iOS Simulator via `xcodebuild`, with exact executed-count validation, per-test timeouts, crash/restart detection, and a private system-font fallback check.
@@ -278,6 +302,7 @@ Verification is split into six honestly-scoped contracts rather than one monolit
 - `Sources/MarkdownKit`: core parser, AST nodes, plugins, layout engine, UI components
 - `Sources/MarkdownKitDemo`: demo app
 - `Tests/MarkdownKitTests`: unit/integration tests
+- `API/PublicAPI`: committed macOS and iOS Simulator public symbol-graph baselines
 - `ThirdParty/`: checked-in third-party licenses/notices and `provenance.lock.json`
 - `docs/`: PRD, feature notes, roadmap
 - `scripts/`: local automation and verification entrypoints

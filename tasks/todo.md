@@ -496,8 +496,14 @@ review the complete diff, then commit and push before starting the next stage.
     resolution, review compatibility, and commit/push independently.
   - [x] Q20-B add MIT licensing, third-party notices, provenance metadata, and
     dependency/Mermaid drift verification; commit/push independently.
-  - [ ] Q20-C add normalized macOS/iOS public API baselines and CI freshness
+  - [x] Q20-C add normalized macOS/iOS public API baselines and CI freshness
     checks with concise diffs; commit/push independently.
+    - [x] Q20-C1 extract source-declared public symbol graphs for macOS and
+      arm64/x86_64 iOS Simulator without the tracked Xcode project.
+    - [x] Q20-C2 normalize symbols/relationships into deterministic committed
+      baselines and report concise added/removed/changed drift.
+    - [x] Q20-C3 integrate matching CI/local gates, document refresh workflow,
+      review negative fixtures, validate both platforms, then commit/push.
   - [ ] Q20-D remove only verified-unreferenced scratch and stale generated
     Tuist/Xcode artifacts while preserving supported SwiftPM workflows;
     commit/push independently.
@@ -523,3 +529,19 @@ review the complete diff, then commit and push before starting the next stage.
   macOS correctness gate ran 499 tests, documentation freshness matched 516
   discoverable tests, both 4-test snapshot contracts passed, and the iOS
   Simulator gate ran 550 tests without failures or private-font diagnostics.
+  Q20-C review: SwiftPM-only extraction now records deterministic SHA-256
+  structural identities for 453 macOS symbols / 599 relationships and 454 iOS
+  Simulator symbols / 610 relationships. The iOS check verifies both arm64 and
+  x86_64 graphs against one architecture-neutral baseline; raw paths, USRs,
+  architecture, and generator/toolchain noise are excluded. Check mode is
+  read-only, record mode writes atomically with mode 0644, and six isolated
+  drift fixtures cover additions, removals, declaration changes, relationship
+  changes, malformed baselines, and wrong-platform input.
+  Q20-C validation: 10 normal-import public API smoke tests, provenance, 499
+  macOS correctness tests, both platform API checks, 516-test documentation
+  freshness, both 4-test snapshot contracts, and 550 iOS Simulator tests pass.
+  The GitHub `macos-26` image inventory lists Xcode 26.4.1 build 17E202 and its
+  matching macOS/iOS Simulator 26.4 SDKs.
+  Pinning Xcode 26.4.1 exposed a pre-existing Mermaid/WebKit cold-start race;
+  its reviewed runtime fix was committed and pushed independently as `011cf38`
+  before the API baseline commit.
