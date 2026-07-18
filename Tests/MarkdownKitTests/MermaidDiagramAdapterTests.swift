@@ -17,11 +17,18 @@ final class MermaidDiagramAdapterTests: XCTestCase {
         )
     }
 
-    func testHTMLBuilderCreatesValidBaseStructure() {
-        let html = MermaidHTMLBuilder.makeBaseHTML()
+    func testBundledBootstrapAndScriptAreCoLocatedAndLinked() throws {
+        let scriptURL = try XCTUnwrap(MermaidResourceLocator.bundledScriptURL())
+        let bootstrapURL = try XCTUnwrap(MermaidResourceLocator.bundledBootstrapURL())
+        let html = try String(contentsOf: bootstrapURL, encoding: .utf8)
 
-        XCTAssertTrue(html.contains(#"<div id="mermaid-root"></div>"#))
+        XCTAssertEqual(
+            scriptURL.deletingLastPathComponent().standardizedFileURL,
+            bootstrapURL.deletingLastPathComponent().standardizedFileURL
+        )
         XCTAssertTrue(html.contains("<!DOCTYPE html>"))
+        XCTAssertTrue(html.contains(#"<div id="mermaid-root"></div>"#))
+        XCTAssertTrue(html.contains(#"<script src="mermaid.min.js"></script>"#))
     }
 
     @MainActor

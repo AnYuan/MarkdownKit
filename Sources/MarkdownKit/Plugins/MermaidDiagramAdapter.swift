@@ -95,6 +95,8 @@ extension MermaidDiagramAdapter {
 enum MermaidResourceLocator {
     static let bundledScriptName = "mermaid.min"
     static let bundledScriptExtension = "js"
+    static let bundledBootstrapName = "mermaid-bootstrap"
+    static let bundledBootstrapExtension = "html"
 
     static func bundledScriptURL() -> URL? {
         Bundle.module.url(
@@ -102,28 +104,17 @@ enum MermaidResourceLocator {
             withExtension: bundledScriptExtension
         )
     }
-}
 
-enum MermaidHTMLBuilder {
-    static func makeBaseHTML() -> String {
-        return """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-            <style>
-                html, body { margin: 0; padding: 0; background-color: transparent; overflow: hidden; }
-                #mermaid-root { background-color: transparent; display: inline-block; }
-            </style>
-        </head>
-        <body>
-            <div id="mermaid-root"></div>
-        </body>
-        </html>
-        """
+    static func bundledBootstrapURL() -> URL? {
+        Bundle.module.url(
+            forResource: bundledBootstrapName,
+            withExtension: bundledBootstrapExtension
+        )
     }
 
+    static func bundledResourceDirectory() -> URL? {
+        bundledBootstrapURL()?.deletingLastPathComponent()
+    }
 }
 
 @MainActor
@@ -175,15 +166,19 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     }
 
     private var webView: WKWebView
-    private let hasConfiguredBundledScript: Bool
+    private let hasBundledResources: Bool
     private var loadingNavigation: WKNavigation?
     private var readinessProbeID: UUID?
+    private var bootstrapGeneration: UUID?
     private var activeRequest: Request?
     private var queue: [Request] = []
     private var timeoutTask: Task<Void, Never>?
     private var readinessTimeoutTask: Task<Void, Never>?
+    private var readinessTimeoutID: UUID?
+    private var bootstrapWatchdogTask: Task<Void, Never>?
     // Cold WebKit navigation and bundled Mermaid script initialization can take several seconds in CI.
     private let readinessTimeout: TimeInterval = 15.0
+    private let bootstrapHardTimeout: TimeInterval = 120.0
     private let renderTimeout: TimeInterval = 15.0
     private let snapshotDimensionLimit: CGFloat = 2048
     private var isWebViewReady = false
@@ -202,27 +197,8 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     
     override init() {
         let configuration = WKWebViewConfiguration()
-        if let scriptURL = MermaidResourceLocator.bundledScriptURL() {
-            do {
-                let scriptSource = try String(contentsOf: scriptURL, encoding: .utf8)
-                configuration.userContentController.addUserScript(
-                    WKUserScript(
-                        source: scriptSource,
-                        injectionTime: .atDocumentEnd,
-                        forMainFrameOnly: true
-                    )
-                )
-                hasConfiguredBundledScript = true
-            } catch {
-                MermaidDiagramAdapter.logger.error(
-                    "Could not configure Mermaid script source: \(error)"
-                )
-                hasConfiguredBundledScript = false
-            }
-        } else {
-            MermaidDiagramAdapter.logger.error("Could not locate Mermaid script source")
-            hasConfiguredBundledScript = false
-        }
+        hasBundledResources = MermaidResourceLocator.bundledScriptURL() != nil
+            && MermaidResourceLocator.bundledBootstrapURL() != nil
 
         webView = WKWebView(
             frame: CGRect(x: 0, y: 0, width: 640, height: 480),
@@ -283,9 +259,9 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
 
         queue.append(request)
 
-        guard hasConfiguredBundledScript else {
+        guard hasBundledResources else {
             MermaidDiagramAdapter.logger.error(
-                "Mermaid bundled script is unavailable; failing queued renders"
+                "Mermaid bundled resources are unavailable; failing queued renders"
             )
             failQueuedRenders()
             return
@@ -429,9 +405,9 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     }
     
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard hasConfiguredBundledScript else {
+        guard hasBundledResources else {
             MermaidDiagramAdapter.logger.error(
-                "Mermaid bundled script was not configured; failing queued renders"
+                "Mermaid bundled resources are unavailable; failing queued renders"
             )
             failQueuedRenders()
             return
@@ -442,6 +418,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
             return
         }
 
+        guard let generation = bootstrapGeneration else { return }
         let probeID = UUID()
         readinessProbeID = probeID
         webView.callAsyncJavaScript(
@@ -452,7 +429,8 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         ) { [weak self, weak webView] result in
             guard let self, let webView,
                   self.webView === webView,
-                  self.readinessProbeID == probeID else {
+                  self.readinessProbeID == probeID,
+                  self.bootstrapGeneration == generation else {
                 return
             }
 
@@ -473,8 +451,9 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
 
                 self.readinessProbeID = nil
                 self.loadingNavigation = nil
-                self.readinessTimeoutTask?.cancel()
-                self.readinessTimeoutTask = nil
+                self.bootstrapGeneration = nil
+                self.cancelReadinessTimeout()
+                self.cancelBootstrapWatchdog()
                 self.isWebViewReady = true
                 self.processNext()
             }
@@ -502,28 +481,32 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        if !isWebViewReady {
-            failQueuedRenders()
-            return
-        }
-
-        reloadWebView()
-        if activeRequest != nil {
-            finishCurrentActiveRequest(image: nil)
-        } else {
-            processNext()
-        }
+        MermaidDiagramAdapter.logger.error("Mermaid WebView content process terminated")
+        failQueuedRenders(stopLoading: true)
     }
 
     private func scheduleReadinessTimeoutIfNeeded() {
         guard !isWebViewReady, readinessTimeoutTask == nil, !queue.isEmpty else { return }
 
+        let timeoutID = UUID()
+        readinessTimeoutID = timeoutID
         let timeoutMilliseconds = Int(readinessTimeout * 1_000)
         readinessTimeoutTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(timeoutMilliseconds))
-            guard !Task.isCancelled, let self, !self.isWebViewReady else { return }
-            MermaidDiagramAdapter.logger.error("Mermaid WebView initialization timed out")
-            self.failQueuedRenders()
+            guard !Task.isCancelled,
+                  let self,
+                  self.readinessTimeoutID == timeoutID else {
+                return
+            }
+            self.readinessTimeoutTask = nil
+            self.readinessTimeoutID = nil
+            guard !self.isWebViewReady else { return }
+
+            let phase = self.readinessProbeID == nil ? "loading document" : "probing"
+            MermaidDiagramAdapter.logger.error(
+                "Mermaid WebView initialization timed out while \(phase)"
+            )
+            self.failWaitingRequestsForReadinessTimeout()
         }
     }
 
@@ -540,16 +523,28 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
 
     private func cancelReadinessTimeoutIfNoPendingRequests() {
         guard !isWebViewReady, activeRequest == nil, queue.isEmpty else { return }
-        readinessTimeoutTask?.cancel()
-        readinessTimeoutTask = nil
+        cancelReadinessTimeout()
     }
 
-    private func failQueuedRenders() {
+    private func failWaitingRequestsForReadinessTimeout() {
+        // A caller deadline does not own the shared bootstrap. Keeping the
+        // current generation alive avoids restart amplification; the separate
+        // bootstrap watchdog bounds genuinely stalled WebKit initialization.
+        let pending = queue
+        queue.removeAll()
+
+        for request in pending {
+            finish(request, image: nil)
+        }
+    }
+
+    private func failQueuedRenders(stopLoading: Bool = false) {
         isWebViewReady = false
         loadingNavigation = nil
         readinessProbeID = nil
-        readinessTimeoutTask?.cancel()
-        readinessTimeoutTask = nil
+        bootstrapGeneration = nil
+        cancelReadinessTimeout()
+        cancelBootstrapWatchdog()
 
         timeoutTask?.cancel()
         timeoutTask = nil
@@ -560,6 +555,10 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         let active = activeRequest
         activeRequest = nil
         pausedRequestForTesting = nil
+
+        if stopLoading {
+            webView.stopLoading()
+        }
 
         if let active {
             finish(active, image: nil)
@@ -666,26 +665,58 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
     private func loadBaseHTML() {
         isWebViewReady = false
         readinessProbeID = nil
-        readinessTimeoutTask?.cancel()
-        readinessTimeoutTask = nil
+        cancelReadinessTimeout()
+        cancelBootstrapWatchdog()
 
-        guard hasConfiguredBundledScript else {
+        guard hasBundledResources,
+              let bootstrapURL = MermaidResourceLocator.bundledBootstrapURL(),
+              let resourceDirectory = MermaidResourceLocator.bundledResourceDirectory() else {
             MermaidDiagramAdapter.logger.error(
-                "Mermaid bundled script is unavailable; failing queued renders"
+                "Mermaid bundled resources are unavailable; failing queued renders"
             )
             failQueuedRenders()
             return
         }
 
-        loadingNavigation = webView.loadHTMLString(
-            MermaidHTMLBuilder.makeBaseHTML(),
-            baseURL: nil
+        let generation = UUID()
+        bootstrapGeneration = generation
+        loadingNavigation = webView.loadFileURL(
+            bootstrapURL,
+            allowingReadAccessTo: resourceDirectory
         )
+        scheduleBootstrapWatchdog(for: generation)
     }
 
     private func isCurrentLoadingNavigation(_ navigation: WKNavigation?) -> Bool {
         guard let navigation, let loadingNavigation else { return false }
         return navigation === loadingNavigation
+    }
+
+    private func scheduleBootstrapWatchdog(for generation: UUID) {
+        let timeoutMilliseconds = Int(bootstrapHardTimeout * 1_000)
+        bootstrapWatchdogTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(timeoutMilliseconds))
+            guard !Task.isCancelled,
+                  let self,
+                  self.bootstrapGeneration == generation,
+                  !self.isWebViewReady else {
+                return
+            }
+            self.bootstrapWatchdogTask = nil
+            MermaidDiagramAdapter.logger.error("Mermaid WebView bootstrap hard deadline exceeded")
+            self.failQueuedRenders(stopLoading: true)
+        }
+    }
+
+    private func cancelReadinessTimeout() {
+        readinessTimeoutTask?.cancel()
+        readinessTimeoutTask = nil
+        readinessTimeoutID = nil
+    }
+
+    private func cancelBootstrapWatchdog() {
+        bootstrapWatchdogTask?.cancel()
+        bootstrapWatchdogTask = nil
     }
 
     func invalidateReadinessForTesting() {
@@ -807,8 +838,7 @@ private final class MermaidSnapshotter: NSObject, WKNavigationDelegate {
         precondition(activeRequest == nil && queue.isEmpty, "MermaidSnapshotter test reset requires an idle snapshotter")
         timeoutTask?.cancel()
         timeoutTask = nil
-        readinessTimeoutTask?.cancel()
-        readinessTimeoutTask = nil
+        cancelReadinessTimeout()
         pausedRequestForTesting = nil
         shouldPauseNextRenderForTesting = false
         shouldFailNextJavaScriptEvaluationForTesting = false

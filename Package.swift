@@ -39,7 +39,8 @@ let package = Package(
                 .product(name: "SwiftDraw", package: "SwiftDraw")
             ],
             resources: [
-                .copy("Resources/mermaid.min.js")
+                .copy("Resources/mermaid.min.js"),
+                .copy("Resources/mermaid-bootstrap.html")
             ]
         ),
         .executableTarget(
