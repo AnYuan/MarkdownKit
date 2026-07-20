@@ -83,8 +83,8 @@ results and make a silent partial run a failure.
 | Consumer import smoke | `swift test --filter PublicAPISmokeTests` | 10 tests. |
 | Provenance | `bash scripts/verify_provenance.sh` | Succeeds without refreshing provenance. |
 | macOS public API | `bash scripts/verify_public_api.sh --platform macos --check` | 453 symbols / 599 relationships. |
-| Fast correctness | `bash scripts/verify_fast.sh` | 499 tests; 516 discoverable tests. |
-| Documentation freshness | `bash scripts/check_doc_freshness.sh` | 516 discoverable tests. |
+| Fast correctness | `bash scripts/verify_fast.sh` | 499 tests; 517 discoverable tests. |
+| Documentation freshness | `bash scripts/check_doc_freshness.sh` | 517 discoverable tests. |
 | Snapshot visual contract | `bash scripts/verify_snapshots.sh --visual` | 4 tests and 4 committed PNG baselines. |
 | Snapshot determinism | `bash scripts/verify_snapshots.sh --determinism` | Record 4 expected missing-reference failures, then verify 4 tests. |
 | iOS Simulator correctness | `bash scripts/verify_ios.sh` | Exactly 550 XCTest tests, then exactly one PASS marker from an app-hosted `MarkdownView` Mermaid fence using real WebKit. |

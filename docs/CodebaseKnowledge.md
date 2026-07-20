@@ -67,7 +67,7 @@ bash scripts/verify_benchmarks.sh
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **516** discoverable tests
+- `swift test list`: **517** discoverable tests
 - `swift test`: **516 tests passed** on 2026-07-18
 - `verify_fast.sh`: **499** correctness tests
 - `verify_ios.sh`: **550** XCTest tests plus one app-hosted Mermaid PASS marker
@@ -188,7 +188,8 @@ High-value suites:
   macOS and a deterministic image driver on iOS; the iOS verification script
   adds a separate app-hosted public-`MarkdownView` Mermaid-fence smoke using
   real WebKit after its 550 XCTest tests.
-- Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`, `BenchmarkCacheTests`
+- Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`,
+  `BenchmarkCacheTests`, `MarkdownRenderCoordinatorBenchmarkTests`
 
 ## 6. Known Gaps / Risks / Technical Debt
 

@@ -79,7 +79,7 @@ final class DiagramLayoutTests: XCTestCase {
             ).children.first as? DiagramNode
         )
         let cache = LayoutCache()
-        let adapter = BlockingDiagramAdapter(output: "rendered")
+        let adapter = TestHelper.BlockingDiagramAdapter(output: "rendered")
         var registry = DiagramAdapterRegistry()
         registry.register(adapter, for: .mermaid)
         let solver = LayoutSolver(cache: cache, diagramRegistry: registry)
@@ -236,74 +236,10 @@ private struct RecordingDiagramAdapter: DiagramRenderingAdapter {
     }
 }
 
-private struct BlockingDiagramAdapter: DiagramRenderingAdapter {
-    private let output: String
-    private let state = DiagramAdapterState(blocksFirstRender: true)
-
-    init(output: String) {
-        self.output = output
-    }
-
-    func render(source: String, language: DiagramLanguage) async -> NSAttributedString? {
-        await state.recordRender()
-        return NSAttributedString(string: output)
-    }
-
-    func waitUntilFirstRenderStarts() async -> Bool {
-        await state.waitUntilFirstRenderStarts()
-    }
-
-    func releaseFirstRender() async {
-        await state.releaseFirstRender()
-    }
-
-    func renderCount() async -> Int {
-        await state.renderCount
-    }
-
-    func cacheFingerprint(into hasher: inout Hasher) {
-        hasher.combine("BlockingDiagramAdapter")
-        hasher.combine(output)
-    }
-}
-
 private actor DiagramAdapterState {
-    private let blocksFirstRender: Bool
     private(set) var renderCount = 0
-    private var didStartFirstRender = false
-    private var isFirstRenderReleased = false
-    private var firstRenderContinuation: CheckedContinuation<Void, Never>?
 
-    init(blocksFirstRender: Bool = false) {
-        self.blocksFirstRender = blocksFirstRender
-    }
-
-    func recordRender() async {
+    func recordRender() {
         renderCount += 1
-        if renderCount == 1 {
-            didStartFirstRender = true
-            if blocksFirstRender, !isFirstRenderReleased {
-                await withCheckedContinuation { continuation in
-                    firstRenderContinuation = continuation
-                }
-            }
-        }
     }
-
-    func waitUntilFirstRenderStarts() async -> Bool {
-        for _ in 0..<200 {
-            if didStartFirstRender {
-                return true
-            }
-            try? await Task.sleep(for: .milliseconds(5))
-        }
-        return didStartFirstRender
-    }
-
-    func releaseFirstRender() {
-        isFirstRenderReleased = true
-        firstRenderContinuation?.resume()
-        firstRenderContinuation = nil
-    }
-
 }

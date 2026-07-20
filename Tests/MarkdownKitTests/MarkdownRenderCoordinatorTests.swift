@@ -149,7 +149,7 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
         XCTAssertEqual(afterRelease.maxActiveVisits, 1)
         XCTAssertEqual(afterRelease.totalVisits, 2)
 
-        let finalText = flattenedLayoutText(from: engine.layouts)
+        let finalText = TestHelper.flattenedLayoutText(from: engine.layouts)
         XCTAssertTrue(finalText.contains(latestText))
         XCTAssertFalse(finalText.contains(firstText))
         XCTAssertFalse(finalText.contains(middleText))
@@ -192,7 +192,7 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
 
         XCTAssertFalse(engine.layouts.isEmpty)
         XCTAssertTrue(engine.layouts.allSatisfy { $0.appearance == .dark })
-        XCTAssertTrue(flattenedLayoutText(from: engine.layouts).contains(markdown))
+        XCTAssertTrue(TestHelper.flattenedLayoutText(from: engine.layouts).contains(markdown))
     }
 
     func testParseKeyReuseAndInvalidationBoundaries() async {
@@ -332,7 +332,7 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
         XCTAssertTrue(finalDetails.node.isOpen)
         XCTAssertEqual(finalDetails.layout.appearance, .dark)
 
-        let finalText = flattenedLayoutText(from: engine.layouts)
+        let finalText = TestHelper.flattenedLayoutText(from: engine.layouts)
         XCTAssertTrue(finalText.contains("DETAILS_BODY_TOKEN"))
     }
 
@@ -423,26 +423,6 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
             return nil
         }
         return (index, layouts[index], node)
-    }
-
-    private func flattenedLayoutText(from layouts: [LayoutResult]) -> String {
-        var pieces: [String] = []
-        for layout in layouts {
-            collectText(from: layout, into: &pieces)
-        }
-        return pieces.joined(separator: "\n")
-    }
-
-    private func collectText(from layout: LayoutResult, into pieces: inout [String]) {
-        if let attributed = layout.attributedString, !attributed.string.isEmpty {
-            pieces.append(attributed.string)
-        } else if let text = layout.node as? TextNode {
-            pieces.append(text.text)
-        }
-
-        for child in layout.children {
-            collectText(from: child, into: &pieces)
-        }
     }
 
     private func themed(textColor: Color) -> Theme {

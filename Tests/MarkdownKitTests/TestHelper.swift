@@ -43,6 +43,26 @@ enum TestHelper {
         return data
     }
 
+    static func flattenedLayoutText(from layouts: [LayoutResult]) -> String {
+        var pieces: [String] = []
+        for layout in layouts {
+            collectText(from: layout, into: &pieces)
+        }
+        return pieces.joined(separator: "\n")
+    }
+
+    private static func collectText(from layout: LayoutResult, into pieces: inout [String]) {
+        if let attributed = layout.attributedString, !attributed.string.isEmpty {
+            pieces.append(attributed.string)
+        } else if let text = layout.node as? TextNode {
+            pieces.append(text.text)
+        }
+
+        for child in layout.children {
+            collectText(from: child, into: &pieces)
+        }
+    }
+
     #if canImport(UIKit) && !os(watchOS)
     static func imageContainsVisibleNonWhitePixel(_ image: CGImage?) -> Bool {
         guard let image else { return false }
@@ -97,6 +117,76 @@ enum TestHelper {
             "Expected child[\(index)] to be \(T.self), got \(type(of: parent.children[index]))",
             file: file, line: line)
         return child
+    }
+
+    struct BlockingDiagramAdapter: DiagramRenderingAdapter {
+        private let output: String
+        private let state = BlockingDiagramAdapterState()
+
+        init(output: String) {
+            self.output = output
+        }
+
+        func render(source: String, language: DiagramLanguage) async -> NSAttributedString? {
+            await state.recordRender(source: source)
+            return NSAttributedString(string: output)
+        }
+
+        func waitUntilFirstRenderStarts() async -> Bool {
+            await state.waitUntilFirstRenderStarts()
+        }
+
+        func releaseFirstRender() async {
+            await state.releaseFirstRender()
+        }
+
+        func renderCount() async -> Int {
+            await state.renderCount
+        }
+
+        func renderedSources() async -> [String] {
+            await state.renderedSources
+        }
+
+        func cacheFingerprint(into hasher: inout Hasher) {
+            hasher.combine("BlockingDiagramAdapter")
+            hasher.combine(output)
+        }
+    }
+
+    private actor BlockingDiagramAdapterState {
+        private(set) var renderedSources: [String] = []
+        private var isFirstRenderReleased = false
+        private var firstRenderContinuation: CheckedContinuation<Void, Never>?
+
+        var renderCount: Int {
+            renderedSources.count
+        }
+
+        func recordRender(source: String) async {
+            renderedSources.append(source)
+            if renderedSources.count == 1, !isFirstRenderReleased {
+                await withCheckedContinuation { continuation in
+                    firstRenderContinuation = continuation
+                }
+            }
+        }
+
+        func waitUntilFirstRenderStarts() async -> Bool {
+            for _ in 0..<200 {
+                if !renderedSources.isEmpty {
+                    return true
+                }
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            return !renderedSources.isEmpty
+        }
+
+        func releaseFirstRender() {
+            isFirstRenderReleased = true
+            firstRenderContinuation?.resume()
+            firstRenderContinuation = nil
+        }
     }
 }
 

@@ -1,26 +1,23 @@
 # MarkdownKit 测试覆盖与执行快照
 
-> 最近更新: 2026-07-18
+> 最近更新: 2026-07-20
 > 生成方式: `python3 scripts/generate_test_coverage_report.py [--run-tests|--from-log <path>]`
-> 生成时间: 2026-07-18 06:52:38
+> 生成时间: 2026-07-20 20:50:16
 
 ## 1. 总览
 
 | 指标 | 当前值 | 说明 |
 | --- | ---: | --- |
 | 源码文件数 (`Sources/MarkdownKit/*.swift`) | 87 | 不含 Demo target |
-| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 75 | 含基准/夹具/辅助文件 |
-| 含 `test*` 方法的测试文件 | 67 | 静态扫描结果 |
-| 静态扫描 `test*` 方法总数 | 603 | 受编译条件影响，可能高于可执行测试数 |
-| 可发现测试数 (`swift test list`) | 516 | 当前平台可执行测试 |
-| 全量执行结果 (`swift test`) | 516 执行 / 0 跳过 / 0 失败 | 当前基线已通过 |
+| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 76 | 含基准/夹具/辅助文件 |
+| 含 `test*` 方法的测试文件 | 68 | 静态扫描结果 |
+| 静态扫描 `test*` 方法总数 | 604 | 受编译条件影响，可能高于可执行测试数 |
+| 可发现测试数 (`swift test list`) | 517 | 当前平台可执行测试 |
+| 全量执行结果 (`swift test`) | 未提供 | 未执行或未提供日志 |
 
 ## 2. 本次执行状态
 
-- 执行命令: `swift test`
-- 执行: 516
-- 跳过: 0
-- 失败: 0
+- 未提供 `swift test` 执行结果；可用 `--run-tests` 或 `--from-log` 补充。
 
 ## 3. 测试文件明细
 
@@ -65,6 +62,7 @@
 | `MacOSUIComponentsTests.swift` | 15 |
 | `MarkdownKitBenchmarkTests.swift` | 4 |
 | `MarkdownKitTests.swift` | 7 |
+| `MarkdownRenderCoordinatorBenchmarkTests.swift` | 1 |
 | `MarkdownRenderCoordinatorTests.swift` | 4 |
 | `MarkdownRenderInputTests.swift` | 6 |
 | `MathCacheTests.swift` | 3 |

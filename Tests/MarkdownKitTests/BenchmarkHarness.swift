@@ -96,6 +96,41 @@ struct BenchmarkHarness {
         return buildResult(label: label, fixture: fixture, timings: timings, memoryDeltas: memoryDeltas)
     }
 
+    @MainActor
+    func measureMainActorAsync<Context>(
+        label: String,
+        fixture: String = "",
+        setup: @MainActor () async throws -> Context,
+        operation: @MainActor (Context) async throws -> Void
+    ) async rethrows -> BenchmarkResult {
+        for _ in 0..<warmupIterations {
+            let context = try await setup()
+            try await operation(context)
+        }
+
+        var timings: [Double] = []
+        timings.reserveCapacity(measureIterations)
+        var memoryDeltas: [Int64] = []
+        memoryDeltas.reserveCapacity(measureIterations)
+
+        for _ in 0..<measureIterations {
+            let context = try await setup()
+            let memBefore = currentResidentSize()
+            let start = mach_absolute_time()
+
+            try await operation(context)
+
+            let end = mach_absolute_time()
+            let memAfter = currentResidentSize()
+            withExtendedLifetime(context) {}
+
+            timings.append(machToMilliseconds(end - start))
+            memoryDeltas.append(Swift.max(0, memAfter - memBefore))
+        }
+
+        return buildResult(label: label, fixture: fixture, timings: timings, memoryDeltas: memoryDeltas)
+    }
+
     // MARK: - Mach time conversion
 
     private static let timebaseInfo: mach_timebase_info_data_t = {

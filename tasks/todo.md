@@ -610,8 +610,14 @@ before the next stage starts.
   process, and passed all guards. Four-role regression and simplification
   reviews were resolved; 499 fast correctness tests and the 516-test
   documentation freshness gate also passed.
-- [ ] P01-B add one coordinator-level rapid-update/latest-settled latency
+- [x] P01-B add one coordinator-level rapid-update/latest-settled latency
   workload representing streaming Markdown growth at a stable width.
+  Validation: untimed setup establishes a fresh coordinator with stale diagram
+  layout actively blocked; the measured interval enqueues middle/latest growth,
+  releases stale work, and waits for the latest commit. Exact adapter sources
+  verify first/latest execution with no middle render. The 12-workload Release
+  gate, 499 fast correctness tests, and 517-test documentation freshness gate
+  pass; timing remains informational until P01-C.
 - [ ] P01-C record the new isolated Release baseline from current `main`, tighten
   the average regression policy using repeated-run variance, regenerate the
   generated baseline documentation, and correct the stale archival

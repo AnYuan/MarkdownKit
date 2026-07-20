@@ -72,6 +72,7 @@ BENCHMARK_NAMES=(
   "Syntax Tiered"
   "Cache Micro"
   "Cache Eviction Pressure"
+  "Coordinator Streaming"
 )
 
 BENCHMARK_TEST_IDS=(
@@ -86,6 +87,7 @@ BENCHMARK_TEST_IDS=(
   "MarkdownKitTests.BenchmarkNodeTypeTests/testPerSyntaxTieredBenchmark"
   "MarkdownKitTests.BenchmarkCacheTests/testCacheGetSetMicro"
   "MarkdownKitTests.BenchmarkCacheTests/testCacheEvictionPressure"
+  "MarkdownKitTests.MarkdownRenderCoordinatorBenchmarkTests/testRapidUpdateLatestSettledLatency"
 )
 
 if [[ "${#BENCHMARK_NAMES[@]}" -ne "${#BENCHMARK_TEST_IDS[@]}" ]]; then
