@@ -336,11 +336,82 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
         XCTAssertTrue(finalText.contains("DETAILS_BODY_TOKEN"))
     }
 
+    func testLatestConfigurationCancelsStaleDiagramResourcesAndReusesParsedAST() async {
+        let engine = MarkdownEngine()
+        let counter = ParseVisitCounter()
+        let countingPlugin = FingerprintedCountingPlugin(counter: counter, fingerprintValue: 10)
+        let plugins: [ASTPlugin] = [DiagramExtractionPlugin(), countingPlugin]
+        let sources = (0..<1_000).map { "graph TD\nA\($0)-->B\($0)" }
+        let markdown = sources.map { source in
+            """
+            ```mermaid
+            \(source)
+            ```
+            """
+        }.joined(separator: "\n\n")
+        let staleAdapter = TestHelper.BlockingDiagramAdapter(output: "STALE_RENDERED_ADAPTER_TEXT")
+        var staleRegistry = DiagramAdapterRegistry()
+        staleRegistry.register(staleAdapter, for: .mermaid)
+
+        submitInitialRender(
+            engine,
+            markdown: markdown,
+            plugins: plugins,
+            diagramRegistry: staleRegistry,
+            appearance: .light
+        )
+        guard await staleAdapter.waitUntilFirstRenderStarts() else {
+            await staleAdapter.releaseFirstRender()
+            await engine.waitUntilSettled()
+            XCTFail("First stale diagram did not start within the timeout")
+            return
+        }
+
+        renderImmediately(
+            engine,
+            markdown: markdown,
+            plugins: plugins,
+            theme: themed(textColor: .systemGreen),
+            diagramRegistry: DiagramAdapterRegistry(),
+            appearance: .dark
+        )
+        await staleAdapter.releaseFirstRender()
+        await engine.waitUntilSettled()
+
+        let staleSources = await staleAdapter.renderedSources()
+        let finalDiagrams = engine.layouts.compactMap { layout -> (LayoutResult, DiagramNode)? in
+            guard let diagram = layout.node as? DiagramNode else { return nil }
+            return (layout, diagram)
+        }
+        let finalSources = finalDiagrams.map {
+            $0.1.source.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        XCTAssertEqual(staleSources.count, 1)
+        XCTAssertEqual(
+            staleSources.first?.trimmingCharacters(in: .whitespacesAndNewlines),
+            sources.first
+        )
+        XCTAssertEqual(counter.value(), 1)
+        XCTAssertEqual(engine.layouts.count, 1_000)
+        XCTAssertEqual(finalDiagrams.count, 1_000)
+        XCTAssertEqual(finalSources, sources)
+        XCTAssertTrue(finalDiagrams.allSatisfy { $0.0.appearance == .dark })
+        XCTAssertTrue(finalDiagrams.allSatisfy {
+            $0.0.attributedString?.string.hasPrefix("MERMAID\n") == true
+        })
+        XCTAssertFalse(
+            TestHelper.flattenedLayoutText(from: engine.layouts)
+                .contains("STALE_RENDERED_ADAPTER_TEXT")
+        )
+    }
+
     private func submitInitialRender(
         _ engine: MarkdownEngine,
         markdown: String,
         plugins: [ASTPlugin],
         theme: Theme = .default,
+        diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry(),
         resourceLimits: MarkdownParser.ResourceLimits = .default,
         appearance: MarkdownAppearance
     ) {
@@ -349,7 +420,7 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
             markdown: markdown,
             plugins: plugins,
             theme: theme,
-            diagramRegistry: DiagramAdapterRegistry(),
+            diagramRegistry: diagramRegistry,
             imageLoadingPolicy: .default,
             resourceLimits: resourceLimits,
             appearance: appearance
@@ -361,6 +432,7 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
         markdown: String,
         plugins: [ASTPlugin],
         theme: Theme = .default,
+        diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry(),
         resourceLimits: MarkdownParser.ResourceLimits = .default,
         appearance: MarkdownAppearance
     ) {
@@ -369,7 +441,7 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
             plugins: plugins,
             theme: theme,
             fallbackWidth: initialWidth,
-            diagramRegistry: DiagramAdapterRegistry(),
+            diagramRegistry: diagramRegistry,
             imageLoadingPolicy: .default,
             resourceLimits: resourceLimits,
             appearance: appearance
@@ -381,6 +453,7 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
         markdown: String,
         plugins: [ASTPlugin],
         theme: Theme = .default,
+        diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry(),
         resourceLimits: MarkdownParser.ResourceLimits = .default,
         appearance: MarkdownAppearance
     ) {
@@ -389,7 +462,7 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
             plugins: plugins,
             theme: theme,
             fallbackWidth: initialWidth,
-            diagramRegistry: DiagramAdapterRegistry(),
+            diagramRegistry: diagramRegistry,
             imageLoadingPolicy: .default,
             resourceLimits: resourceLimits,
             appearance: appearance
@@ -402,6 +475,7 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
         markdown: String,
         plugins: [ASTPlugin],
         theme: Theme = .default,
+        diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry(),
         resourceLimits: MarkdownParser.ResourceLimits = .default,
         appearance: MarkdownAppearance
     ) {
@@ -410,7 +484,7 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
             markdown: markdown,
             plugins: plugins,
             theme: theme,
-            diagramRegistry: DiagramAdapterRegistry(),
+            diagramRegistry: diagramRegistry,
             imageLoadingPolicy: .default,
             resourceLimits: resourceLimits,
             appearance: appearance

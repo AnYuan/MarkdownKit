@@ -23,37 +23,108 @@ public final class LayoutCache: @unchecked Sendable {
 
     // MARK: - Cache Key
 
-    /// The internal key structure for NSCache, based on content, interaction, variant, and width.
-    private class CacheKey: NSObject {
+    struct Key: Hashable {
         let contentHash: Int
         let interactionHash: Int?
         let width: Int
         let variantHash: Int
 
-        init(contentHash: Int, interactionHash: Int?, width: CGFloat, variantHash: Int) {
+        init(
+            contentHash: Int,
+            interactionHash: Int?,
+            width: CGFloat,
+            variantHash: Int
+        ) {
             self.contentHash = contentHash
             self.interactionHash = interactionHash
-            self.variantHash = variantHash
-            // Hash and compare exact integer widths since floating point jitter
-            // inside scroll views often breaks fuzzy hit rates.
             self.width = Int(width.rounded())
+            self.variantHash = variantHash
+        }
+
+        init(node: MarkdownNode, width: CGFloat, variantHash: Int) {
+            self.init(
+                contentHash: node.contentFingerprint,
+                interactionHash: node._interactionFingerprint,
+                width: width,
+                variantHash: variantHash
+            )
+        }
+
+        init(result: LayoutResult, width: CGFloat, variantHash: Int) {
+            self.init(
+                contentHash: result.node.contentFingerprint,
+                interactionHash: result.interactionFingerprint,
+                width: width,
+                variantHash: variantHash
+            )
+        }
+    }
+
+    struct WriteBatch {
+        private struct Entry {
+            let key: Key
+            var result: LayoutResult
+        }
+
+        private let sharedCache: LayoutCache
+        private var entries: [Entry] = []
+        private var entryIndexByKey: [Key: Int] = [:]
+
+        fileprivate init(sharedCache: LayoutCache) {
+            self.sharedCache = sharedCache
+        }
+
+        mutating func getLayout(
+            for node: MarkdownNode,
+            constrainedToWidth width: CGFloat,
+            variantHash: Int
+        ) -> LayoutResult? {
+            let key = Key(node: node, width: width, variantHash: variantHash)
+            if let index = entryIndexByKey[key] {
+                sharedCache.recordLookup(hit: true)
+                return entries[index].result
+            }
+            return sharedCache.getLayout(for: key)
+        }
+
+        mutating func stage(
+            _ result: LayoutResult,
+            constrainedToWidth width: CGFloat,
+            variantHash: Int
+        ) {
+            let key = Key(result: result, width: width, variantHash: variantHash)
+            if let index = entryIndexByKey[key] {
+                entries[index].result = result
+                return
+            }
+            entryIndexByKey[key] = entries.count
+            entries.append(Entry(key: key, result: result))
+        }
+
+        /// Publishes staged child-before-parent entries after successful root completion.
+        /// Dropping the batch before this point discards every staged write.
+        func commit() {
+            for entry in entries {
+                sharedCache.setLayout(entry.result, for: entry.key)
+            }
+        }
+    }
+
+    /// The object key used by NSCache. Equality delegates to the canonical value key.
+    private class CacheKey: NSObject {
+        let key: Key
+
+        init(_ key: Key) {
+            self.key = key
         }
 
         override var hash: Int {
-            var hasher = Hasher()
-            hasher.combine(contentHash)
-            hasher.combine(interactionHash)
-            hasher.combine(width)
-            hasher.combine(variantHash)
-            return hasher.finalize()
+            key.hashValue
         }
 
         override func isEqual(_ object: Any?) -> Bool {
             guard let other = object as? CacheKey else { return false }
-            return self.contentHash == other.contentHash
-                && self.interactionHash == other.interactionHash
-                && self.width == other.width
-                && self.variantHash == other.variantHash
+            return key == other.key
         }
     }
 
@@ -100,6 +171,10 @@ public final class LayoutCache: @unchecked Sendable {
         cache.countLimit = countLimit
     }
 
+    func makeWriteBatch() -> WriteBatch {
+        WriteBatch(sharedCache: self)
+    }
+
     // MARK: - Cache Operations
 
     /// Retrieve a pre-calculated layout if it exists for the given node and container width.
@@ -111,21 +186,7 @@ public final class LayoutCache: @unchecked Sendable {
         constrainedToWidth width: CGFloat,
         variantHash: Int = 0
     ) -> LayoutResult? {
-        let key = CacheKey(
-            contentHash: node.contentFingerprint,
-            interactionHash: node._interactionFingerprint,
-            width: width,
-            variantHash: variantHash
-        )
-        let result = cache.object(forKey: key)?.result
-        statsLock.lock()
-        if result != nil {
-            hitCountStorage += 1
-        } else {
-            missCountStorage += 1
-        }
-        statsLock.unlock()
-        return result
+        getLayout(for: Key(node: node, width: width, variantHash: variantHash))
     }
 
     /// Store a freshly computed layout frame.
@@ -134,14 +195,29 @@ public final class LayoutCache: @unchecked Sendable {
         constrainedToWidth width: CGFloat,
         variantHash: Int = 0
     ) {
-        let key = CacheKey(
-            contentHash: result.node.contentFingerprint,
-            interactionHash: result.interactionFingerprint,
-            width: width,
-            variantHash: variantHash
-        )
+        let key = Key(result: result, width: width, variantHash: variantHash)
+        setLayout(result, for: key)
+    }
+
+    private func getLayout(for key: Key) -> LayoutResult? {
+        let result = cache.object(forKey: CacheKey(key))?.result
+        recordLookup(hit: result != nil)
+        return result
+    }
+
+    private func setLayout(_ result: LayoutResult, for key: Key) {
         let wrapper = LayoutResultWrapper(result)
-        cache.setObject(wrapper, forKey: key)
+        cache.setObject(wrapper, forKey: CacheKey(key))
+    }
+
+    private func recordLookup(hit: Bool) {
+        statsLock.lock()
+        if hit {
+            hitCountStorage += 1
+        } else {
+            missCountStorage += 1
+        }
+        statsLock.unlock()
     }
 
     /// Clears all stored layouts (e.g. upon memory warning).

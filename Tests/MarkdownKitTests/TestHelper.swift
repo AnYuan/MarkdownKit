@@ -121,10 +121,11 @@ enum TestHelper {
 
     struct BlockingDiagramAdapter: DiagramRenderingAdapter {
         private let output: String
-        private let state = BlockingDiagramAdapterState()
+        private let state: BlockingResourceState
 
-        init(output: String) {
+        init(output: String, blockOnRender: Int = 1) {
             self.output = output
+            self.state = BlockingResourceState(blockOnRender: blockOnRender)
         }
 
         func render(source: String, language: DiagramLanguage) async -> NSAttributedString? {
@@ -133,11 +134,19 @@ enum TestHelper {
         }
 
         func waitUntilFirstRenderStarts() async -> Bool {
-            await state.waitUntilFirstRenderStarts()
+            await state.waitUntilRenderStarts(1)
+        }
+
+        func waitUntilBlockedRenderStarts() async -> Bool {
+            await state.waitUntilBlockedRenderStarts()
         }
 
         func releaseFirstRender() async {
-            await state.releaseFirstRender()
+            await releaseBlockedRender()
+        }
+
+        func releaseBlockedRender() async {
+            await state.releaseBlockedRender()
         }
 
         func renderCount() async -> Int {
@@ -154,10 +163,60 @@ enum TestHelper {
         }
     }
 
-    private actor BlockingDiagramAdapterState {
+    struct BlockingMathAdapter: MathRenderingAdapter {
+        private let output: String
+        private let state: BlockingResourceState
+
+        init(output: String, blockOnRender: Int = 1) {
+            self.output = output
+            self.state = BlockingResourceState(blockOnRender: blockOnRender)
+        }
+
+        func render(
+            from node: MathNode,
+            theme: Theme,
+            contextFont: Font?
+        ) async -> NSAttributedString {
+            await state.recordRender(source: node.equation)
+            return NSAttributedString(string: output)
+        }
+
+        func renderSync(
+            from node: MathNode,
+            theme: Theme,
+            contextFont: Font?
+        ) -> NSAttributedString {
+            NSAttributedString(string: output)
+        }
+
+        func waitUntilFirstRenderStarts() async -> Bool {
+            await state.waitUntilRenderStarts(1)
+        }
+
+        func releaseFirstRender() async {
+            await state.releaseBlockedRender()
+        }
+
+        func renderedEquations() async -> [String] {
+            await state.renderedSources
+        }
+
+        func cacheFingerprint(into hasher: inout Hasher) {
+            hasher.combine("BlockingMathAdapter")
+            hasher.combine(output)
+        }
+    }
+
+    private actor BlockingResourceState {
+        private let blockOnRender: Int
         private(set) var renderedSources: [String] = []
-        private var isFirstRenderReleased = false
-        private var firstRenderContinuation: CheckedContinuation<Void, Never>?
+        private var isBlockedRenderReleased = false
+        private var blockedRenderContinuation: CheckedContinuation<Void, Never>?
+
+        init(blockOnRender: Int) {
+            precondition(blockOnRender > 0)
+            self.blockOnRender = blockOnRender
+        }
 
         var renderCount: Int {
             renderedSources.count
@@ -165,27 +224,31 @@ enum TestHelper {
 
         func recordRender(source: String) async {
             renderedSources.append(source)
-            if renderedSources.count == 1, !isFirstRenderReleased {
+            if renderedSources.count == blockOnRender, !isBlockedRenderReleased {
                 await withCheckedContinuation { continuation in
-                    firstRenderContinuation = continuation
+                    blockedRenderContinuation = continuation
                 }
             }
         }
 
-        func waitUntilFirstRenderStarts() async -> Bool {
+        func waitUntilRenderStarts(_ renderNumber: Int) async -> Bool {
             for _ in 0..<200 {
-                if !renderedSources.isEmpty {
+                if renderedSources.count >= renderNumber {
                     return true
                 }
                 try? await Task.sleep(for: .milliseconds(5))
             }
-            return !renderedSources.isEmpty
+            return renderedSources.count >= renderNumber
         }
 
-        func releaseFirstRender() {
-            isFirstRenderReleased = true
-            firstRenderContinuation?.resume()
-            firstRenderContinuation = nil
+        func waitUntilBlockedRenderStarts() async -> Bool {
+            await waitUntilRenderStarts(blockOnRender)
+        }
+
+        func releaseBlockedRender() {
+            isBlockedRenderReleased = true
+            blockedRenderContinuation?.resume()
+            blockedRenderContinuation = nil
         }
     }
 }

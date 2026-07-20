@@ -137,9 +137,23 @@ public final class LayoutSolver: @unchecked Sendable {
     ///   - maxWidth: The maximum layout boundaries (e.g. view width).
     /// - Returns: A fully calculated `LayoutResult` tree holding sizes and attributed strings.
     public func solve(node: MarkdownNode, constrainedToWidth maxWidth: CGFloat) async -> LayoutResult {
-        // Yield to the system to keep scroll rendering incredibly smooth for giant files
-        // This is the cooperative multitasking layer
-        await Task.yield()
+        await Task<Never, Never>.yield()
+        var cooperation = LayoutCooperationState()
+        return await solveTotal(
+            node: node,
+            constrainedToWidth: maxWidth,
+            cooperation: &cooperation
+        )
+    }
+
+    private func solveTotal(
+        node: MarkdownNode,
+        constrainedToWidth maxWidth: CGFloat,
+        cooperation: inout LayoutCooperationState
+    ) async -> LayoutResult {
+        if cooperation.shouldYield(after: .solver) {
+            await Task<Never, Never>.yield()
+        }
 
         // Return instantly if we already calculated this specific layout at this width
         if let cached = cache.getLayout(for: node, constrainedToWidth: maxWidth, variantHash: cacheVariantHash) {
@@ -159,7 +173,11 @@ public final class LayoutSolver: @unchecked Sendable {
 
         if let doc = node as? DocumentNode {
             for (index, child) in doc.children.enumerated() {
-                let childResult = await solve(node: child, constrainedToWidth: maxWidth)
+                let childResult = await solveTotal(
+                    node: child,
+                    constrainedToWidth: maxWidth,
+                    cooperation: &cooperation
+                )
                 childLayouts.append(childResult.positionedAtTopLevel(index: index))
             }
         }
@@ -176,6 +194,90 @@ public final class LayoutSolver: @unchecked Sendable {
             cache.setLayout(result, constrainedToWidth: maxWidth, variantHash: cacheVariantHash)
         }
 
+        return result
+    }
+
+    func solveCancellable(
+        node: MarkdownNode,
+        constrainedToWidth maxWidth: CGFloat
+    ) async -> LayoutResult? {
+        var cooperation = LayoutCooperationState()
+        var writeBatch = cache.makeWriteBatch()
+
+        guard let result = await solveCancellable(
+            node: node,
+            constrainedToWidth: maxWidth,
+            cooperation: &cooperation,
+            writeBatch: &writeBatch
+        ) else {
+            return nil
+        }
+
+        guard !Task.isCancelled else { return nil }
+        writeBatch.commit()
+        return result
+    }
+
+    private func solveCancellable(
+        node: MarkdownNode,
+        constrainedToWidth maxWidth: CGFloat,
+        cooperation: inout LayoutCooperationState,
+        writeBatch: inout LayoutCache.WriteBatch
+    ) async -> LayoutResult? {
+        guard !Task.isCancelled else { return nil }
+        if cooperation.shouldYield(after: .solver) {
+            await Task<Never, Never>.yield()
+            guard !Task.isCancelled else { return nil }
+        }
+
+        if let cached = writeBatch.getLayout(
+            for: node,
+            constrainedToWidth: maxWidth,
+            variantHash: cacheVariantHash
+        ) {
+            guard !Task.isCancelled else { return nil }
+            return cached
+        }
+
+        let recipe = makeRecipe(for: node)
+        guard let output = await executeCancellable(
+            recipe,
+            constrainedToWidth: maxWidth,
+            cooperation: &cooperation
+        ) else {
+            return nil
+        }
+
+        var childLayouts: [LayoutResult] = []
+        if let doc = node as? DocumentNode {
+            childLayouts.reserveCapacity(doc.children.count)
+            for (index, child) in doc.children.enumerated() {
+                guard let childResult = await solveCancellable(
+                    node: child,
+                    constrainedToWidth: maxWidth,
+                    cooperation: &cooperation,
+                    writeBatch: &writeBatch
+                ) else {
+                    return nil
+                }
+                guard !Task.isCancelled else { return nil }
+                childLayouts.append(childResult.positionedAtTopLevel(index: index))
+            }
+        }
+
+        guard !Task.isCancelled else { return nil }
+        let result = makeLayoutResult(
+            node: node,
+            output: output,
+            children: childLayouts,
+            variantHash: cacheVariantHash
+        )
+        guard !Task.isCancelled else { return nil }
+        writeBatch.stage(
+            result,
+            constrainedToWidth: maxWidth,
+            variantHash: cacheVariantHash
+        )
         return result
     }
 
@@ -257,6 +359,52 @@ public final class LayoutSolver: @unchecked Sendable {
         }
     }
 
+    private func executeCancellable(
+        _ recipe: ShallowLayoutRecipe,
+        constrainedToWidth maxWidth: CGFloat,
+        cooperation: inout LayoutCooperationState
+    ) async -> ShallowLayoutOutput? {
+        guard !Task.isCancelled else { return nil }
+
+        switch recipe {
+        case let .immediate(immediate):
+            return executeImmediateCancellable(
+                immediate,
+                constrainedToWidth: maxWidth
+            )
+
+        case let .diagram(diagram):
+            guard let attributedString = await builder.buildDiagramAttributedStringCancellable(
+                from: diagram
+            ) else {
+                return nil
+            }
+            guard !Task.isCancelled else { return nil }
+            return makeTextOutputCancellable(
+                attributedString: attributedString,
+                node: diagram,
+                constrainedToWidth: maxWidth,
+                measurement: .codeBlockInset
+            )
+
+        case let .attributed(node):
+            guard let attributedString = await builder.buildStringCancellable(
+                for: node,
+                constrainedToWidth: maxWidth,
+                cooperation: &cooperation
+            ) else {
+                return nil
+            }
+            guard !Task.isCancelled else { return nil }
+            return makeTextOutputCancellable(
+                attributedString: attributedString,
+                node: node,
+                constrainedToWidth: maxWidth,
+                measurement: .standard
+            )
+        }
+    }
+
     private func executeSync(
         _ recipe: ShallowLayoutRecipe,
         constrainedToWidth maxWidth: CGFloat
@@ -302,6 +450,40 @@ public final class LayoutSolver: @unchecked Sendable {
         }
     }
 
+    private func executeImmediateCancellable(
+        _ recipe: ImmediateLayoutRecipe,
+        constrainedToWidth maxWidth: CGFloat
+    ) -> ShallowLayoutOutput? {
+        guard !Task.isCancelled else { return nil }
+
+        switch recipe {
+        #if canImport(UIKit) && !os(watchOS)
+        case let .table(table):
+            let output = makeTableCardOutput(
+                table: table,
+                constrainedToWidth: maxWidth
+            )
+            guard !Task.isCancelled else { return nil }
+            return output
+
+        case .thematicBreak:
+            let output = makeThematicBreakOutput(constrainedToWidth: maxWidth)
+            guard !Task.isCancelled else { return nil }
+            return output
+        #endif
+
+        case let .codeBlock(codeBlock):
+            let attributedString = builder.buildCodeBlockAttributedString(from: codeBlock)
+            guard !Task.isCancelled else { return nil }
+            return makeTextOutputCancellable(
+                attributedString: attributedString,
+                node: codeBlock,
+                constrainedToWidth: maxWidth,
+                measurement: .codeBlockInset
+            )
+        }
+    }
+
     private func makeTextOutput(
         attributedString: NSAttributedString,
         node: MarkdownNode,
@@ -334,6 +516,23 @@ public final class LayoutSolver: @unchecked Sendable {
         }
 
         return ShallowLayoutOutput(size: size, attributedString: attributedString)
+    }
+
+    private func makeTextOutputCancellable(
+        attributedString: NSAttributedString,
+        node: MarkdownNode,
+        constrainedToWidth maxWidth: CGFloat,
+        measurement: TextMeasurement
+    ) -> ShallowLayoutOutput? {
+        guard !Task.isCancelled else { return nil }
+        let output = makeTextOutput(
+            attributedString: attributedString,
+            node: node,
+            constrainedToWidth: maxWidth,
+            measurement: measurement
+        )
+        guard !Task.isCancelled else { return nil }
+        return output
     }
 
     private func makeLayoutResult(

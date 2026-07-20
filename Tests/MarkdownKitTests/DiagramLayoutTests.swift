@@ -85,7 +85,10 @@ final class DiagramLayoutTests: XCTestCase {
         let solver = LayoutSolver(cache: cache, diagramRegistry: registry)
 
         let task = Task {
-            _ = await solver.solve(node: diagram, constrainedToWidth: 320)
+            await solver.solve(
+                node: diagram,
+                constrainedToWidth: 320
+            ).attributedString?.string
         }
         guard await adapter.waitUntilFirstRenderStarts() else {
             await adapter.releaseFirstRender()
@@ -96,7 +99,7 @@ final class DiagramLayoutTests: XCTestCase {
         }
         task.cancel()
         await adapter.releaseFirstRender()
-        _ = await task.value
+        let canceledResult = await task.value
 
         cache.resetStatsForTesting()
         let retry = await solver.solve(node: diagram, constrainedToWidth: 320)
@@ -105,7 +108,186 @@ final class DiagramLayoutTests: XCTestCase {
         XCTAssertEqual(renderCount, 2)
         XCTAssertEqual(cache.hitCountForTesting, 0)
         XCTAssertEqual(cache.missCountForTesting, 1)
+        XCTAssertEqual(canceledResult, "rendered")
         XCTAssertEqual(retry.attributedString?.string, "rendered")
+    }
+
+    func testCancelledPublicSolveStillCompletesAllResourcesWithoutPublishingCache() async {
+        let sources = (0..<5).map { "public-total-\($0)" }
+        let document = DocumentNode(
+            range: nil,
+            children: sources.map {
+                DiagramNode(range: nil, language: .mermaid, source: $0)
+            }
+        )
+        let cache = LayoutCache()
+        let adapter = TestHelper.BlockingDiagramAdapter(output: "rendered")
+        var registry = DiagramAdapterRegistry()
+        registry.register(adapter, for: .mermaid)
+        let solver = LayoutSolver(cache: cache, diagramRegistry: registry)
+
+        let task = Task {
+            await solver.solve(
+                node: document,
+                constrainedToWidth: 320
+            ).children.compactMap { $0.attributedString?.string }
+        }
+        guard await adapter.waitUntilFirstRenderStarts() else {
+            task.cancel()
+            await adapter.releaseFirstRender()
+            _ = await task.value
+            XCTFail("First public diagram did not start within the timeout")
+            return
+        }
+
+        task.cancel()
+        await adapter.releaseFirstRender()
+        let canceledOutput = await task.value
+        let canceledSources = await adapter.renderedSources()
+
+        XCTAssertEqual(canceledOutput, Array(repeating: "rendered", count: 5))
+        XCTAssertEqual(canceledSources, sources)
+
+        cache.resetStatsForTesting()
+        let retry = await solver.solve(node: document, constrainedToWidth: 320)
+        let totalRenderCount = await adapter.renderCount()
+
+        XCTAssertEqual(retry.children.count, 5)
+        XCTAssertEqual(cache.hitCountForTesting, 0)
+        XCTAssertEqual(cache.missCountForTesting, 6)
+        XCTAssertEqual(totalRenderCount, 10)
+    }
+
+    func testCancellableBuilderStopsBeforeLaterMathResources() async {
+        let equations = (0..<5).map { "builder-resource-\($0)" }
+        let paragraph = ParagraphNode(
+            range: nil,
+            children: equations.map {
+                MathNode(range: nil, style: .inline, equation: $0)
+            }
+        )
+        let adapter = TestHelper.BlockingMathAdapter(output: "rendered")
+        let solver = LayoutSolver(cache: LayoutCache(), mathAdapter: adapter)
+
+        let task = Task {
+            await solver.solveCancellable(
+                node: paragraph,
+                constrainedToWidth: 320
+            ) == nil
+        }
+        guard await adapter.waitUntilFirstRenderStarts() else {
+            task.cancel()
+            await adapter.releaseFirstRender()
+            _ = await task.value
+            XCTFail("First paragraph diagram did not start within the timeout")
+            return
+        }
+
+        task.cancel()
+        await adapter.releaseFirstRender()
+        let resultWasNil = await task.value
+        let renderedEquations = await adapter.renderedEquations()
+
+        XCTAssertTrue(resultWasNil)
+        XCTAssertEqual(renderedEquations, [equations[0]])
+    }
+
+    func testCancellableDocumentDiscardsStagedLayoutsAfterCancellation() async {
+        let sources = (0..<5).map { "transactional-cache-\($0)" }
+        let document = DocumentNode(
+            range: nil,
+            children: sources.map {
+                DiagramNode(range: nil, language: .mermaid, source: $0)
+            }
+        )
+        let cache = LayoutCache()
+        let adapter = TestHelper.BlockingDiagramAdapter(output: "rendered", blockOnRender: 4)
+        var registry = DiagramAdapterRegistry()
+        registry.register(adapter, for: .mermaid)
+        let solver = LayoutSolver(cache: cache, diagramRegistry: registry)
+
+        let task = Task {
+            await solver.solveCancellable(
+                node: document,
+                constrainedToWidth: 320
+            ) == nil
+        }
+        guard await adapter.waitUntilBlockedRenderStarts() else {
+            task.cancel()
+            await adapter.releaseBlockedRender()
+            _ = await task.value
+            XCTFail("Fourth document diagram did not start within the timeout")
+            return
+        }
+
+        task.cancel()
+        await adapter.releaseBlockedRender()
+        let resultWasNil = await task.value
+        XCTAssertTrue(resultWasNil)
+
+        cache.resetStatsForTesting()
+        let retry = await solver.solve(node: document, constrainedToWidth: 320)
+        let renderedSources = await adapter.renderedSources()
+
+        XCTAssertEqual(cache.hitCountForTesting, 0)
+        XCTAssertEqual(cache.missCountForTesting, 6)
+        XCTAssertEqual(retry.children.count, 5)
+        XCTAssertEqual(Array(renderedSources.suffix(5)), sources)
+        XCTAssertEqual(renderedSources.count, 9)
+    }
+
+    func testSuccessfulCancellableSolveUsesStagedOverlayAndPublishesTransaction() async throws {
+        let firstDiagram = DiagramNode(
+            range: nil,
+            language: .mermaid,
+            source: "shared-staged-overlay"
+        )
+        let secondDiagram = DiagramNode(
+            range: nil,
+            language: .mermaid,
+            source: "shared-staged-overlay"
+        )
+        let document = DocumentNode(
+            range: nil,
+            children: [firstDiagram, secondDiagram]
+        )
+        let cache = LayoutCache()
+        let adapter = RecordingDiagramAdapter(output: "rendered")
+        var registry = DiagramAdapterRegistry()
+        registry.register(adapter, for: .mermaid)
+        let solver = LayoutSolver(cache: cache, diagramRegistry: registry)
+
+        let cancellableResult: LayoutResult? = await solver.solveCancellable(
+            node: document,
+            constrainedToWidth: 320
+        )
+        let first = try XCTUnwrap(cancellableResult)
+        let firstRenderCount = await adapter.renderCount()
+        XCTAssertEqual(first.children.count, 2)
+        XCTAssertEqual(firstRenderCount, 1)
+        XCTAssertEqual(
+            first.children[0].renderFingerprint,
+            first.children[1].renderFingerprint
+        )
+        XCTAssertNotEqual(
+            first.children[0].stableIdentity,
+            first.children[1].stableIdentity
+        )
+
+        cache.resetStatsForTesting()
+        let childRetry = await solver.solve(node: firstDiagram, constrainedToWidth: 320)
+        XCTAssertEqual(childRetry.attributedString?.string, "rendered")
+        XCTAssertEqual(cache.hitCountForTesting, 1)
+        XCTAssertEqual(cache.missCountForTesting, 0)
+
+        cache.resetStatsForTesting()
+        let retry = await solver.solve(node: document, constrainedToWidth: 320)
+        let retryRenderCount = await adapter.renderCount()
+
+        XCTAssertEqual(retry.children.count, 2)
+        XCTAssertEqual(cache.hitCountForTesting, 1)
+        XCTAssertEqual(cache.missCountForTesting, 0)
+        XCTAssertEqual(retryRenderCount, 1)
     }
 
     func testSyncDiagramSkipsAdapterAndAsyncDiagramUsesCodeBlockInset() async throws {

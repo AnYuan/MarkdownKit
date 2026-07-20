@@ -694,8 +694,45 @@ before the next stage starts.
   environment; both states share the same unrelated committed-baseline drift.
   Four-role simplification and four-role regression/security/reliability/
   contracts reviews found no material issues.
-- [ ] P04 make stale layout/materialization work cooperatively cancellable
+- [x] P04 make stale layout/materialization work cooperatively cancellable
   without changing public solve behavior or canceled-cache publication rules.
+  - [x] P04-A add deterministic failing contracts for coordinator latest-work
+    handoff, builder resource checkpoints, invocation-local cache rollback, and
+    unchanged public async/sync solve behavior.
+  - [x] P04-B add an internal coordinator-only cancellable solve path with one
+    invocation-wide work budget. Check cancellation between top-level children,
+    builder planning/materialization operations, and before/after resource
+    awaits; replace per-node unconditional yields with bounded periodic yields.
+  - [x] P04-C stage cancellable-path cache writes in an invocation-local overlay,
+    read staged entries before the shared cache, and publish child-before-parent
+    only after successful root completion and a final cancellation check.
+    Synchronous commit is the point of no return; generation checks still reject
+    stale UI output.
+  - [x] P04-D route `MarkdownRenderCoordinator` through the cancellable path
+    while preserving same-key raw-AST reuse from canceled work. Document that
+    non-cooperative host adapters can delay handoff only until their in-flight
+    await returns.
+  - [x] P04-E run Swift 6.2 concurrency, simplification, regression, reliability,
+    and contract reviews; then run focused, fast, documentation, API, snapshot,
+    benchmark, and iOS gates before atomic commit and push.
+  Acceptance: after an in-flight resource returns, stale work stops within one
+  bounded chunk; later resources do not start; canceled cooperative solves
+  publish no staged cache entries; successful solves retain child/root reuse;
+  public `solve` and `solveSync` preserve their existing total-result and cache
+  semantics.
+  Validation: 69 final cancellation/builder/coordinator contracts and a broader
+  150-test layout/cache integration selection pass, followed by 519 fast
+  correctness tests and 537-test documentation freshness. macOS and iOS public
+  API baselines remain 453/599 and 454/610, provenance and 4-test snapshot
+  determinism pass, and current visual output is byte-identical to clean
+  `f23b871` despite the same four committed-baseline drifts on this host. All
+  12 isolated Release workloads pass; `solve(1000-lines)` is 32.63ms average /
+  33.78ms p95 and `latest-settled(large-3-updates)` is 11.69ms average /
+  11.95ms p95 versus the 28.82ms recorded average. The iOS gate executes exactly
+  570 XCTest tests with no restart/private-font diagnostics, then emits exactly
+  one app-hosted real-WebKit Mermaid PASS marker. Simplification, concurrency,
+  regression, security, reliability, contracts, and final reviews found no
+  remaining material issue.
 - [ ] P05 suppress identical iOS/macOS collection snapshot applications and
   reconfigure only changed layout variants.
 - [ ] P06 unify the iOS raster/prefetch key, scale, size, task-lifetime,

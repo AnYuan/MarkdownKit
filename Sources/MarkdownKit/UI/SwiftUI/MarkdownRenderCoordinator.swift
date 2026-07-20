@@ -382,9 +382,10 @@ final class MarkdownEngine: ObservableObject {
         }
 
         let astForLayout = applyingDisclosureOverrides(work.disclosureOverrides, to: rawAST)
-        let result = await work.solver.solve(node: astForLayout, constrainedToWidth: work.width)
-
-        if Task.isCancelled {
+        guard let result = await work.solver.solveCancellable(
+            node: astForLayout,
+            constrainedToWidth: work.width
+        ) else {
             return RenderOutput(
                 generation: work.generation,
                 parseKey: work.parseKey,

@@ -29,6 +29,20 @@ struct AttributedStringBuilder {
         case diagram(DiagramNode)
     }
 
+    private enum AsyncCancellationPolicy {
+        case total
+        case cooperative
+
+        var shouldCancel: Bool {
+            switch self {
+            case .total:
+                return false
+            case .cooperative:
+                return Task.isCancelled
+            }
+        }
+    }
+
     private enum StaticLeaf {
         case text(String, attributes: Attributes)
         case table(TableNode)
@@ -57,9 +71,27 @@ struct AttributedStringBuilder {
         case resource(ResourceLeaf)
     }
 
+    /// The LIFO stack advances one child at a time so cancellable planning has a
+    /// bounded checkpoint. Helpers enqueue the continuation before current work.
     private enum PlanningWork {
         case block(MarkdownNode)
-        case inline([MarkdownNode], baseAttributes: Attributes)
+        case inline([MarkdownNode], index: Int, baseAttributes: Attributes)
+        case detailsChildren([MarkdownNode], index: Int)
+        case blockQuoteChildren([MarkdownNode], index: Int, style: NSParagraphStyle)
+        case countListItems(ListNode, childIndex: Int, count: Int)
+        case listChildren(
+            ListNode,
+            childIndex: Int,
+            itemIndex: Int,
+            itemCount: Int,
+            font: Font
+        )
+        case listItemChildren(
+            [MarkdownNode],
+            index: Int,
+            baseAttributes: Attributes,
+            prefixWidth: CGFloat
+        )
         case operation(RenderOperation)
     }
 
@@ -162,6 +194,24 @@ struct AttributedStringBuilder {
         return await materialize(operations, constrainedToWidth: maxWidth)
     }
 
+    func buildStringCancellable(
+        for node: MarkdownNode,
+        constrainedToWidth maxWidth: CGFloat,
+        cooperation: inout LayoutCooperationState
+    ) async -> NSAttributedString? {
+        guard let operations = await makeRenderOperationsCancellable(
+            for: node,
+            cooperation: &cooperation
+        ) else {
+            return nil
+        }
+        return await materializeCancellable(
+            operations,
+            constrainedToWidth: maxWidth,
+            cooperation: &cooperation
+        )
+    }
+
     // MARK: - Synchronous Build (no Swift concurrency)
 
     /// Builds an attributed string synchronously, without any async calls.
@@ -176,19 +226,90 @@ struct AttributedStringBuilder {
         var work: [PlanningWork] = [.block(node)]
 
         while let current = work.popLast() {
-            switch current {
-            case let .block(node):
-                enqueueBlock(node, onto: &work)
-
-            case let .inline(children, baseAttributes):
-                enqueueInline(children, baseAttributes: baseAttributes, onto: &work)
-
-            case let .operation(operation):
-                operations.append(operation)
-            }
+            processPlanningWork(current, work: &work, operations: &operations)
         }
 
         return operations
+    }
+
+    private func makeRenderOperationsCancellable(
+        for node: MarkdownNode,
+        cooperation: inout LayoutCooperationState
+    ) async -> [RenderOperation]? {
+        var operations: [RenderOperation] = []
+        var work: [PlanningWork] = [.block(node)]
+
+        while let current = work.popLast() {
+            guard !Task.isCancelled else { return nil }
+            if cooperation.shouldYield(after: .planning) {
+                await Task<Never, Never>.yield()
+                guard !Task.isCancelled else { return nil }
+            }
+            processPlanningWork(current, work: &work, operations: &operations)
+        }
+
+        guard !Task.isCancelled else { return nil }
+        return operations
+    }
+
+    private func processPlanningWork(
+        _ current: PlanningWork,
+        work: inout [PlanningWork],
+        operations: inout [RenderOperation]
+    ) {
+        switch current {
+        case let .block(node):
+            enqueueBlock(node, onto: &work)
+
+        case let .inline(children, index, baseAttributes):
+            enqueueInline(
+                children,
+                index: index,
+                baseAttributes: baseAttributes,
+                onto: &work
+            )
+
+        case let .detailsChildren(children, index):
+            enqueueDetailsChild(children, index: index, onto: &work)
+
+        case let .blockQuoteChildren(children, index, style):
+            enqueueBlockQuoteChild(
+                children,
+                index: index,
+                style: style,
+                onto: &work
+            )
+
+        case let .countListItems(list, childIndex, count):
+            enqueueListItemCount(
+                list,
+                childIndex: childIndex,
+                count: count,
+                onto: &work
+            )
+
+        case let .listChildren(list, childIndex, itemIndex, itemCount, font):
+            enqueueListChild(
+                list,
+                childIndex: childIndex,
+                itemIndex: itemIndex,
+                itemCount: itemCount,
+                font: font,
+                onto: &work
+            )
+
+        case let .listItemChildren(children, index, baseAttributes, prefixWidth):
+            enqueueListItemChild(
+                children,
+                index: index,
+                baseAttributes: baseAttributes,
+                prefixWidth: prefixWidth,
+                onto: &work
+            )
+
+        case let .operation(operation):
+            operations.append(operation)
+        }
     }
 
     private func enqueueBlock(
@@ -220,6 +341,7 @@ struct AttributedStringBuilder {
             if let summary = details.summary, !summary.children.isEmpty {
                 detailsWork.append(.inline(
                     summary.children,
+                    index: 0,
                     baseAttributes: summaryAttributes
                 ))
             } else {
@@ -230,25 +352,29 @@ struct AttributedStringBuilder {
             }
 
             if details.isOpen {
-                for child in details.children {
-                    detailsWork.append(.operation(.beginCapture(
-                        .appendIfNotEmpty(prefix: "\n")
-                    )))
-                    detailsWork.append(.block(child))
-                    detailsWork.append(.operation(.endCapture))
+                if !details.children.isEmpty {
+                    detailsWork.append(.detailsChildren(details.children, index: 0))
                 }
             }
             orderedWork = detailsWork
 
         case let summary as SummaryNode:
             orderedWork = [
-                .inline(summary.children, baseAttributes: detailsSummaryAttributes())
+                .inline(
+                    summary.children,
+                    index: 0,
+                    baseAttributes: detailsSummaryAttributes()
+                )
             ]
 
         case let header as HeaderNode:
             let token = themeToken(forHeaderLevel: header.level)
             orderedWork = [
-                .inline(header.children, baseAttributes: defaultAttributes(for: token))
+                .inline(
+                    header.children,
+                    index: 0,
+                    baseAttributes: defaultAttributes(for: token)
+                )
             ]
 
         case let text as TextNode:
@@ -266,6 +392,7 @@ struct AttributedStringBuilder {
             orderedWork = [
                 .inline(
                     paragraph.children,
+                    index: 0,
                     baseAttributes: defaultAttributes(for: theme.typography.paragraph)
                 )
             ]
@@ -276,29 +403,18 @@ struct AttributedStringBuilder {
             ]
 
         case let list as ListNode:
-            orderedWork = planningWork(for: list)
+            orderedWork = [
+                .countListItems(list, childIndex: 0, count: 0)
+            ]
 
         case is ListItemNode:
             orderedWork = []
 
         case let blockQuote as BlockQuoteNode:
             let quoteStyle = blockQuoteParagraphStyle()
-            var quoteWork: [PlanningWork] = []
-            for child in blockQuote.children {
-                if let paragraph = child as? ParagraphNode {
-                    quoteWork.append(.operation(.staticLeaf(.blockQuoteBar(quoteStyle))))
-                    quoteWork.append(.inline(
-                        paragraph.children,
-                        baseAttributes: blockQuoteContentAttributes(style: quoteStyle)
-                    ))
-                } else {
-                    quoteWork.append(.operation(.beginCapture(.append)))
-                    quoteWork.append(.block(child))
-                    quoteWork.append(.operation(.endCapture))
-                }
-                quoteWork.append(.operation(.appendNewlineIfOutputNotEmpty))
-            }
-            orderedWork = quoteWork
+            orderedWork = blockQuote.children.isEmpty
+                ? []
+                : [.blockQuoteChildren(blockQuote.children, index: 0, style: quoteStyle)]
 
         case is ThematicBreakNode:
             #if canImport(UIKit) && !os(watchOS)
@@ -316,133 +432,249 @@ struct AttributedStringBuilder {
         work.append(contentsOf: orderedWork.reversed())
     }
 
-    private func planningWork(for list: ListNode) -> [PlanningWork] {
-        let font = theme.typography.paragraph.font
-        let items = list.children.compactMap { $0 as? ListItemNode }
-        var orderedWork: [PlanningWork] = []
-
-        for (offset, item) in items.enumerated() {
-            let oneBasedIndex = offset + 1
-            let isLastItem = oneBasedIndex == items.count
-            let (prefix, isCheckbox) = listItemPrefix(
-                for: list,
-                item: item,
-                oneBasedIndex: oneBasedIndex
-            )
-            let prefixWidth = listItemPrefixWidth(prefix, font: font)
-            let itemStyle = listItemParagraphStyle(
-                prefixWidth: prefixWidth,
-                isLastItem: isLastItem
-            )
-            let listAttributes = listItemBaseAttributes(font: font, style: itemStyle)
-            var prefixAttributes = listAttributes
-            if isCheckbox, let range = item.range {
-                prefixAttributes[.markdownCheckbox] = CheckboxInteractionData(
-                    isChecked: item.checkbox == .checked,
-                    range: range
-                )
-            }
-
-            orderedWork.append(.operation(.appendNewlineIfOutputNotEmpty))
-            orderedWork.append(.operation(.staticLeaf(.text(
-                prefix,
-                attributes: prefixAttributes
-            ))))
-
-            for child in item.children {
-                if let paragraph = child as? ParagraphNode {
-                    orderedWork.append(.inline(
-                        paragraph.children,
-                        baseAttributes: listAttributes
-                    ))
-                } else if let nestedList = child as? ListNode {
-                    orderedWork.append(.operation(.staticLeaf(.text("\n", attributes: [:]))))
-                    orderedWork.append(.operation(.beginCapture(
-                        .paragraphStyle(nestedListParagraphStyle(prefixWidth: prefixWidth))
-                    )))
-                    orderedWork.append(.block(nestedList))
-                    orderedWork.append(.operation(.endCapture))
-                } else {
-                    orderedWork.append(.operation(.beginCapture(.append)))
-                    orderedWork.append(.block(child))
-                    orderedWork.append(.operation(.endCapture))
-                }
-            }
-        }
-
-        return orderedWork
-    }
-
     private func enqueueInline(
         _ children: [MarkdownNode],
+        index: Int,
         baseAttributes: Attributes,
         onto work: inout [PlanningWork]
     ) {
-        var orderedWork: [PlanningWork] = []
-
-        for child in children {
-            switch child {
-            case let text as TextNode:
-                orderedWork.append(.operation(.staticLeaf(.text(
-                    text.text,
-                    attributes: baseAttributes
-                ))))
-
-            case let code as InlineCodeNode:
-                orderedWork.append(.operation(.staticLeaf(.text(
-                    code.code,
-                    attributes: inlineCodeAttributes(base: baseAttributes)
-                ))))
-
-            case let link as LinkNode:
-                orderedWork.append(.inline(
-                    link.children,
-                    baseAttributes: linkAttributes(
-                        base: baseAttributes,
-                        destination: link.destination
-                    )
-                ))
-
-            case let image as ImageNode:
-                orderedWork.append(.operation(.resource(.image(
-                    image,
-                    baseAttributes: baseAttributes
-                ))))
-
-            case let math as MathNode:
-                orderedWork.append(.operation(.resource(.math(
-                    math,
-                    contextFont: baseAttributes[.font] as? Font
-                ))))
-
-            case is EmphasisNode:
-                orderedWork.append(.inline(
-                    child.children,
-                    baseAttributes: italicAttributes(base: baseAttributes)
-                ))
-
-            case is StrongNode:
-                orderedWork.append(.inline(
-                    child.children,
-                    baseAttributes: boldAttributes(base: baseAttributes)
-                ))
-
-            case is StrikethroughNode:
-                orderedWork.append(.inline(
-                    child.children,
-                    baseAttributes: strikethroughAttributes(base: baseAttributes)
-                ))
-
-            default:
-                guard child is any InlineNode else { continue }
-                orderedWork.append(.inline(
-                    child.children,
-                    baseAttributes: baseAttributes
-                ))
-            }
+        guard children.indices.contains(index) else { return }
+        if children.indices.contains(index + 1) {
+            work.append(.inline(
+                children,
+                index: index + 1,
+                baseAttributes: baseAttributes
+            ))
         }
 
-        work.append(contentsOf: orderedWork.reversed())
+        let child = children[index]
+        switch child {
+        case let text as TextNode:
+            work.append(.operation(.staticLeaf(.text(
+                text.text,
+                attributes: baseAttributes
+            ))))
+
+        case let code as InlineCodeNode:
+            work.append(.operation(.staticLeaf(.text(
+                code.code,
+                attributes: inlineCodeAttributes(base: baseAttributes)
+            ))))
+
+        case let link as LinkNode:
+            work.append(.inline(
+                link.children,
+                index: 0,
+                baseAttributes: linkAttributes(
+                    base: baseAttributes,
+                    destination: link.destination
+                )
+            ))
+
+        case let image as ImageNode:
+            work.append(.operation(.resource(.image(
+                image,
+                baseAttributes: baseAttributes
+            ))))
+
+        case let math as MathNode:
+            work.append(.operation(.resource(.math(
+                math,
+                contextFont: baseAttributes[.font] as? Font
+            ))))
+
+        case is EmphasisNode:
+            work.append(.inline(
+                child.children,
+                index: 0,
+                baseAttributes: italicAttributes(base: baseAttributes)
+            ))
+
+        case is StrongNode:
+            work.append(.inline(
+                child.children,
+                index: 0,
+                baseAttributes: boldAttributes(base: baseAttributes)
+            ))
+
+        case is StrikethroughNode:
+            work.append(.inline(
+                child.children,
+                index: 0,
+                baseAttributes: strikethroughAttributes(base: baseAttributes)
+            ))
+
+        default:
+            guard child is any InlineNode else { return }
+            work.append(.inline(
+                child.children,
+                index: 0,
+                baseAttributes: baseAttributes
+            ))
+        }
+    }
+
+    private func enqueueDetailsChild(
+        _ children: [MarkdownNode],
+        index: Int,
+        onto work: inout [PlanningWork]
+    ) {
+        guard children.indices.contains(index) else { return }
+        if children.indices.contains(index + 1) {
+            work.append(.detailsChildren(children, index: index + 1))
+        }
+        work.append(.operation(.endCapture))
+        work.append(.block(children[index]))
+        work.append(.operation(.beginCapture(.appendIfNotEmpty(prefix: "\n"))))
+    }
+
+    private func enqueueBlockQuoteChild(
+        _ children: [MarkdownNode],
+        index: Int,
+        style: NSParagraphStyle,
+        onto work: inout [PlanningWork]
+    ) {
+        guard children.indices.contains(index) else { return }
+        if children.indices.contains(index + 1) {
+            work.append(.blockQuoteChildren(children, index: index + 1, style: style))
+        }
+        work.append(.operation(.appendNewlineIfOutputNotEmpty))
+
+        let child = children[index]
+        if let paragraph = child as? ParagraphNode {
+            work.append(.inline(
+                paragraph.children,
+                index: 0,
+                baseAttributes: blockQuoteContentAttributes(style: style)
+            ))
+            work.append(.operation(.staticLeaf(.blockQuoteBar(style))))
+        } else {
+            work.append(.operation(.endCapture))
+            work.append(.block(child))
+            work.append(.operation(.beginCapture(.append)))
+        }
+    }
+
+    private func enqueueListItemCount(
+        _ list: ListNode,
+        childIndex: Int,
+        count: Int,
+        onto work: inout [PlanningWork]
+    ) {
+        guard list.children.indices.contains(childIndex) else {
+            if count > 0 {
+                work.append(.listChildren(
+                    list,
+                    childIndex: 0,
+                    itemIndex: 0,
+                    itemCount: count,
+                    font: theme.typography.paragraph.font
+                ))
+            }
+            return
+        }
+
+        let nextCount = count + (list.children[childIndex] is ListItemNode ? 1 : 0)
+        work.append(.countListItems(
+            list,
+            childIndex: childIndex + 1,
+            count: nextCount
+        ))
+    }
+
+    private func enqueueListChild(
+        _ list: ListNode,
+        childIndex: Int,
+        itemIndex: Int,
+        itemCount: Int,
+        font: Font,
+        onto work: inout [PlanningWork]
+    ) {
+        guard list.children.indices.contains(childIndex) else { return }
+
+        let item = list.children[childIndex] as? ListItemNode
+        if list.children.indices.contains(childIndex + 1) {
+            work.append(.listChildren(
+                list,
+                childIndex: childIndex + 1,
+                itemIndex: itemIndex + (item == nil ? 0 : 1),
+                itemCount: itemCount,
+                font: font
+            ))
+        }
+
+        guard let item else { return }
+        let oneBasedIndex = itemIndex + 1
+        let (prefix, isCheckbox) = listItemPrefix(
+            for: list,
+            item: item,
+            oneBasedIndex: oneBasedIndex
+        )
+        let prefixWidth = listItemPrefixWidth(prefix, font: font)
+        let itemStyle = listItemParagraphStyle(
+            prefixWidth: prefixWidth,
+            isLastItem: oneBasedIndex == itemCount
+        )
+        let listAttributes = listItemBaseAttributes(font: font, style: itemStyle)
+        var prefixAttributes = listAttributes
+        if isCheckbox, let range = item.range {
+            prefixAttributes[.markdownCheckbox] = CheckboxInteractionData(
+                isChecked: item.checkbox == .checked,
+                range: range
+            )
+        }
+
+        if !item.children.isEmpty {
+            work.append(.listItemChildren(
+                item.children,
+                index: 0,
+                baseAttributes: listAttributes,
+                prefixWidth: prefixWidth
+            ))
+        }
+        work.append(.operation(.staticLeaf(.text(
+            prefix,
+            attributes: prefixAttributes
+        ))))
+        work.append(.operation(.appendNewlineIfOutputNotEmpty))
+    }
+
+    private func enqueueListItemChild(
+        _ children: [MarkdownNode],
+        index: Int,
+        baseAttributes: Attributes,
+        prefixWidth: CGFloat,
+        onto work: inout [PlanningWork]
+    ) {
+        guard children.indices.contains(index) else { return }
+        if children.indices.contains(index + 1) {
+            work.append(.listItemChildren(
+                children,
+                index: index + 1,
+                baseAttributes: baseAttributes,
+                prefixWidth: prefixWidth
+            ))
+        }
+
+        let child = children[index]
+        if let paragraph = child as? ParagraphNode {
+            work.append(.inline(
+                paragraph.children,
+                index: 0,
+                baseAttributes: baseAttributes
+            ))
+        } else if let nestedList = child as? ListNode {
+            work.append(.operation(.endCapture))
+            work.append(.block(nestedList))
+            work.append(.operation(.beginCapture(
+                .paragraphStyle(nestedListParagraphStyle(prefixWidth: prefixWidth))
+            )))
+            work.append(.operation(.staticLeaf(.text("\n", attributes: [:]))))
+        } else {
+            work.append(.operation(.endCapture))
+            work.append(.block(child))
+            work.append(.operation(.beginCapture(.append)))
+        }
     }
 
     private func materialize(
@@ -463,36 +695,106 @@ struct AttributedStringBuilder {
                 ))
 
             case let .resource(resource):
-                switch resource {
-                case let .image(image, baseAttributes):
-                    if let attachment = await ImageAttachmentBuilder.build(
-                        from: image,
-                        constrainedToWidth: maxWidth,
-                        imageLoadingPolicy: imageLoadingPolicy
-                    ) {
-                        state.append(attachment)
-                    } else {
-                        state.append(imageFallbackAttributedString(
-                            from: image,
-                            baseAttributes: baseAttributes
-                        ))
-                    }
-
-                case let .math(math, contextFont):
-                    let rendered = await mathAdapter.render(
-                        from: math,
-                        theme: theme,
-                        contextFont: contextFont
-                    )
-                    state.append(resolveAdapterColors(in: rendered))
-
-                case let .diagram(diagram):
-                    state.append(await buildDiagramAttributedString(from: diagram))
+                guard let rendered = await materialize(
+                    resource,
+                    constrainedToWidth: maxWidth,
+                    cancellationPolicy: .total
+                ) else {
+                    preconditionFailure("Total materialization unexpectedly canceled")
                 }
+                state.append(rendered)
             }
         }
 
         return state.finish()
+    }
+
+    private func materializeCancellable(
+        _ operations: [RenderOperation],
+        constrainedToWidth maxWidth: CGFloat,
+        cooperation: inout LayoutCooperationState
+    ) async -> NSAttributedString? {
+        var state = MaterializationState()
+
+        for operation in operations {
+            guard !Task.isCancelled else { return nil }
+            if cooperation.shouldYield(after: .materialization) {
+                await Task<Never, Never>.yield()
+                guard !Task.isCancelled else { return nil }
+            }
+            let action = state.apply(operation)
+
+            switch action {
+            case .handled:
+                continue
+
+            case let .staticLeaf(leaf):
+                guard !Task.isCancelled else { return nil }
+                let attributedString = makeAttributedString(
+                    for: leaf,
+                    constrainedToWidth: maxWidth
+                )
+                guard !Task.isCancelled else { return nil }
+                state.append(attributedString)
+
+            case let .resource(resource):
+                guard !Task.isCancelled else { return nil }
+                guard let rendered = await materialize(
+                    resource,
+                    constrainedToWidth: maxWidth,
+                    cancellationPolicy: .cooperative
+                ) else { return nil }
+                guard !Task.isCancelled else { return nil }
+                state.append(rendered)
+            }
+        }
+
+        guard !Task.isCancelled else { return nil }
+        return state.finish()
+    }
+
+    private func materialize(
+        _ resource: ResourceLeaf,
+        constrainedToWidth maxWidth: CGFloat,
+        cancellationPolicy: AsyncCancellationPolicy
+    ) async -> NSAttributedString? {
+        guard !cancellationPolicy.shouldCancel else { return nil }
+
+        switch resource {
+        case let .image(image, baseAttributes):
+            let attachment = await ImageAttachmentBuilder.build(
+                from: image,
+                constrainedToWidth: maxWidth,
+                imageLoadingPolicy: imageLoadingPolicy
+            )
+            guard !cancellationPolicy.shouldCancel else { return nil }
+            if let attachment {
+                return attachment
+            }
+            let fallback = imageFallbackAttributedString(
+                from: image,
+                baseAttributes: baseAttributes
+            )
+            guard !cancellationPolicy.shouldCancel else { return nil }
+            return fallback
+
+        case let .math(math, contextFont):
+            let rendered = await mathAdapter.render(
+                from: math,
+                theme: theme,
+                contextFont: contextFont
+            )
+            guard !cancellationPolicy.shouldCancel else { return nil }
+            let resolved = resolveAdapterColors(in: rendered)
+            guard !cancellationPolicy.shouldCancel else { return nil }
+            return resolved
+
+        case let .diagram(diagram):
+            return await buildDiagramAttributedString(
+                from: diagram,
+                cancellationPolicy: cancellationPolicy
+            )
+        }
     }
 
     private func materializeSync(
@@ -758,17 +1060,52 @@ struct AttributedStringBuilder {
     // MARK: - Diagram Helper
 
     func buildDiagramAttributedString(from diagram: DiagramNode) async -> NSAttributedString {
-        if let adapter = diagramRegistry.adapter(for: diagram.language),
-           let rendered = await adapter.render(source: diagram.source, language: diagram.language) {
-            return resolveAdapterColors(in: rendered)
+        guard let rendered = await buildDiagramAttributedString(
+            from: diagram,
+            cancellationPolicy: .total
+        ) else {
+            preconditionFailure("Total diagram materialization unexpectedly canceled")
+        }
+        return rendered
+    }
+
+    func buildDiagramAttributedStringCancellable(
+        from diagram: DiagramNode
+    ) async -> NSAttributedString? {
+        await buildDiagramAttributedString(
+            from: diagram,
+            cancellationPolicy: .cooperative
+        )
+    }
+
+    private func buildDiagramAttributedString(
+        from diagram: DiagramNode,
+        cancellationPolicy: AsyncCancellationPolicy
+    ) async -> NSAttributedString? {
+        guard !cancellationPolicy.shouldCancel else { return nil }
+
+        if let adapter = diagramRegistry.adapter(for: diagram.language) {
+            let rendered = await adapter.render(
+                source: diagram.source,
+                language: diagram.language
+            )
+            guard !cancellationPolicy.shouldCancel else { return nil }
+            if let rendered {
+                let resolved = resolveAdapterColors(in: rendered)
+                guard !cancellationPolicy.shouldCancel else { return nil }
+                return resolved
+            }
         }
 
+        guard !cancellationPolicy.shouldCancel else { return nil }
         let fallback = CodeBlockNode(
             range: diagram.range,
             language: diagram.language.rawValue,
             code: diagram.source
         )
-        return buildCodeBlockAttributedString(from: fallback)
+        let rendered = buildCodeBlockAttributedString(from: fallback)
+        guard !cancellationPolicy.shouldCancel else { return nil }
+        return rendered
     }
 
     private func detailsSummaryAttributes() -> [NSAttributedString.Key: Any] {

@@ -32,10 +32,10 @@ and the aligned `PreparedText` payload.
 `ArithmeticTextLineBreaker` consumes that width-independent payload for each viewport width, preserving separate fit and paint advances, paragraph indents, hard breaks, discretionary soft hyphens, and CoreText grapheme fallback for oversized tokens. Unsupported scripts and attachment-bearing strings continue to route through `TextKitCalculator`.
 
 ### `LayoutSolver`
-A recursive tree solver. After cache lookup, it classifies each node into a shallow recipe, applies the central `Theme`, measures the output, and packages it into `LayoutResult` trees. Async and sync envelopes remain explicit so cancellation, cache publication, and resource behavior do not leak across modes.
+A recursive tree solver. After cache lookup, it classifies each node into a shallow recipe, applies the central `Theme`, measures the output, and packages it into `LayoutResult` trees. Public async solving remains total when its task is canceled and replaces per-node yielding with one initial yield plus bounded periodic solver yields. The SwiftUI coordinator uses a separate internal cancellable envelope that returns no partial tree and stops between children, planning work, materialization operations, and resource boundaries. The sync envelope remains fully synchronous.
 
 ### `AttributedStringBuilder`
-The builder expands block and inline structure into an invocation-local flat operation program. Sequential async and sync materializers consume the same structural program; image loading, math rendering, and diagram rendering remain explicit mode-specific leaves.
+The builder expands block and inline structure into an invocation-local flat operation program. Its stack advances one structural child at a time so coordinator-cancellable planning has a bounded checkpoint without duplicating block/inline dispatch. Sequential async and sync materializers consume the same structural program; image loading, math rendering, and diagram rendering remain explicit mode-specific leaves. Cancellable materialization discards an in-flight resource result if cancellation was observed before it returned and never starts the next resource.
 
 ### Table layout
 `TableLayoutShared` is the single owner of canonical table content and uniform column geometry. It rectangularizes ragged compatible `TableNode` input into immutable rows/cells with display text, alignment, header/body role, and body-row index, then sanitizes width inputs before producing per-platform geometry.
@@ -50,3 +50,6 @@ rendering-variant fingerprint. The interaction fingerprint invalidates cached ca
 when source ranges or source URLs change without changing semantic stable identity or pixel-render
 identity. Collection views answer cell-size queries from already-computed `LayoutResult.size`; a
 changed width, rendering variant, or visible interaction identity can require new layout work.
+Coordinator-cancellable solves stage cache misses in an invocation-local write batch. Staged
+entries serve duplicate nodes during that solve, are discarded if cancellation is observed, and
+commit child-before-parent only after the complete root result succeeds.
