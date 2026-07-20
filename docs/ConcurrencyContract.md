@@ -56,8 +56,9 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 8. `ConcurrencyStressTests` validates multi-task LayoutSolver/LayoutCache safety and parser thread safety.
 9. `ImageResourceLoaderTests` validates policy, pre-follow redirect rejection, streamed byte limits, and response handling with injected `URLProtocol` responses plus local fixtures; it does not depend on the public network. `ImageAttachmentBuilderTests` validates bounded decode and cache isolation, while `InlineFormattingLayoutTests` verifies sync fallback cannot poison a later async attachment layout.
 10. `scripts/verify_ios.sh` separately assembles the SwiftPM demo executable as
-    a signed Simulator app and requires exactly one success marker from a real
-    Mermaid attachment render inside a running SwiftUI application.
+    a signed Simulator app and requires exactly one success marker after a
+    Mermaid fence traverses public `MarkdownView` and a registry-backed real
+    WebKit adapter inside the running SwiftUI application.
 
 ## 4. Known Limits and Host Responsibilities
 

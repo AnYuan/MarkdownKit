@@ -43,7 +43,8 @@ alone is not release validation.
 
 The iOS release gate is deliberately two-part: 550 app-less XCTest tests exercise Mermaid's
 queue/cache/cancellation state machine through a deterministic image driver, then a separately
-assembled SwiftUI Simulator app proves one real WebKit Mermaid attachment render.
+assembled SwiftUI Simulator app proves that a Mermaid fence can traverse public `MarkdownView`
+and its registry-backed real-WebKit adapter.
 
 ### Phase A: Test Strategy Baseline (Docs + Scope Lock)
 **Goal**: lock verification scope and merge criteria.

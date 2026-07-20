@@ -586,3 +586,13 @@ review the complete diff, then commit and push before starting the next stage.
   454-symbol/610-relationship iOS Simulator API graphs, and the complete
   benchmark gate pass. Exact-SHA CI run `29645680543` for the host-separation
   commit passed all three jobs, including the visual snapshot step.
+  - [x] Q20-E post-release review follow-up: route the app-hosted Mermaid smoke
+    through a public `MarkdownView` Mermaid fence and reporting adapter registry,
+    retain fixed 550-test enumeration/execution assertions and EXIT-based
+    `INT`/`TERM` cleanup, then review, validate, commit, and push without moving
+    the immutable `v0.4.0` tag.
+    Follow-up validation: package description/build, 10 normal-import API smoke
+    tests, provenance, both platform API baselines, 499 fast correctness tests,
+    516-test documentation freshness, both four-test snapshot contracts, exactly
+    550 iOS XCTest tests plus one app-hosted public-`MarkdownView` Mermaid PASS
+    marker, and the complete benchmark gate pass.

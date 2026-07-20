@@ -2,6 +2,13 @@
 
 All notable changes to MarkdownKit are documented in this file.
 
+## [Unreleased]
+
+### Release engineering
+
+- The app-hosted iOS Mermaid smoke now sends a Mermaid fence through the public `MarkdownView`
+  pipeline and a registry-backed real-WebKit adapter instead of invoking the adapter directly.
+
 ## [0.4.0] - 2026-07-18
 
 ### Migration notes
@@ -73,4 +80,5 @@ This is a pre-1.0 release and includes intentional API breaks.
   coverage in app-less iOS XCTest, followed by a blocking app-hosted WebKit smoke.
 - Benchmark thresholds now use a machine-readable authoritative baseline.
 
+[Unreleased]: https://github.com/AnYuan/MarkdownKit/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/AnYuan/MarkdownKit/compare/0.03...v0.4.0

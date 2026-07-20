@@ -187,7 +187,8 @@ High-value suites:
 - Deterministic diagram rendering integration (not image snapshot assertions): `DiagramSnapshotTests`
 - Mermaid backend contracts: `MermaidDiagramAdapterTests` uses real WebKit on
   macOS and a deterministic image driver on iOS; the iOS verification script
-  adds a separate app-hosted real-WebKit smoke after its 550 XCTest tests.
+  adds a separate app-hosted public-`MarkdownView` Mermaid-fence smoke using
+  real WebKit after its 550 XCTest tests.
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`, `BenchmarkCacheTests`
 
 ## 6. Known Gaps / Risks / Technical Debt

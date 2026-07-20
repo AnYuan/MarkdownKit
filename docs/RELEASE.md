@@ -87,7 +87,7 @@ results and make a silent partial run a failure.
 | Documentation freshness | `bash scripts/check_doc_freshness.sh` | 516 discoverable tests. |
 | Snapshot visual contract | `bash scripts/verify_snapshots.sh --visual` | 4 tests and 4 committed PNG baselines. |
 | Snapshot determinism | `bash scripts/verify_snapshots.sh --determinism` | Record 4 expected missing-reference failures, then verify 4 tests. |
-| iOS Simulator correctness | `bash scripts/verify_ios.sh` | Exactly 550 XCTest tests, then exactly one app-hosted real-WebKit Mermaid PASS marker. |
+| iOS Simulator correctness | `bash scripts/verify_ios.sh` | Exactly 550 XCTest tests, then exactly one PASS marker from an app-hosted `MarkdownView` Mermaid fence using real WebKit. |
 | iOS Simulator public API | `bash scripts/verify_public_api.sh --platform ios-simulator --check` | arm64 and x86_64 each match 454 symbols / 610 relationships. |
 | Benchmarks (last) | `bash scripts/verify_benchmarks.sh` | Baseline freshness and all benchmark suites succeed. |
 
@@ -102,7 +102,9 @@ Mermaid adapter tests inject deterministic image generation before the lazy snap
 constructed while retaining production FIFO/cache/cancellation/timeout ownership. After the exact
 550-test contract passes, the script reuses the package build to assemble, sign, install, and
 launch the SwiftPM demo product as a real Simulator app. That additional smoke must emit exactly
-one PASS marker and no FAIL marker; it is not part of the XCTest count.
+one PASS marker and no FAIL marker after a Mermaid fence enters public `MarkdownView`, is extracted
+by the default plugin chain, and reaches a registry-backed real-WebKit adapter. It is not part of
+the XCTest count.
 
 After the matrix, confirm that the candidate did not change and that the tree is still clean:
 
