@@ -67,10 +67,10 @@ bash scripts/verify_benchmarks.sh
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **517** discoverable tests
+- `swift test list`: **530** discoverable tests
 - `swift test`: **516 tests passed** on 2026-07-18
-- `verify_fast.sh`: **499** correctness tests
-- `verify_ios.sh`: **550** XCTest tests plus one app-hosted Mermaid PASS marker
+- `verify_fast.sh`: **512** correctness tests
+- `verify_ios.sh`: **563** XCTest tests plus one app-hosted Mermaid PASS marker
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -102,6 +102,7 @@ Primary files:
 
 Key facts:
 - Plugin ordering matters.
+- `DetailsExtractionPlugin`, `DiagramExtractionPlugin`, and `MathExtractionPlugin` adopt the internal `BuiltInSourcePreflightPlugin` protocol (`Sources/MarkdownKit/Parsing/BuiltInPluginSourcePreflight.swift`). `MarkdownParser.parseOutcome(_:)` computes one immutable `BuiltInPluginSourceHints` value lazily (at most once per parse, only if a preflight-capable plugin is actually encountered) and may skip invoking such a plugin while no earlier plugin in that parse — built-in or custom — has actually executed. Once any plugin executes, every remaining plugin (including preflight-capable ones) runs normally for the rest of that parse, since plugin output could introduce syntax absent from the original source. This is a behavior-preserving performance optimization; it does not change `ASTPlugin`'s public shape, plugin order/output, or fingerprints.
 - `MarkdownParser.ResourceLimits.default` bounds resource usage: `maximumInputBytes` = 1,048,576 UTF-8 bytes (inclusive) and `maximumNestingDepth` = 50. The depth budget only bounds `MarkdownKitVisitor` while mapping an already-parsed `swift-markdown` tree into native nodes: the root document is not counted, and a boundary container remains while its descendants are omitted. It is **not** a `swift-markdown` front-end limit or a layout/rendering depth limit.
 - `parseOutcome(_:)` returns `.rejected(diagnostic:)` for oversized input (checked before any `swift-markdown` parsing) and reports depth truncation as a diagnostic on a `.parsed` outcome; it never logs. The legacy `parse(_:) -> DocumentNode` is a lossy compatibility convenience that logs each diagnostic and collapses rejection into the historical empty `DocumentNode`.
 - HTML blocks/inlines are preserved as text and optionally reinterpreted by plugins.
@@ -187,7 +188,7 @@ High-value suites:
 - Mermaid backend contracts: `MermaidDiagramAdapterTests` uses real WebKit on
   macOS and a deterministic image driver on iOS; the iOS verification script
   adds a separate app-hosted public-`MarkdownView` Mermaid-fence smoke using
-  real WebKit after its 550 XCTest tests.
+  real WebKit after its 563 XCTest tests.
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`,
   `BenchmarkCacheTests`, `MarkdownRenderCoordinatorBenchmarkTests`
 

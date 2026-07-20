@@ -144,8 +144,27 @@ public struct MarkdownParser {
         var rawNodes = visitor.defaultVisit(document)
 
         // Step 3: Run middleware plugins to modify the tree (e.g. inject MathNodes).
+        //
+        // Built-in plugins that adopt `BuiltInSourcePreflightPlugin` (Details,
+        // Diagram, Math) may be skipped entirely while no earlier plugin in this
+        // parse has actually executed, if `BuiltInPluginSourceHints` — computed
+        // lazily at most once per parse, from the original source text — prove
+        // the source cannot contain syntax that plugin cares about. Skipping
+        // preserves eligibility for later plugins; once *any* plugin executes
+        // (built-in or custom), every remaining plugin runs normally, because
+        // its output could introduce syntax absent from the original source.
+        var anyPluginExecuted = false
+        var cachedSourceHints: BuiltInPluginSourceHints?
         for plugin in plugins {
+            if !anyPluginExecuted, let preflightType = type(of: plugin) as? any BuiltInSourcePreflightPlugin.Type {
+                let hints = cachedSourceHints ?? BuiltInPluginSourceHints(source: text)
+                cachedSourceHints = hints
+                if !preflightType.mightApply(given: hints) {
+                    continue
+                }
+            }
             rawNodes = plugin.visit(rawNodes)
+            anyPluginExecuted = true
         }
 
         // Step 4: Return wrapped Document, plus a diagnostic if mapping was truncated.

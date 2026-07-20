@@ -198,7 +198,7 @@ public struct DetailsExtractionPlugin: ASTPlugin {
             }
 
             let raw = textNode.text
-            guard raw.contains(where: \.isNewline), looksLikeDetailsMarkup(raw) else {
+            guard raw.contains(where: \.isNewline), Self.looksLikeDetailsMarkup(raw) else {
                 result.append(node)
                 continue
             }
@@ -225,12 +225,52 @@ public struct DetailsExtractionPlugin: ASTPlugin {
         return result
     }
 
-    private func looksLikeDetailsMarkup(_ text: String) -> Bool {
-        let lower = text.lowercased()
-        return lower.contains("<details")
-            || lower.contains("</details>")
-            || lower.contains("<summary")
-            || lower.contains("</summary>")
+    /// Shared marker check for multiline HTML expansion and whole-source preflight.
+    /// The markers are ASCII HTML tag names, so scanning the UTF-8 view avoids
+    /// allocating a lowercased copy of the full Markdown input.
+    static func looksLikeDetailsMarkup(_ text: String) -> Bool {
+        let bytes = text.utf8
+        return Self.containsASCIICaseInsensitive(bytes, needle: Self.detailsOpenNeedle)
+            || Self.containsASCIICaseInsensitive(bytes, needle: Self.detailsCloseNeedle)
+            || Self.containsASCIICaseInsensitive(bytes, needle: Self.summaryOpenNeedle)
+            || Self.containsASCIICaseInsensitive(bytes, needle: Self.summaryCloseNeedle)
+    }
+
+    private static let detailsOpenNeedle: [UInt8] = Array("<details".utf8)
+    private static let detailsCloseNeedle: [UInt8] = Array("</details>".utf8)
+    private static let summaryOpenNeedle: [UInt8] = Array("<summary".utf8)
+    private static let summaryCloseNeedle: [UInt8] = Array("</summary>".utf8)
+
+    /// Naive ASCII case-insensitive substring search over raw UTF-8 bytes.
+    /// `needle` must already be lowercase ASCII. Non-ASCII bytes in `haystack`
+    /// (high bit set) never fold to an ASCII letter, so they simply fail to
+    /// match — safe for arbitrary UTF-8 input, including non-ASCII text.
+    private static func containsASCIICaseInsensitive(_ haystack: String.UTF8View, needle: [UInt8]) -> Bool {
+        guard !needle.isEmpty else { return false }
+        let firstNeedleByte = needle[0]
+        var start = haystack.startIndex
+
+        while start < haystack.endIndex {
+            if Self.asciiLowercased(haystack[start]) == firstNeedleByte {
+                var sourceIndex = haystack.index(after: start)
+                var needleIndex = 1
+                while needleIndex < needle.count {
+                    guard sourceIndex < haystack.endIndex else { return false }
+                    guard Self.asciiLowercased(haystack[sourceIndex]) == needle[needleIndex] else {
+                        break
+                    }
+                    sourceIndex = haystack.index(after: sourceIndex)
+                    needleIndex += 1
+                }
+                if needleIndex == needle.count { return true }
+            }
+            start = haystack.index(after: start)
+        }
+        return false
+    }
+
+    private static func asciiLowercased(_ byte: UInt8) -> UInt8 {
+        (byte >= 65 && byte <= 90) ? byte + 32 : byte
     }
 
     private func isMatch(_ regex: NSRegularExpression, text: String) -> Bool {

@@ -41,7 +41,7 @@ package/build checks, macOS and iOS public API checks, provenance, fast and iOS 
 documentation freshness, visual and determinism snapshots, and benchmarks; `verify_all.sh --full`
 alone is not release validation.
 
-The iOS release gate is deliberately two-part: 550 app-less XCTest tests exercise Mermaid's
+The iOS release gate is deliberately two-part: 563 app-less XCTest tests exercise Mermaid's
 queue/cache/cancellation state machine through a deterministic image driver, then a separately
 assembled SwiftUI Simulator app proves that a Mermaid fence can traverse public `MarkdownView`
 and its registry-backed real-WebKit adapter.

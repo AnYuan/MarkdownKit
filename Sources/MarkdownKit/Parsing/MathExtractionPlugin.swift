@@ -37,7 +37,7 @@ public struct MathExtractionPlugin: ASTPlugin {
         // per-container recursion; the visitor only describes the per-node
         // decisions.
         return AST.transform(blockMerged) { node in
-            if let code = node as? CodeBlockNode, isMathFence(language: code.language) {
+            if let code = node as? CodeBlockNode, Self.isMathFence(language: code.language) {
                 let equation = code.code.trimmingCharacters(in: .whitespacesAndNewlines)
                 return .replace(MathNode(range: code.range, style: .block, equation: equation))
             }
@@ -293,7 +293,11 @@ public struct MathExtractionPlugin: ASTPlugin {
         return nil
     }
 
-    private func isMathFence(language: String?) -> Bool {
+    /// The single source of truth for fenced-code "math" languages. Shared by
+    /// `visit(_:)` and by `BuiltInPluginSourceHints`, which reuses it against
+    /// fence-language candidates scanned from the raw source as a conservative
+    /// preflight check.
+    static func isMathFence(language: String?) -> Bool {
         guard let language else { return false }
         switch language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "math", "latex", "tex":

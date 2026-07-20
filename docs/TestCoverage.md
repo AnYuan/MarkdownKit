@@ -2,17 +2,17 @@
 
 > 最近更新: 2026-07-20
 > 生成方式: `python3 scripts/generate_test_coverage_report.py [--run-tests|--from-log <path>]`
-> 生成时间: 2026-07-20 20:50:16
+> 生成时间: 2026-07-20 22:07:51
 
 ## 1. 总览
 
 | 指标 | 当前值 | 说明 |
 | --- | ---: | --- |
-| 源码文件数 (`Sources/MarkdownKit/*.swift`) | 87 | 不含 Demo target |
-| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 76 | 含基准/夹具/辅助文件 |
-| 含 `test*` 方法的测试文件 | 68 | 静态扫描结果 |
-| 静态扫描 `test*` 方法总数 | 604 | 受编译条件影响，可能高于可执行测试数 |
-| 可发现测试数 (`swift test list`) | 517 | 当前平台可执行测试 |
+| 源码文件数 (`Sources/MarkdownKit/*.swift`) | 88 | 不含 Demo target |
+| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 77 | 含基准/夹具/辅助文件 |
+| 含 `test*` 方法的测试文件 | 69 | 静态扫描结果 |
+| 静态扫描 `test*` 方法总数 | 617 | 受编译条件影响，可能高于可执行测试数 |
+| 可发现测试数 (`swift test list`) | 530 | 当前平台可执行测试 |
 | 全量执行结果 (`swift test`) | 未提供 | 未执行或未提供日志 |
 
 ## 2. 本次执行状态
@@ -39,6 +39,7 @@
 | `BenchmarkRegressionGuard.swift` | 0 |
 | `BenchmarkReportFormatter.swift` | 0 |
 | `BenchmarkTieredFixtures.swift` | 0 |
+| `BuiltInPluginSourcePreflightTests.swift` | 13 |
 | `CommonMarkSpecTests.swift` | 2 |
 | `ConcurrencyStressTests.swift` | 4 |
 | `CrossPlatformLayoutTests.swift` | 11 |

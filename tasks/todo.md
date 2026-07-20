@@ -634,9 +634,36 @@ before the next stage starts.
   the 517-test documentation freshness gate pass. Four-role simplification and
   regression swarms found no remaining issue after aligning Swift/Python null
   validation and preserving the documented test count.
-- [ ] P02 skip provably irrelevant built-in details/diagram/math plugin
-  traversals through a conservative internal source preflight. Custom
-  `ASTPlugin` values must always execute.
+- [x] P02 skip provably irrelevant built-in details/diagram/math plugin
+  traversals through a conservative internal source preflight. Keep the public
+  `ASTPlugin` protocol unchanged. Only the three production built-ins adopt the
+  internal capability; every custom plugin always executes. Source-based
+  skipping remains eligible only while preceding plugins were skipped. Once
+  any plugin actually executes, all later plugins run normally so custom or
+  built-in output can introduce syntax absent from the original source.
+  - [x] P02-A add one lazily computed source-hints value and parser-prefix
+    eligibility, with direct tests for skip/execution order and custom-plugin
+    injection.
+  - [x] P02-B give details, diagram, and math conservative predicates that
+    share their existing marker/language sources of truth. Fence detection must
+    cover nested prefixes, backtick/tilde fences, longer delimiters, case, and
+    whitespace without bare `stl`/`tex` substring false positives.
+  - [x] P02-C prove existing positive, escaped, malformed, nested, no-op
+    identity, fingerprint, and public API contracts; compare five isolated
+    Release plugin-composition runs against the pre-change median p95 of
+    4.75ms. Exit requires at least 35% improvement (post-change median p95
+    <= 3.0875ms), then full review/correctness/documentation/benchmark gates,
+    atomic commit, and push.
+  Validation: exact final-code p95 values were 2.10, 2.15, 2.10, 2.05, and
+  2.10ms (median 2.10ms), a 55.8% reduction from the 4.75ms pre-change median.
+  Thirteen direct preflight tests, 512 fast correctness tests, 530 discoverable
+  documentation checks, the 12-workload benchmark gate, the unchanged macOS
+  public API baseline, 563 iOS Simulator XCTest tests, and the app-hosted
+  real-WebKit Mermaid smoke pass. Same-environment snapshot determinism passes;
+  the four committed visual baselines drift on this host identically at
+  `origin/main`, so no P02 snapshot output was refreshed. Four-role review found
+  the CommonMark entity-decoding seam; final main review also removed a
+  mixed-syntax premature scan stop, with regressions covering both cases.
 - [ ] P03 eliminate redundant whole-attributed-string appearance resolution
   while preserving explicit light/dark output and custom adapter colors.
 - [ ] P04 make stale layout/materialization work cooperatively cancellable
