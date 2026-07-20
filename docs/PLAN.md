@@ -176,3 +176,21 @@ Phase C note: this coordinator/details regression fix does **not** claim the sep
 3. `LayoutSolver` gates arithmetic routing through a prepared-text profile so unsupported scripts and attachment-heavy content continue to use `TextKitCalculator`.
 4. Oracle coverage now exists for both arithmetic-parity text cases and complex-script fallback cases against `TextKitCalculator`.
 5. The refreshed arithmetic benchmark snapshot is published in `docs/BENCHMARK_BASELINE.md`, and the macOS table/task-list snapshot suite is back to green after the follow-up spacing fix and reference refresh.
+
+## Phase 14: Performance Review Backlog (post-v0.4.0 whole-repo review, 2026-07-19)
+**Goal**: Track the remaining findings from the 2026-07-19 whole-repo performance review that are not already covered by the Phase 13 Evidence-Driven Performance Wave (`tasks/todo.md`).
+*Execution Strategy: strictly atomic commits, one finding per commit, each validated with the Phase 13 isolated Release benchmark harness (P01) plus `verify_fast.sh`. The detailed trackable checklist lives in `tasks/todo.md` ("Phase 14") and is the execution source of truth for this phase.*
+
+### Review Context
+The review predated the Evidence-Driven Performance Wave; several of its findings have since landed on `main` and are excluded here:
+- Streaming/coordinator benchmarks and a Release-isolated baseline → P01-B/C.
+- No-op built-in plugin traversals skipped via conservative source preflight → P02.
+- Redundant whole-attributed-string appearance color resolution → P03.
+- Per-node unconditional `Task.yield()` replaced with bounded periodic yields on a cancellable path → P04.
+- Identical collection snapshot suppression and variant-scoped reconfigure → P05.
+
+The remaining findings fall into four groups:
+1. **Streaming structure**: the growing block still changes `StableNodeIdentity` every tick (Diffable delete+insert instead of reconfigure); the whole document is still re-parsed on every text change; when the relevant syntax *is* present, Details/Diagram/Math still walk the AST separately (Math three times); Mermaid re-runs `mermaid.initialize` per render and caches intermediate streamed sources; the MathJax engine is cold per solver instance.
+2. **Cold layout taxes**: eager `AccessibilityMetadata.make` per `LayoutResult`; PreparedText cache keys that copy and hash the full string on every lookup plus always-on stats locks; one global TextKit lock with per-call stack allocation, and arithmetic routing limited to paragraph/header.
+3. **UI**: bitmap prefetch at hard-coded @2x (folds into pending P06); a per-byte async image download loop; macOS main-thread `ensureLayout` per item configure; per-body-evaluation theme fingerprint resolution in `MarkdownView`.
+4. **Hygiene**: `LayoutCache` lacks a `totalCostLimit`; O(n) LRU eviction in `FontTraitResolver`; the cache-reuse requirement for one-shot `MarkdownKitEngine.layout` hosts is undocumented.

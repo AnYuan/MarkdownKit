@@ -783,3 +783,141 @@ P01 scope correction: p95/max remain informational with the current 20-sample
 harness; RSS deltas remain informational because they measure the whole XCTest
 process. Runtime signposts and an iOS benchmark baseline require separate
 production/infrastructure stages and are not mixed into P01-A.
+
+## Phase 14: Performance Review Backlog (2026-07-19 whole-repo review)
+
+Source: the 2026-07-19 whole-repo performance review (context in
+`docs/PLAN.md` Phase 14). This backlog excludes findings already resolved by
+Phase 13 stages P01–P05: streaming/coordinator benchmarks and the Release
+baseline (P01), no-op plugin traversal skipping (P02), redundant appearance
+color resolution (P03), per-node unconditional yields (P04), and
+identical-snapshot suppression with variant-scoped reconfigure (P05). Where an
+item overlaps a pending Phase 13 stage, fold it into that stage instead of
+duplicating work: P14.9 belongs to P06, and the highlight-reuse half of P14.6
+belongs to P07.
+
+Each item is one atomic commit validated with the P01 isolated Release
+harness plus `bash scripts/verify_fast.sh`. Quoted timings from the review
+were measured on the pre-P01 Debug harness; re-measure against the current
+Release baseline before and after each item. Suggested order: quick wins
+(P14.1, P14.2, P14.11–P14.13) → P14.3 → P14.7 → P14.8 → P14.5 → P14.6 →
+P14.10 → P14.14 → P14.4 last (largest scope, benefits already reduced by
+earlier items).
+
+### Cold layout quick wins
+- [ ] P14.1 `perf: make accessibility metadata lazy`
+  Every solver-built `LayoutResult` eagerly runs `AccessibilityMetadata.make`
+  (a `.markdownCheckbox` enumeration per block) at construction time —
+  historically attributed as the dominant cost of the archival
+  `solve(1000-lines)` Debug regression (`docs/BENCHMARK_POST_PHASE_6.md`).
+  Compute on first access with a cached box (or only when accessibility is
+  active) while keeping main-thread cell configure scan-free. File:
+  `Layout/LayoutResult.swift` (~117).
+- [ ] P14.2 `perf: download images in chunks, not per byte`
+  `ImageResourceLoader` accumulates `for try await byte in bytes {
+  data.append(byte) }` — millions of AsyncSequence suspensions per MB. Use
+  `URLSession.data(for:)` when the expected length is acceptable, or read in
+  chunks; keep the byte-cap check per chunk. File:
+  `ImageResourceLoader.swift` (~214).
+
+### Streaming structure
+- [ ] P14.3 `perf: key diffable items by path, reconfigure on fingerprint`
+  `StableNodeIdentity` embeds `contentFingerprint`, so the growing block gets
+  a new identity every stream tick → Diffable delete+insert →
+  `prepareForReuse` clears `layer.contents` → full re-raster and visible
+  flash. P05's shared update plan suppresses identical snapshots but cannot
+  reconfigure across an identity change. Key items by path (+ node type);
+  drive redraws through the existing render/interaction variant diff via
+  `reconfigureItems`. Files: `Layout/StableNodeIdentity.swift`, the shared
+  collection update plan from P05, `UI/iOS/MarkdownCollectionView_iOS.swift`,
+  `UI/macOS/MarkdownCollectionView_macOS.swift`.
+- [ ] P14.4 `perf: reuse stable-prefix AST across streaming appends`
+  Every text change re-parses the whole document
+  (`MarkdownRenderCoordinator.renderOffMain` → `MarkdownParser.parse`),
+  making a growing chat O(n²) cumulative; P02 skips plugin walks but not the
+  cmark parse + visitor mapping. Add an append-aware fast path: when new text
+  extends the previous text, re-parse only from the last committed top-level
+  block boundary and splice onto the cached prefix AST. Full incremental
+  parsing is out of scope; append-only covers the streaming use case.
+- [ ] P14.5 `perf: fuse built-in plugin walks when syntax is present`
+  P02 skips traversals when the source lacks the relevant syntax, but when it
+  is present Details → Diagram → Math still each run a full `AST.transform`,
+  and `MathExtractionPlugin` performs three passes (root merge, nested merge,
+  inline/fence extract). Fuse the built-in chain into one walk with a shared
+  sibling post-processor, preserving P02's preflight and the custom-plugin
+  execution contract. Files: `Parsing/MathExtractionPlugin.swift`,
+  `Parsing/DetailsExtractionPlugin.swift`,
+  `Parsing/DiagramExtractionPlugin.swift`.
+- [ ] P14.6 `perf: bound growing-block adapter cost (mermaid, math)`
+  - Mermaid: `mermaid.initialize` runs inside every render payload and the
+    cache is keyed by full source, so intermediate streamed states pollute
+    the 64-entry cache and queue serial MainActor renders. Initialize once at
+    bootstrap; skip render/cache until the fence closes or the source idles.
+    File: `Plugins/MermaidDiagramAdapter.swift` (~453).
+  - Math: the MathJax `Engine` actor is per-adapter instance (cold start per
+    new solver); make it process-shared. Skip MathJax for unclosed `$…`
+    spans. File: `Math/DefaultMathRenderingAdapter.swift` (~126).
+  - Highlight-result reuse for growing code fences is P07's scope — do not
+    duplicate it here.
+
+### Cold layout throughput
+- [ ] P14.7 `perf: fingerprint-based PreparedText cache keys`
+  `ArithmeticTextCalculator.preparedTextCacheKey` does a full attribute
+  enumeration + `attributedString.string` copy + full-string hash on every
+  `prepare`, including hits — often comparable to the measurement it saves.
+  Key on the node's `contentFingerprint` + variant hash instead (the solver
+  has both). Also make the per-hit `testCounterLock`
+  (`ArithmeticTextCalculator`) and `LayoutCache.statsLock` hit/miss counters
+  `#if DEBUG`-only, and replace `ArithmeticTextMeasurer`'s per-segment
+  string-interpolation width-cache key with a structured key (no `NSString`
+  bridge, no `NSNumber` boxing). Complements P07's prepared-content reuse.
+- [ ] P14.8 `perf: pool TextKit measurement stacks, widen arithmetic routing`
+  All non-arithmetic measurement serializes behind one global
+  `os_unfair_lock` and allocates a fresh
+  `NSTextStorage`/`NSLayoutManager`/`NSTextContainer` per call
+  (`Layout/TextKitCalculator.swift` ~25–42). Pool the stacks (thread-local).
+  Guarded by the existing oracle parity tests, extend arithmetic routing
+  beyond paragraph/header to text-only list items and blockquotes
+  (`LayoutSolver.isPureTextBlock`) — task-list-heavy layout remains ~3× the
+  medium fixture largely due to TextKit fallback. Small adjacent win: cache
+  `AttributedStringBuilder.listItemPrefixWidth` (an `NSString.size` call per
+  list item, ~907) by `(prefix, fontName, pointSize)`.
+
+### UI & scroll
+- [ ] P14.9 `fix: prefetch bitmaps at the real display scale` → fold into P06
+  `AsyncTextView.preheat` defaults to `scale: 2` while `configure` renders at
+  `currentDisplayScale` (3 on modern iPhones), so prefetched bitmaps miss on
+  first paint. P06 already owns raster/prefetch key + scale unification;
+  track it there and check this box when P06 lands. Files:
+  `UI/Components/AsyncTextView.swift` (~114),
+  `UI/iOS/MarkdownCollectionView_iOS.swift` (prefetch callback).
+- [ ] P14.10 `perf: reduce macOS main-thread TextKit work per configure`
+  `MarkdownItemView.configure` runs `layoutManager?.ensureLayout(for:)` on
+  the main thread for every changed item (~167), and macOS still reloads
+  (rather than reconfigures) changed identities. Skip `ensureLayout` when the
+  solver-provided size is trusted; evaluate reconfigure over reload within
+  the P05 plan semantics. Files: `UI/macOS/MarkdownItemView.swift`,
+  `UI/macOS/MarkdownCollectionView_macOS.swift`.
+- [ ] P14.11 `perf: memoize theme fingerprint in MarkdownView body`
+  Every body evaluation constructs `MarkdownRenderInput`, whose init calls
+  `themeFingerprint` → `theme.resolved(for:)` — ~30 color resolutions (with
+  the AppKit resolution lock) on the main thread, inside a `GeometryReader`
+  that re-evaluates on scroll/resize. Memoize the fingerprint per (theme
+  value, appearance) and snap widths to 0.5pt before comparing. File:
+  `UI/SwiftUI/MarkdownView.swift` (~205).
+
+### Hygiene
+- [ ] P14.12 `perf: bound LayoutCache by cost`
+  Set `totalCostLimit` (cost = attributed string length) alongside
+  `countLimit: 100_000` — 100k entries retaining attributed strings and
+  custom-draw closures is not "single-digit megabytes" as the comment
+  claims. File: `Layout/LayoutCache.swift` (~168).
+- [ ] P14.13 `perf: O(1) LRU eviction in FontTraitResolver`
+  Eviction uses `Array.removeFirst()` (O(n) shift). Fine at capacity 256;
+  cheap to fix while touching the file. File:
+  `Layout/FontTraitResolver.swift` (~66).
+- [ ] P14.14 `docs: document persisted-cache pattern for one-shot hosts`
+  `MarkdownKitEngine.layout` convenience creates a fresh parser/solver/cache
+  per call with zero cross-call reuse. Document that streaming hosts must
+  reuse parser/solver/cache, or expose the coordinator's persisted-cache
+  pattern as a supported API.
