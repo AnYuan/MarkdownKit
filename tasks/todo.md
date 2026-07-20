@@ -596,3 +596,41 @@ review the complete diff, then commit and push before starting the next stage.
     516-test documentation freshness, both four-test snapshot contracts, exactly
     550 iOS XCTest tests plus one app-hosted public-`MarkdownView` Mermaid PASS
     marker, and the complete benchmark gate pass.
+
+## Phase 13: Evidence-Driven Performance Wave
+
+Each stage remains independently reviewed, validated, committed, and pushed
+before the next stage starts.
+
+- [x] P01-A adopt canonical Release/process-isolated benchmark execution.
+  Move average regression guards onto the corresponding standalone benchmark
+  methods, keep composite reports informational, and update reproduction docs.
+  Validation: the gate prevalidated 11 fully qualified workload identifiers,
+  built the XCTest bundle once in Release, ran every workload in its own
+  process, and passed all guards. Four-role regression and simplification
+  reviews were resolved; 499 fast correctness tests and the 516-test
+  documentation freshness gate also passed.
+- [ ] P01-B add one coordinator-level rapid-update/latest-settled latency
+  workload representing streaming Markdown growth at a stable width.
+- [ ] P01-C record the new isolated Release baseline from current `main`, tighten
+  the average regression policy using repeated-run variance, regenerate the
+  generated baseline documentation, and correct the stale archival
+  accessibility attribution.
+- [ ] P02 skip provably irrelevant built-in details/diagram/math plugin
+  traversals through a conservative internal source preflight. Custom
+  `ASTPlugin` values must always execute.
+- [ ] P03 eliminate redundant whole-attributed-string appearance resolution
+  while preserving explicit light/dark output and custom adapter colors.
+- [ ] P04 make stale layout/materialization work cooperatively cancellable
+  without changing public solve behavior or canceled-cache publication rules.
+- [ ] P05 suppress identical iOS/macOS collection snapshot applications and
+  reconfigure only changed layout variants.
+- [ ] P06 unify the iOS raster/prefetch key, scale, size, task-lifetime,
+  in-flight-deduplication, and bitmap-cost behavior.
+- [ ] P07 add bounded width-independent attributed/highlight/arithmetic prepared
+  content reuse.
+
+P01 scope correction: p95/max remain informational with the current 20-sample
+harness; RSS deltas remain informational because they measure the whole XCTest
+process. Runtime signposts and an iOS benchmark baseline require separate
+production/infrastructure stages and are not mixed into P01-A.

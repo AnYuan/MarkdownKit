@@ -10,15 +10,15 @@ import XCTest
 /// through `BenchmarkBaselineLoader`.
 enum BenchmarkRegressionGuard {
 
-    static func assertCoreReport(
+    // MARK: - Focused entry points
+
+    /// Canonical guard for `testPhase1_Parse`. Checks every `parse(*)` key in `core.parse`.
+    static func assertCoreParse(
         parseResults: [BenchmarkResult],
-        layoutResults: [BenchmarkResult],
-        cacheResults: [BenchmarkResult],
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
         guard let baseline = BenchmarkBaselineLoader.load(file: file, line: line) else { return }
-
         assertGroup(
             parseResults,
             group: .coreParse,
@@ -27,7 +27,15 @@ enum BenchmarkRegressionGuard {
             file: file,
             line: line
         )
+    }
 
+    /// Canonical guard for `testPhase2_Layout`. Checks every `solve(*)` key in `core.layout`.
+    static func assertCoreLayout(
+        layoutResults: [BenchmarkResult],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let baseline = BenchmarkBaselineLoader.load(file: file, line: line) else { return }
         assertGroup(
             layoutResults,
             group: .coreLayout,
@@ -36,7 +44,16 @@ enum BenchmarkRegressionGuard {
             file: file,
             line: line
         )
+    }
 
+    /// Canonical guard for `testCacheHitMissRates`. Checks `core.cache` keys and
+    /// asserts warm-cache dominates cold.
+    static func assertCoreCache(
+        cacheResults: [BenchmarkResult],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let baseline = BenchmarkBaselineLoader.load(file: file, line: line) else { return }
         assertGroup(
             cacheResults,
             group: .coreCache,
@@ -45,17 +62,17 @@ enum BenchmarkRegressionGuard {
             file: file,
             line: line
         )
-
         assertWarmCacheDominatesCold(cacheResults, file: file, line: line)
     }
 
-    static func assertDeepReport(
+    /// Canonical guard for `testConcurrentSolveStress`. Checks `deep.concurrency` keys
+    /// and asserts concurrent solve is not slower than sequential.
+    static func assertDeepConcurrency(
         concurrencyResults: [BenchmarkResult],
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
         guard let baseline = BenchmarkBaselineLoader.load(file: file, line: line) else { return }
-
         assertGroup(
             concurrencyResults,
             group: .deepConcurrency,
@@ -64,7 +81,6 @@ enum BenchmarkRegressionGuard {
             file: file,
             line: line
         )
-
         assertConcurrencyIsNotSlower(concurrencyResults, file: file, line: line)
     }
 

@@ -262,16 +262,15 @@ def render_markdown(data: dict[str, Any]) -> str:
             lines.append(f"| `{measurement['key']}` | {format_ms(measurement['averageMilliseconds'])} |")
         lines.append("")
 
-    lines.append("## Reproduction")
+    lines.append("## Canonical Benchmark Gate")
+    lines.append("")
+    lines.append(
+        "> The numeric baseline above predates canonical Release/process-isolated "
+        "execution. It remains the active conservative guard until it is re-recorded."
+    )
     lines.append("")
     lines.append("```bash")
     lines.append("bash scripts/verify_benchmarks.sh")
-    lines.append("")
-    lines.append("# Or individually:")
-    lines.append('swift test --filter "MarkdownKitBenchmarkTests/testBenchmarkFullReport"')
-    lines.append('swift test --filter "BenchmarkNodeTypeTests/testDeepBenchmarkFullReport"')
-    lines.append('swift test --filter "BenchmarkNodeTypeTests/testPerSyntaxTieredBenchmark"')
-    lines.append('swift test --filter "BenchmarkCacheTests"')
     lines.append("```")
     lines.append("")
 

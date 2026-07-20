@@ -61,9 +61,8 @@ bash scripts/verify_snapshots.sh --determinism
 # Mermaid adapter sanity
 swift test --filter MermaidDiagramAdapterTests
 
-# Heavy benchmark path
-swift test --filter MarkdownKitBenchmarkTests/testBenchmarkFullReport
-swift test --filter BenchmarkNodeTypeTests/testDeepBenchmarkFullReport
+# Heavy benchmark path (Release build, one process per workload)
+bash scripts/verify_benchmarks.sh
 ```
 
 ### 2.3 Latest observed results
@@ -219,4 +218,4 @@ For broad confidence with reasonable time cost:
 3. `swift test --filter "LayoutSolverExtendedTests|InlineFormattingLayoutTests|CrossPlatformLayoutTests"`
 4. `bash scripts/verify_snapshots.sh --visual` and `bash scripts/verify_snapshots.sh --determinism` (SnapshotTests, owned exclusively by this script)
 5. `swift test --filter "URLSanitizerTests|DepthLimitTests|FuzzTests"`
-6. (optional heavy) `swift test --filter MarkdownKitBenchmarkTests/testBenchmarkFullReport`
+6. (optional heavy) `bash scripts/verify_benchmarks.sh`

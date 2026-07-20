@@ -64,14 +64,10 @@ budget = max(baseline * maxSlowdownFactor, baseline + absoluteSlackMilliseconds)
 | `sequential-4x(medium)` | 11.32ms |
 | `sequential-8x(large)` | 212.3ms |
 
-## Reproduction
+## Canonical Benchmark Gate
+
+> The numeric baseline above predates canonical Release/process-isolated execution. It remains the active conservative guard until it is re-recorded.
 
 ```bash
 bash scripts/verify_benchmarks.sh
-
-# Or individually:
-swift test --filter "MarkdownKitBenchmarkTests/testBenchmarkFullReport"
-swift test --filter "BenchmarkNodeTypeTests/testDeepBenchmarkFullReport"
-swift test --filter "BenchmarkNodeTypeTests/testPerSyntaxTieredBenchmark"
-swift test --filter "BenchmarkCacheTests"
 ```

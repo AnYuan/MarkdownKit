@@ -188,49 +188,13 @@ final class BenchmarkNodeTypeTests: XCTestCase {
     /// Measures concurrent vs sequential solve to reveal parallelism benefit and contention.
     /// Sequential and concurrent modes intentionally run the same parse+solve workload.
     func testConcurrentSolveStress() async {
-        var results: [BenchmarkResult] = []
-        let mediumWidths: [CGFloat] = [320, 600, 800, 1024]
-        let largeWidths: [CGFloat] = [300, 400, 500, 600, 700, 800, 900, 1000]
-
-        results.append(
-            await harness.measureAsync(label: "sequential-4x", fixture: "medium") {
-                await runSequentialParseAndSolve(
-                    content: BenchmarkFixtures.medium,
-                    widths: mediumWidths
-                )
-            }
-        )
-
-        results.append(
-            await harness.measureAsync(label: "concurrent-4x", fixture: "medium") {
-                await runConcurrentParseAndSolve(
-                    content: BenchmarkFixtures.medium,
-                    widths: mediumWidths
-                )
-            }
-        )
-
-        results.append(
-            await harness.measureAsync(label: "sequential-8x", fixture: "large") {
-                await runSequentialParseAndSolve(
-                    content: BenchmarkFixtures.large,
-                    widths: largeWidths
-                )
-            }
-        )
-
-        results.append(
-            await harness.measureAsync(label: "concurrent-8x", fixture: "large") {
-                await runConcurrentParseAndSolve(
-                    content: BenchmarkFixtures.large,
-                    widths: largeWidths
-                )
-            }
-        )
+        let results = await benchmarkConcurrency()
 
         BenchmarkReportFormatter.printSections([
             ("Concurrency Stress", results)
         ])
+
+        BenchmarkRegressionGuard.assertDeepConcurrency(concurrencyResults: results)
     }
 
     // MARK: - Combined Deep Report
@@ -255,7 +219,9 @@ final class BenchmarkNodeTypeTests: XCTestCase {
             ("Concurrency Stress", concurrencyResults)
         ])
 
-        BenchmarkRegressionGuard.assertDeepReport(concurrencyResults: concurrencyResults)
+        // Informational composite report only — the canonical concurrency regression
+        // assertion lives in testConcurrentSolveStress so it runs as its own
+        // Release-optimized process without cross-phase noise.
     }
 
     // MARK: - Full Report Helpers

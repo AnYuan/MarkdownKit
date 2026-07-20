@@ -106,6 +106,8 @@ final class MarkdownKitBenchmarkTests: XCTestCase {
             layoutResults: [],
             cacheResults: []
         )
+
+        BenchmarkRegressionGuard.assertCoreParse(parseResults: results)
     }
 
     // MARK: - Phase 2: Layout
@@ -181,6 +183,8 @@ final class MarkdownKitBenchmarkTests: XCTestCase {
             layoutResults: results,
             cacheResults: []
         )
+
+        BenchmarkRegressionGuard.assertCoreLayout(layoutResults: results)
     }
 
     // MARK: - Cache hit/miss benchmark
@@ -214,6 +218,8 @@ final class MarkdownKitBenchmarkTests: XCTestCase {
             layoutResults: [],
             cacheResults: results
         )
+
+        BenchmarkRegressionGuard.assertCoreCache(cacheResults: results)
     }
 
     // MARK: - Full combined report
@@ -275,10 +281,8 @@ final class MarkdownKitBenchmarkTests: XCTestCase {
             cacheResults: cacheResults
         )
 
-        BenchmarkRegressionGuard.assertCoreReport(
-            parseResults: parseResults,
-            layoutResults: layoutResults,
-            cacheResults: cacheResults
-        )
+        // Informational composite report only — canonical regression assertions live in
+        // testPhase1_Parse, testPhase2_Layout, and testCacheHitMissRates so each
+        // workload runs in its own Release-optimized process without cross-phase noise.
     }
 }
