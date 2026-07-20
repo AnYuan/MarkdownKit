@@ -618,10 +618,22 @@ before the next stage starts.
   verify first/latest execution with no middle render. The 12-workload Release
   gate, 499 fast correctness tests, and 517-test documentation freshness gate
   pass; timing remains informational until P01-C.
-- [ ] P01-C record the new isolated Release baseline from current `main`, tighten
+- [x] P01-C record the new isolated Release baseline from current `main`, tighten
   the average regression policy using repeated-run variance, regenerate the
   generated baseline documentation, and correct the stale archival
   accessibility attribution.
+  Recording: five complete 12-workload gates from
+  `ad80fccfe8c1669682c62830cd1daf1414449e96` on macOS 26.5.2 / arm64 /
+  Apple M5 Max, each with 3 warmups and 20 measured samples; schema v2 stores
+  the median of per-process averages. The global average policy is now
+  `max(2x baseline, baseline + 2ms)`. Warm-cache timing remains recorded but is
+  guarded relationally (`warm < cold`), while concurrency retains both
+  absolute and concurrent-versus-sequential contracts. Coordinator streaming
+  is now a guarded baseline group. Validation: 10 baseline contract tests, the
+  complete 12-workload isolated Release gate, 499 fast correctness tests, and
+  the 517-test documentation freshness gate pass. Four-role simplification and
+  regression swarms found no remaining issue after aligning Swift/Python null
+  validation and preserving the documented test count.
 - [ ] P02 skip provably irrelevant built-in details/diagram/math plugin
   traversals through a conservative internal source preflight. Custom
   `ASTPlugin` values must always execute.

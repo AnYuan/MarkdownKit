@@ -30,16 +30,23 @@ BASELINE_JSON_RELATIVE = "Tests/MarkdownKitTests/Fixtures/benchmark_baseline.jso
 OUTPUT_DOC_PATH = REPO_ROOT / "docs" / "BENCHMARK_BASELINE.md"
 OUTPUT_DOC_RELATIVE = "docs/BENCHMARK_BASELINE.md"
 
-SUPPORTED_SCHEMA_VERSION = 1
+SUPPORTED_SCHEMA_VERSION = 2
+
+# The only measurement key allowed to disable `enforceAverageBudget` (see
+# `BenchmarkBaseline.averageBudgetExemptKey` in the Swift model). Its
+# regression coverage comes from the relational `assertWarmCacheImproves`
+# contract, not an absolute millisecond budget.
+AVERAGE_BUDGET_EXEMPT_KEY = "solve(warm)(medium)"
 
 # Groups are rendered in this fixed order, independent of JSON array order,
 # so regeneration is deterministic even if measurements are reordered/added.
-GROUP_ORDER = ["core.parse", "core.layout", "core.cache", "deep.concurrency"]
+GROUP_ORDER = ["core.parse", "core.layout", "core.cache", "deep.concurrency", "coordinator.streaming"]
 GROUP_TITLES = {
     "core.parse": "Parse",
     "core.layout": "Layout",
     "core.cache": "Cache",
     "deep.concurrency": "Concurrency",
+    "coordinator.streaming": "Coordinator Streaming",
 }
 
 
@@ -143,6 +150,9 @@ def validate_baseline(data: Any) -> None:
     _require_positive_int(harness.get("measureIterations"), "harness.measureIterations", errors)
     _require_non_empty_string(harness.get("clock"), "harness.clock", errors)
     _require_no_forbidden_characters(harness.get("clock"), "harness.clock", "`", errors)
+    _require_positive_int(harness.get("independentRuns"), "harness.independentRuns", errors)
+    _require_non_empty_string(harness.get("aggregation"), "harness.aggregation", errors)
+    _require_no_forbidden_characters(harness.get("aggregation"), "harness.aggregation", "`", errors)
 
     policy = data.get("policy")
     if not isinstance(policy, dict):
@@ -186,6 +196,15 @@ def validate_baseline(data: Any) -> None:
 
         _require_positive_number(average, f"measurements[{index}] ('{key}').averageMilliseconds", errors)
 
+        enforce_average_budget = measurement.get("enforceAverageBudget", True)
+        if not isinstance(enforce_average_budget, bool):
+            errors.append(f"measurements[{index}] ('{key}').enforceAverageBudget must be a boolean.")
+        elif not enforce_average_budget and key != AVERAGE_BUDGET_EXEMPT_KEY:
+            errors.append(
+                f"Measurement '{key}' disables enforceAverageBudget, but only "
+                f"'{AVERAGE_BUDGET_EXEMPT_KEY}' is permitted to be average-budget-exempt."
+            )
+
     for required_group in GROUP_ORDER:
         if required_group not in present_groups:
             errors.append(f"Missing required group '{required_group}'.")
@@ -227,6 +246,11 @@ def render_markdown(data: dict[str, Any]) -> str:
         f"**Harness**: `BenchmarkHarness` (warmup={harness['warmupIterations']}, "
         f"iterations={harness['measureIterations']}, clock=`{harness['clock']}`)"
     )
+    lines.append(
+        f"**Recording**: {harness['independentRuns']} independent, isolated Release "
+        f"process runs per canonical workload; `averageMilliseconds` is the "
+        f"{harness['aggregation']} across those {harness['independentRuns']} runs."
+    )
     lines.append("")
     policy = data["policy"]
     lines.append("## Regression Policy")
@@ -243,6 +267,18 @@ def render_markdown(data: dict[str, Any]) -> str:
     lines.append("")
     lines.append(f"* `maxSlowdownFactor` = {policy['maxSlowdownFactor']:g}")
     lines.append(f"* `absoluteSlackMilliseconds` = {policy['absoluteSlackMilliseconds']:g}")
+    lines.append(
+        "* A measurement's `enforceAverageBudget` may be `false` (omitted means "
+        "`true`) to exempt it from this absolute budget when a relational contract "
+        "is the more meaningful guard for that workload; see the `Average Guard` "
+        "column below."
+    )
+    lines.append("")
+    lines.append(
+        "> The 2x + 2ms envelope is a conservative global fallback. Recorded "
+        "averages remain specific to the platform above and are not normalized "
+        "across hardware; p95, max, and whole-process RSS remain informational."
+    )
     lines.append("")
     lines.append(
         "> Detailed per-phase win attribution + historical analysis (archival, not "
@@ -256,17 +292,25 @@ def render_markdown(data: dict[str, Any]) -> str:
             continue
         lines.append(f"## {GROUP_TITLES[group]} (`{group}`)")
         lines.append("")
-        lines.append("| Key | Average |")
-        lines.append("|---|---:|")
+        lines.append("| Key | Average | Average Guard |")
+        lines.append("|---|---:|---|")
         for measurement in group_measurements:
-            lines.append(f"| `{measurement['key']}` | {format_ms(measurement['averageMilliseconds'])} |")
+            key = measurement["key"]
+            enforced = measurement.get("enforceAverageBudget", True)
+            if enforced:
+                guard_cell = "budget-enforced"
+            elif key == AVERAGE_BUDGET_EXEMPT_KEY:
+                guard_cell = "relational-only (`assertWarmCacheImproves`: warm < cold)"
+            else:
+                guard_cell = "exempt"
+            lines.append(f"| `{key}` | {format_ms(measurement['averageMilliseconds'])} | {guard_cell} |")
         lines.append("")
 
     lines.append("## Canonical Benchmark Gate")
     lines.append("")
     lines.append(
-        "> The numeric baseline above predates canonical Release/process-isolated "
-        "execution. It remains the active conservative guard until it is re-recorded."
+        "> The baseline above was recorded from isolated Release-process executions "
+        "(see **Recording** above); it is the authoritative current guard."
     )
     lines.append("")
     lines.append("```bash")

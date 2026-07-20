@@ -13,14 +13,49 @@ enum BenchmarkBaselineGroup: String, Decodable, CaseIterable {
     case coreLayout = "core.layout"
     case coreCache = "core.cache"
     case deepConcurrency = "deep.concurrency"
+    case coordinatorStreaming = "coordinator.streaming"
 }
 
 /// One guarded timing entry: a unique key, the group it belongs to, and the
 /// recorded average duration in milliseconds.
+///
+/// `enforceAverageBudget` may be omitted from the JSON, which means `true`.
+/// Explicit `null` is invalid. The field lets a measurement stay measured and
+/// group/key-contract-covered while being exempted from the absolute average
+/// regression budget when a relational contract (e.g.
+/// `assertWarmCacheImproves`) is the more meaningful guard for that workload
+/// (see `solve(warm)(medium)`).
 struct BenchmarkBaselineMeasurement: Decodable {
     let key: String
     let group: String
     let averageMilliseconds: Double
+    let enforceAverageBudget: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case group
+        case averageMilliseconds
+        case enforceAverageBudget
+    }
+
+    init(key: String, group: String, averageMilliseconds: Double, enforceAverageBudget: Bool = true) {
+        self.key = key
+        self.group = group
+        self.averageMilliseconds = averageMilliseconds
+        self.enforceAverageBudget = enforceAverageBudget
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        key = try container.decode(String.self, forKey: .key)
+        group = try container.decode(String.self, forKey: .group)
+        averageMilliseconds = try container.decode(Double.self, forKey: .averageMilliseconds)
+        if container.contains(.enforceAverageBudget) {
+            enforceAverageBudget = try container.decode(Bool.self, forKey: .enforceAverageBudget)
+        } else {
+            enforceAverageBudget = true
+        }
+    }
 }
 
 struct BenchmarkBaselinePlatform: Decodable {
@@ -33,6 +68,17 @@ struct BenchmarkBaselineHarness: Decodable {
     let warmupIterations: Int
     let measureIterations: Int
     let clock: String
+
+    /// Number of independent, isolated-process recording runs the baseline
+    /// values were aggregated from. Required so the recording contract (one
+    /// isolated Release process per canonical workload, repeated
+    /// `independentRuns` times) is explicit in the schema rather than implied.
+    let independentRuns: Int
+
+    /// Human-readable description of how `averageMilliseconds` was derived
+    /// from the `independentRuns` per-process averages (e.g. "median of
+    /// per-process averages").
+    let aggregation: String
 }
 
 struct BenchmarkBaselinePolicy: Decodable {
@@ -47,7 +93,14 @@ struct BenchmarkBaselinePolicy: Decodable {
 /// `scripts/render_benchmark_baseline.py` (generated documentation) read the same
 /// JSON file so the numbers and policy can never drift apart.
 struct BenchmarkBaseline: Decodable {
-    static let supportedSchemaVersion = 1
+    static let supportedSchemaVersion = 2
+
+    /// The only measurement key allowed to disable `enforceAverageBudget`. The
+    /// warm-cache workload's regression coverage comes from the relational
+    /// `assertWarmCacheImproves` contract (warm < cold), not an absolute
+    /// millisecond budget, because sub-millisecond cache hits are dominated by
+    /// clock-resolution noise rather than real regressions.
+    static let averageBudgetExemptKey = "solve(warm)(medium)"
 
     let schemaVersion: Int
     let version: String
@@ -121,6 +174,13 @@ struct BenchmarkBaseline: Decodable {
             errors.append("harness.clock must not be empty.")
         }
         checkMarkdownSafe(harness.clock, field: "harness.clock", forbidding: "`")
+        if harness.independentRuns <= 0 {
+            errors.append("harness.independentRuns must be positive.")
+        }
+        if harness.aggregation.trimmingCharacters(in: .whitespaces).isEmpty {
+            errors.append("harness.aggregation must not be empty.")
+        }
+        checkMarkdownSafe(harness.aggregation, field: "harness.aggregation", forbidding: "`")
         if !(policy.maxSlowdownFactor.isFinite && policy.maxSlowdownFactor > 0) {
             errors.append("policy.maxSlowdownFactor must be a positive, finite number.")
         }
@@ -148,6 +208,19 @@ struct BenchmarkBaseline: Decodable {
         let presentGroups = Set(measurements.compactMap { BenchmarkBaselineGroup(rawValue: $0.group) })
         for requiredGroup in BenchmarkBaselineGroup.allCases where !presentGroups.contains(requiredGroup) {
             errors.append("Missing required group '\(requiredGroup.rawValue)'.")
+        }
+
+        // The average budget exemption is a narrow, explicit carve-out for the
+        // warm-cache workload (whose enforcement is the relational
+        // `assertWarmCacheImproves` contract, not an absolute budget). Any other
+        // key opting out would silently weaken regression coverage, so it is
+        // rejected here rather than left to reviewer vigilance.
+        let exemptKeys = measurements.filter { !$0.enforceAverageBudget }.map(\.key)
+        for exemptKey in exemptKeys where exemptKey != Self.averageBudgetExemptKey {
+            errors.append(
+                "Measurement '\(exemptKey)' disables enforceAverageBudget, but only "
+                + "'\(Self.averageBudgetExemptKey)' is permitted to be average-budget-exempt."
+            )
         }
 
         return errors

@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import MarkdownKit
 
@@ -39,18 +40,38 @@ final class PerformanceBaselineContractTests: XCTestCase {
         let expectedKeys: Set<String> = ["solve(cold)(medium)", "solve(warm)(medium)"]
         let actualKeys = Set(baseline.measurements(in: .coreCache).map(\.key))
         XCTAssertEqual(actualKeys, expectedKeys)
+
+        let exemptKeys = Set(baseline.measurements.filter { !$0.enforceAverageBudget }.map(\.key))
+        XCTAssertEqual(exemptKeys, [BenchmarkBaseline.averageBudgetExemptKey])
+
+        let warmCache = try XCTUnwrap(
+            baseline.measurements.first { $0.key == BenchmarkBaseline.averageBudgetExemptKey }
+        )
+        XCTAssertFalse(warmCache.enforceAverageBudget)
+        XCTAssertEqual(warmCache.group, BenchmarkBaselineGroup.coreCache.rawValue)
+
+        for measurement in baseline.measurements where measurement.key != BenchmarkBaseline.averageBudgetExemptKey {
+            XCTAssertTrue(
+                measurement.enforceAverageBudget,
+                "Expected \(measurement.key) to have its average budget enforced"
+            )
+        }
     }
 
-    func testDeepConcurrencyGroupMatchesKnownKeysExactly() throws {
+    func testDeepConcurrencyAndCoordinatorGroupsMatchKnownKeysExactly() throws {
         let baseline = try XCTUnwrap(BenchmarkBaselineLoader.load())
-        let expectedKeys: Set<String> = [
+        let expectedConcurrencyKeys: Set<String> = [
             "sequential-4x(medium)",
             "concurrent-4x(medium)",
             "sequential-8x(large)",
             "concurrent-8x(large)"
         ]
-        let actualKeys = Set(baseline.measurements(in: .deepConcurrency).map(\.key))
-        XCTAssertEqual(actualKeys, expectedKeys)
+        let actualConcurrencyKeys = Set(baseline.measurements(in: .deepConcurrency).map(\.key))
+        XCTAssertEqual(actualConcurrencyKeys, expectedConcurrencyKeys)
+
+        let expectedCoordinatorKeys: Set<String> = ["latest-settled(large-3-updates)"]
+        let actualCoordinatorKeys = Set(baseline.measurements(in: .coordinatorStreaming).map(\.key))
+        XCTAssertEqual(actualCoordinatorKeys, expectedCoordinatorKeys)
     }
 
     func testMeasurementKeysAreGloballyUnique() throws {
@@ -74,14 +95,26 @@ final class PerformanceBaselineContractTests: XCTestCase {
             recordedAt: "",
             commit: "",
             platform: BenchmarkBaselinePlatform(os: "", arch: "", device: ""),
-            harness: BenchmarkBaselineHarness(warmupIterations: 0, measureIterations: 0, clock: ""),
+            harness: BenchmarkBaselineHarness(
+                warmupIterations: 0,
+                measureIterations: 0,
+                clock: "",
+                independentRuns: 0,
+                aggregation: ""
+            ),
             policy: BenchmarkBaselinePolicy(maxSlowdownFactor: 0, absoluteSlackMilliseconds: 0),
             measurements: [
                 BenchmarkBaselineMeasurement(key: "dup", group: "core.parse", averageMilliseconds: 1),
                 BenchmarkBaselineMeasurement(key: "dup", group: "core.parse", averageMilliseconds: 1),
                 BenchmarkBaselineMeasurement(key: "bad-group", group: "not.a.group", averageMilliseconds: 1),
                 BenchmarkBaselineMeasurement(key: "non-positive", group: "core.layout", averageMilliseconds: 0),
-                BenchmarkBaselineMeasurement(key: "   ", group: "core.layout", averageMilliseconds: 1)
+                BenchmarkBaselineMeasurement(key: "   ", group: "core.layout", averageMilliseconds: 1),
+                BenchmarkBaselineMeasurement(
+                    key: "wrongly-exempt",
+                    group: "core.layout",
+                    averageMilliseconds: 1,
+                    enforceAverageBudget: false
+                )
             ]
         )
 
@@ -101,6 +134,8 @@ final class PerformanceBaselineContractTests: XCTestCase {
         XCTAssertTrue(errors.contains { $0.contains("harness.warmupIterations must be positive") })
         XCTAssertTrue(errors.contains { $0.contains("harness.measureIterations must be positive") })
         XCTAssertTrue(errors.contains { $0.contains("harness.clock must not be empty") })
+        XCTAssertTrue(errors.contains { $0.contains("harness.independentRuns must be positive") })
+        XCTAssertTrue(errors.contains { $0.contains("harness.aggregation must not be empty") })
         // policy fields
         XCTAssertTrue(errors.contains { $0.contains("policy.maxSlowdownFactor") && $0.contains("positive, finite") })
         XCTAssertTrue(errors.contains { $0.contains("policy.absoluteSlackMilliseconds") && $0.contains("positive, finite") })
@@ -111,13 +146,27 @@ final class PerformanceBaselineContractTests: XCTestCase {
         XCTAssertTrue(errors.contains { $0.contains("must have a positive, finite averageMilliseconds") })
         // required-group coverage
         XCTAssertTrue(errors.contains { $0.contains("Missing required group") })
+        // average-budget exemption scoping
+        XCTAssertTrue(errors.contains { $0.contains("wrongly-exempt") && $0.contains("average-budget-exempt") })
+
+        let nullBudgetJSON = Data(
+            """
+            {
+              "key": "solve(warm)(medium)",
+              "group": "core.cache",
+              "averageMilliseconds": 0.001,
+              "enforceAverageBudget": null
+            }
+            """.utf8
+        )
+        XCTAssertThrowsError(try JSONDecoder().decode(BenchmarkBaselineMeasurement.self, from: nullBudgetJSON))
     }
 
     /// A fully schema-valid baseline builder used to isolate one field at a time
     /// so non-finite-value assertions don't become brittle to unrelated errors.
     private func makeValidBaseline(
-        maxSlowdownFactor: Double = 3,
-        absoluteSlackMilliseconds: Double = 5,
+        maxSlowdownFactor: Double = 2,
+        absoluteSlackMilliseconds: Double = 2,
         firstAverageMilliseconds: Double = 1
     ) -> BenchmarkBaseline {
         BenchmarkBaseline(
@@ -126,7 +175,13 @@ final class PerformanceBaselineContractTests: XCTestCase {
             recordedAt: "2026-01-01",
             commit: "abc123",
             platform: BenchmarkBaselinePlatform(os: "macOS", arch: "arm64", device: "Apple Silicon"),
-            harness: BenchmarkBaselineHarness(warmupIterations: 3, measureIterations: 20, clock: "mach_absolute_time"),
+            harness: BenchmarkBaselineHarness(
+                warmupIterations: 3,
+                measureIterations: 20,
+                clock: "mach_absolute_time",
+                independentRuns: 5,
+                aggregation: "median of per-process averages"
+            ),
             policy: BenchmarkBaselinePolicy(
                 maxSlowdownFactor: maxSlowdownFactor,
                 absoluteSlackMilliseconds: absoluteSlackMilliseconds
@@ -135,7 +190,8 @@ final class PerformanceBaselineContractTests: XCTestCase {
                 BenchmarkBaselineMeasurement(key: "parse(small)", group: "core.parse", averageMilliseconds: firstAverageMilliseconds),
                 BenchmarkBaselineMeasurement(key: "solve(small)", group: "core.layout", averageMilliseconds: 1),
                 BenchmarkBaselineMeasurement(key: "solve(cold)(medium)", group: "core.cache", averageMilliseconds: 1),
-                BenchmarkBaselineMeasurement(key: "sequential-4x(medium)", group: "deep.concurrency", averageMilliseconds: 1)
+                BenchmarkBaselineMeasurement(key: "sequential-4x(medium)", group: "deep.concurrency", averageMilliseconds: 1),
+                BenchmarkBaselineMeasurement(key: "latest-settled(large-3-updates)", group: "coordinator.streaming", averageMilliseconds: 1)
             ]
         )
     }

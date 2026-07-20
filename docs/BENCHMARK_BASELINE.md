@@ -2,10 +2,11 @@
 
 > **Generated file — do not hand-edit.** Produced by `scripts/render_benchmark_baseline.py` from [`Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json`](../Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json), the single machine-readable source of truth consumed by both this document and `BenchmarkRegressionGuard` in the Swift test target. Edit the JSON and rerun `python3 scripts/render_benchmark_baseline.py` to refresh this file.
 
-**Version**: `2026-05-28@e05b068` · **Recorded**: 2026-05-28 · **Commit**: `e05b068`
+**Version**: `2026-07-20@ad80fcc` · **Recorded**: 2026-07-20 · **Commit**: `ad80fcc`
 
-**Platform**: macOS · arm64 (Apple Silicon)
+**Platform**: macOS 26.5.2 · arm64 (Apple M5 Max)
 **Harness**: `BenchmarkHarness` (warmup=3, iterations=20, clock=`mach_absolute_time`)
+**Recording**: 5 independent, isolated Release process runs per canonical workload; `averageMilliseconds` is the median of per-process averages across those 5 runs.
 
 ## Regression Policy
 
@@ -15,58 +16,67 @@
 budget = max(baseline * maxSlowdownFactor, baseline + absoluteSlackMilliseconds)
 ```
 
-* `maxSlowdownFactor` = 3
-* `absoluteSlackMilliseconds` = 5
+* `maxSlowdownFactor` = 2
+* `absoluteSlackMilliseconds` = 2
+* A measurement's `enforceAverageBudget` may be `false` (omitted means `true`) to exempt it from this absolute budget when a relational contract is the more meaningful guard for that workload; see the `Average Guard` column below.
+
+> The 2x + 2ms envelope is a conservative global fallback. Recorded averages remain specific to the platform above and are not normalized across hardware; p95, max, and whole-process RSS remain informational.
 
 > Detailed per-phase win attribution + historical analysis (archival, not authoritative): [`BENCHMARK_POST_PHASE_6.md`](BENCHMARK_POST_PHASE_6.md)
 
 ## Parse (`core.parse`)
 
-| Key | Average |
-|---|---:|
-| `parse(code-heavy)` | 0.2ms |
-| `parse(details-heavy)` | 1.34ms |
-| `parse(diagram-heavy)` | 0.201ms |
-| `parse(large)` | 9.11ms |
-| `parse(math-heavy)` | 0.4ms |
-| `parse(medium)` | 1.13ms |
-| `parse(small)` | 0.165ms |
-| `parse(table-heavy)` | 8.97ms |
-| `parse(tasklist-heavy)` | 4.87ms |
+| Key | Average | Average Guard |
+|---|---:|---|
+| `parse(code-heavy)` | 0.1ms | budget-enforced |
+| `parse(details-heavy)` | 0.739ms | budget-enforced |
+| `parse(diagram-heavy)` | 0.105ms | budget-enforced |
+| `parse(large)` | 4.7ms | budget-enforced |
+| `parse(math-heavy)` | 0.216ms | budget-enforced |
+| `parse(medium)` | 0.602ms | budget-enforced |
+| `parse(small)` | 0.09ms | budget-enforced |
+| `parse(table-heavy)` | 4.24ms | budget-enforced |
+| `parse(tasklist-heavy)` | 2.43ms | budget-enforced |
 
 ## Layout (`core.layout`)
 
-| Key | Average |
-|---|---:|
-| `solve(code-heavy)` | 3.23ms |
-| `solve(details-heavy)` | 1.4ms |
-| `solve(diagram-heavy)` | 0.77ms |
-| `solve(large)` | 16.75ms |
-| `solve(math-heavy)` | 0.981ms |
-| `solve(medium)` | 2.2ms |
-| `solve(small)` | 0.353ms |
-| `solve(table-heavy)` | 13.86ms |
-| `solve(tasklist-heavy)` | 7.25ms |
+| Key | Average | Average Guard |
+|---|---:|---|
+| `solve(code-heavy)` | 2.67ms | budget-enforced |
+| `solve(details-heavy)` | 1.24ms | budget-enforced |
+| `solve(diagram-heavy)` | 0.75ms | budget-enforced |
+| `solve(large)` | 11.03ms | budget-enforced |
+| `solve(math-heavy)` | 0.917ms | budget-enforced |
+| `solve(medium)` | 1.82ms | budget-enforced |
+| `solve(small)` | 0.277ms | budget-enforced |
+| `solve(table-heavy)` | 13.6ms | budget-enforced |
+| `solve(tasklist-heavy)` | 6.84ms | budget-enforced |
 
 ## Cache (`core.cache`)
 
-| Key | Average |
-|---|---:|
-| `solve(cold)(medium)` | 3.56ms |
-| `solve(warm)(medium)` | 0.003ms |
+| Key | Average | Average Guard |
+|---|---:|---|
+| `solve(cold)(medium)` | 1.71ms | budget-enforced |
+| `solve(warm)(medium)` | 0.001ms | relational-only (`assertWarmCacheImproves`: warm < cold) |
 
 ## Concurrency (`deep.concurrency`)
 
-| Key | Average |
-|---|---:|
-| `concurrent-4x(medium)` | 5.33ms |
-| `concurrent-8x(large)` | 54.71ms |
-| `sequential-4x(medium)` | 11.32ms |
-| `sequential-8x(large)` | 212.3ms |
+| Key | Average | Average Guard |
+|---|---:|---|
+| `concurrent-4x(medium)` | 4.68ms | budget-enforced |
+| `concurrent-8x(large)` | 47.92ms | budget-enforced |
+| `sequential-4x(medium)` | 8.04ms | budget-enforced |
+| `sequential-8x(large)` | 102.9ms | budget-enforced |
+
+## Coordinator Streaming (`coordinator.streaming`)
+
+| Key | Average | Average Guard |
+|---|---:|---|
+| `latest-settled(large-3-updates)` | 28.82ms | budget-enforced |
 
 ## Canonical Benchmark Gate
 
-> The numeric baseline above predates canonical Release/process-isolated execution. It remains the active conservative guard until it is re-recorded.
+> The baseline above was recorded from isolated Release-process executions (see **Recording** above); it is the authoritative current guard.
 
 ```bash
 bash scripts/verify_benchmarks.sh

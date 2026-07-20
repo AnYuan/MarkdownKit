@@ -51,6 +51,8 @@ final class MarkdownRenderCoordinatorBenchmarkTests: XCTestCase {
             renderedSources.map(Self.normalizedDiagramSource),
             expectedSources.map(Self.normalizedDiagramSource)
         )
+
+        BenchmarkRegressionGuard.assertCoordinatorStreaming(streamingResults: [result])
     }
 
     private static func makeBlockedScenario() async throws -> Scenario {

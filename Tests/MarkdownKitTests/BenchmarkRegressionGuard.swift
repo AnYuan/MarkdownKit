@@ -62,7 +62,7 @@ enum BenchmarkRegressionGuard {
             file: file,
             line: line
         )
-        assertWarmCacheDominatesCold(cacheResults, file: file, line: line)
+        assertWarmCacheImproves(cacheResults, file: file, line: line)
     }
 
     /// Canonical guard for `testConcurrentSolveStress`. Checks `deep.concurrency` keys
@@ -82,6 +82,24 @@ enum BenchmarkRegressionGuard {
             line: line
         )
         assertConcurrencyIsNotSlower(concurrencyResults, file: file, line: line)
+    }
+
+    /// Canonical guard for `testRapidUpdateLatestSettledLatency`. Checks the
+    /// `coordinator.streaming` key `latest-settled(large-3-updates)`.
+    static func assertCoordinatorStreaming(
+        streamingResults: [BenchmarkResult],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let baseline = BenchmarkBaselineLoader.load(file: file, line: line) else { return }
+        assertGroup(
+            streamingResults,
+            group: .coordinatorStreaming,
+            baseline: baseline,
+            isGuardedFamily: { $0.label == "latest-settled" },
+            file: file,
+            line: line
+        )
     }
 
     static func assertCacheModes(
@@ -128,7 +146,7 @@ enum BenchmarkRegressionGuard {
 
     /// Asserts that every guarded baseline key in `group` was measured, that no
     /// measured result belonging to the group's label family is missing a baseline
-    /// entry, and that measured results within budget for the ones that match on
+    /// entry, and that measured results are within budget for the ones that match on
     /// both sides. Measured results outside the guarded label family (e.g. isolated
     /// arithmetic/TextKit measurements mixed into `layoutResults`) are intentionally
     /// left alone.
@@ -141,7 +159,7 @@ enum BenchmarkRegressionGuard {
         line: UInt
     ) {
         let expected = Dictionary(
-            uniqueKeysWithValues: baseline.measurements(in: group).map { ($0.key, $0.averageMilliseconds) }
+            uniqueKeysWithValues: baseline.measurements(in: group).map { ($0.key, $0) }
         )
         let measuredByKey = Dictionary(uniqueKeysWithValues: results.map { (key(for: $0), $0) })
         let guardedMeasuredKeys = Set(results.filter(isGuardedFamily).map(key(for:)))
@@ -164,10 +182,13 @@ enum BenchmarkRegressionGuard {
         }
 
         for keyName in expectedKeys.intersection(guardedMeasuredKeys).sorted() {
-            guard let measured = measuredByKey[keyName], let baselineAvg = expected[keyName] else { continue }
+            guard let measured = measuredByKey[keyName], let baselineMeasurement = expected[keyName] else { continue }
 
             assertHarnessMatches(measured, key: keyName, baseline: baseline, file: file, line: line)
 
+            guard baselineMeasurement.enforceAverageBudget else { continue }
+
+            let baselineAvg = baselineMeasurement.averageMilliseconds
             let budget = max(
                 baselineAvg * baseline.policy.maxSlowdownFactor,
                 baselineAvg + baseline.policy.absoluteSlackMilliseconds
@@ -186,7 +207,7 @@ enum BenchmarkRegressionGuard {
         }
     }
 
-    private static func assertWarmCacheDominatesCold(
+    private static func assertWarmCacheImproves(
         _ results: [BenchmarkResult],
         file: StaticString,
         line: UInt

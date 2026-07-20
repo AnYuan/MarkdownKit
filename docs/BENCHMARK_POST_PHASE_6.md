@@ -31,12 +31,12 @@ bash scripts/verify_benchmarks.sh
 | **Parse path** (insignificant overhead from new fingerprint init) | `parse(large)` 13.17ms → **9.11ms** | **-31 %** |
 | **Concurrency sequential-4x** (cache reuse pays off across iterations) | 943.0ms → **11.32ms** | **-98.8 %** |
 
-Two regressions worth flagging — they are accounted-for cost shifts, not bugs:
+Two apparent regressions from that historical run need qualification:
 
 | Regression | Why |
 |---|---|
-| `solve(1000-lines)` 96.3ms → 363ms | Background thread now also pre-computes `AccessibilityMetadata` per `LayoutResult`. Pays once on background; UIKit and AppKit cells consume the cached metadata without repeating `enumerateAttribute(.markdownCheckbox, …)` during configure. Net win for UI thread; isolated layout benchmark looks worse. |
-| `Arithmetic.layout(long)` 0.358ms → 0.432ms | Same arithmetic, but `LayoutResult` now also stamps `stableIdentity` + `accessibility` at construction time. ~70 µs of extra hashing per long-text layout. Trivial relative to the cache reuse wins. |
+| `solve(1000-lines)` 96.3ms → 363ms | This was a Debug-build, composite-process observation (multiple benchmark suites sharing one process), not a clean measurement — it is **not** evidence that accessibility precomputation caused the slowdown. Isolated Release-process measurements/profiling instead attribute layout time to `AppearanceColorResolver.resolveColors` (≈12.6% of all samples, ≈22% of layout samples — the dominant measured layout hotspot) and put `AccessibilityMetadata.make` at only ≈0.9% of all samples. See [`docs/BENCHMARK_BASELINE.md`](BENCHMARK_BASELINE.md) for the current, isolated-Release baseline and policy. |
+| `Arithmetic.layout(long)` 0.358ms → 0.432ms | Same arithmetic; the ~70 µs delta is measurement noise from this run, not a mechanical consequence of `LayoutResult` construction — `Arithmetic.layout` does not construct a `LayoutResult`. Trivial relative to the cache reuse wins. |
 
 ## Phase 1: Parse
 
@@ -84,7 +84,7 @@ Per-`getLayout` / `setLayout` cost is now content-fingerprint-O(1) instead of su
 | Arithmetic.prepare(long) | 0.003ms | 0.006ms | +100 % |
 | Arithmetic.layout(long) | 0.358ms | 0.432ms | +21 % |
 
-`TextKit.calcSize(long)` doubled because the test fixture / system fonts on this run are different (macOS minor version may have changed `.SFNS-*` fallback behavior — the noise in the log shows the runtime swapped to `TimesNewRomanPSMT`). The arithmetic path's ~70 µs extra per long input is the `LayoutResult.init` hashing budget. Both still dwarfed by per-operation cache savings elsewhere.
+`TextKit.calcSize(long)` doubled because the test fixture / system fonts on this run are different (macOS minor version may have changed `.SFNS-*` fallback behavior — the noise in the log shows the runtime swapped to `TimesNewRomanPSMT`). The arithmetic path's ~70 µs extra per long input is run-to-run measurement noise, not `LayoutResult` construction cost — `Arithmetic.layout` does not construct a `LayoutResult`. Both still dwarfed by per-operation cache savings elsewhere.
 
 ## Cache Performance — The Headline
 
@@ -161,9 +161,7 @@ The headline-grabbing math win comes from `DefaultMathRenderingAdapter`'s SwiftD
 | 200 | 17.80ms | 12.69ms | 20.47ms | 11.66ms |
 | 1000 | 87.92ms | **62.66ms** | 96.30ms | **363.4ms** ⚠ |
 
-Parse stayed linear and got ~30 % faster across all sizes. `solve(1000-lines)` regressed ~4×. Root cause: Phase 6.4 moved `PlatformAccessibility` work to background layout time (one `AccessibilityMetadata.make` per `LayoutResult`, which does its own `enumerateAttribute(.markdownCheckbox, …)` on the cell's attributed string). On a 1000-block document with checkbox scan + identity-stamping, this is ~280 ms of extra background work — but UIKit and AppKit now reuse that result instead of scanning again during cell configuration. Net win for the *user-facing* frame loop; isolated solve benchmark looks worse.
-
-To validate that this is the cause and not something else, in a follow-up we should bench `solve(1000-lines)` with `accessibility` precompute disabled (or routed lazily).
+Parse stayed linear and got ~30 % faster across all sizes. `solve(1000-lines)` appeared to regress ~4× in this run, but that number came from a contaminated Debug/composite-process observation (multiple benchmark suites sharing one process), not a clean isolated measurement — it is not evidence that accessibility precomputation caused a slowdown. Later isolated Release-process measurements and profiling instead show `AppearanceColorResolver.resolveColors` as the dominant measured layout hotspot (≈12.6% of all samples, ≈22% of layout samples), with `AccessibilityMetadata.make` at only ≈0.9% of all samples. See [`docs/BENCHMARK_BASELINE.md`](BENCHMARK_BASELINE.md) for the current, isolated-Release baseline and policy that supersedes this figure.
 
 ## Width Scaling (medium fixture)
 
@@ -212,18 +210,23 @@ Sequential-4x went from baseline `4 × cold solve(medium)` to `4 × warm hits` b
 | ~30 % all-fixture solve | Per-recursion cache lookups now O(1) |
 | Width resize ~100× | Same as cold-cache; this is the streaming-cache benefit of Phase 0.3 + 1.2 surfacing in the bench |
 | Concurrency 4x 90× | Persisted cache (Phase 0.3) carries over across iterations |
-| `solve(1000-lines)` slowdown | Phase 6.4 paid here — pre-compute accessibility once on background to skip work on main thread later |
+| Apparent `solve(1000-lines)` slowdown | Contaminated Debug/composite-process observation, not a real regression; see the corrected attribution in "Input Size Scaling" above |
 
 ## Regression Gating
 
-`BenchmarkRegressionGuard` thresholds (defined by `policy` in
-`Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json`; see
-[`docs/BENCHMARK_BASELINE.md`](BENCHMARK_BASELINE.md) for the current authoritative values):
+`BenchmarkRegressionGuard` thresholds are defined by `policy` in
+`Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json` and are not reproduced
+here to avoid drifting out of sync — see
+[`docs/BENCHMARK_BASELINE.md`](BENCHMARK_BASELINE.md) for the current,
+authoritative policy values and per-key guard status.
 
-* `maxSlowdownFactor = 3.0`
-* `absoluteSlackMilliseconds = 5.0`
-
-The 1000-line solve regression sits at ~3.8× and is on the gating boundary. A follow-up PR should either widen the guard for this specific fixture or thread accessibility metadata as a lazy property. Note `solve(1000-lines)` is not itself one of the guarded baseline keys (only the fixed fixture set in `core.parse`/`core.layout`/`core.cache`/`deep.concurrency` is enforced), so this observation is informational rather than a currently-gated regression.
+`solve(1000-lines)` is not itself one of the guarded baseline keys (only the
+fixed fixture set in `core.parse`/`core.layout`/`core.cache`/`deep.concurrency`/
+`coordinator.streaming` is enforced), so the ~3.8× figure computed against the
+old 3× + 5ms policy in an earlier revision of this document was never a
+currently-gated regression, and the underlying ~363ms observation itself was
+a contaminated Debug/composite-process artifact rather than a reproducible
+Release-isolated measurement.
 
 ## Files / Commits Driving These Numbers
 
@@ -240,18 +243,12 @@ The 1000-line solve regression sits at ~3.8× and is on the gating boundary. A f
 * Post-phase cleanup + benchmark force-unwrap fix — `e2c03e9`
 * Phase 6.2 actual de-dup — `e05b068`
 
-## Reproduction
+## Current Canonical Reproduction
 
 ```bash
-# Headline cache + cross-render wins:
-swift test --filter "BenchmarkCacheTests"
-
-# Full per-syntax tiered + node-type:
-swift test --filter "BenchmarkNodeTypeTests/testDeepBenchmarkFullReport"
-swift test --filter "BenchmarkNodeTypeTests/testPerSyntaxTieredBenchmark"
-
-# Concurrency + scaling:
-swift test --filter "MarkdownKitBenchmarkTests/testBenchmarkFullReport"
+bash scripts/verify_benchmarks.sh
 ```
 
-Raw log: `/tmp/bench-current.log` (33k lines, contains all per-iteration timings).
+The historical composite Debug commands that produced the tables above are not
+retained as current reproduction instructions because they do not satisfy the
+Release/process-isolation contract.
