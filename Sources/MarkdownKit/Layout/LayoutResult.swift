@@ -287,3 +287,50 @@ enum LayoutResultVariantDiff {
         }
     }
 }
+
+struct LayoutCollectionUpdatePlan {
+    let layoutsByIdentity: [StableNodeIdentity: LayoutResult]
+    let orderedIdentities: [StableNodeIdentity]
+    let changedRetainedIdentities: [StableNodeIdentity]
+    let hasRetainedSizeChange: Bool
+    let requiresSnapshotApplication: Bool
+
+    init(
+        layouts: [LayoutResult],
+        previousLayoutsByIdentity: [StableNodeIdentity: LayoutResult],
+        currentOrderedIdentities: [StableNodeIdentity],
+        hasMainSection: Bool
+    ) {
+        let positionedLayouts = LayoutResult.positionedTopLevelLayouts(layouts)
+        var layoutsByIdentity: [StableNodeIdentity: LayoutResult] = [:]
+        var orderedIdentities: [StableNodeIdentity] = []
+        layoutsByIdentity.reserveCapacity(positionedLayouts.count)
+        orderedIdentities.reserveCapacity(positionedLayouts.count)
+
+        for layout in positionedLayouts {
+            layoutsByIdentity[layout.stableIdentity] = layout
+            orderedIdentities.append(layout.stableIdentity)
+        }
+
+        let retainedIdentities = Set(currentOrderedIdentities)
+        let changedRetainedIdentities = LayoutResultVariantDiff.changedStableIdentities(
+            previous: previousLayoutsByIdentity,
+            next: positionedLayouts
+        ).filter(retainedIdentities.contains)
+        let hasRetainedSizeChange = changedRetainedIdentities.contains { identity in
+            guard let previous = previousLayoutsByIdentity[identity],
+                  let next = layoutsByIdentity[identity] else {
+                return false
+            }
+            return previous.size != next.size
+        }
+
+        self.layoutsByIdentity = layoutsByIdentity
+        self.orderedIdentities = orderedIdentities
+        self.changedRetainedIdentities = changedRetainedIdentities
+        self.hasRetainedSizeChange = hasRetainedSizeChange
+        self.requiresSnapshotApplication = !hasMainSection
+            || currentOrderedIdentities != orderedIdentities
+            || !changedRetainedIdentities.isEmpty
+    }
+}

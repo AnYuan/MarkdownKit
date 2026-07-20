@@ -2,7 +2,7 @@
 
 > 最近更新: 2026-07-21
 > 生成方式: `python3 scripts/generate_test_coverage_report.py [--run-tests|--from-log <path>]`
-> 生成时间: 2026-07-21 01:03:11
+> 生成时间: 2026-07-21 03:04:40
 
 ## 1. 总览
 
@@ -11,8 +11,8 @@
 | 源码文件数 (`Sources/MarkdownKit/*.swift`) | 89 | 不含 Demo target |
 | 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 77 | 含基准/夹具/辅助文件 |
 | 含 `test*` 方法的测试文件 | 69 | 静态扫描结果 |
-| 静态扫描 `test*` 方法总数 | 624 | 受编译条件影响，可能高于可执行测试数 |
-| 可发现测试数 (`swift test list`) | 537 | 当前平台可执行测试 |
+| 静态扫描 `test*` 方法总数 | 633 | 受编译条件影响，可能高于可执行测试数 |
+| 可发现测试数 (`swift test list`) | 541 | 当前平台可执行测试 |
 | 全量执行结果 (`swift test`) | 未提供 | 未执行或未提供日志 |
 
 ## 2. 本次执行状态
@@ -60,7 +60,7 @@
 | `LayoutCacheEdgeCaseTests.swift` | 15 |
 | `LayoutSolverExtendedTests.swift` | 17 |
 | `LayoutTests.swift` | 5 |
-| `MacOSUIComponentsTests.swift` | 15 |
+| `MacOSUIComponentsTests.swift` | 19 |
 | `MarkdownKitBenchmarkTests.swift` | 4 |
 | `MarkdownKitTests.swift` | 7 |
 | `MarkdownRenderCoordinatorBenchmarkTests.swift` | 1 |
@@ -92,7 +92,7 @@
 | `TextKitHitTesterTests.swift` | 6 |
 | `ThemeAndTokenTests.swift` | 10 |
 | `ThemeCustomizationTests.swift` | 15 |
-| `UIComponentsPlatformTests.swift` | 9 |
+| `UIComponentsPlatformTests.swift` | 14 |
 | `UIComponentsTests.swift` | 2 |
 | `URLSanitizerTests.swift` | 8 |
 | `VirtualizationTests.swift` | 1 |

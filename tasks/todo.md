@@ -733,8 +733,47 @@ before the next stage starts.
   one app-hosted real-WebKit Mermaid PASS marker. Simplification, concurrency,
   regression, security, reliability, contracts, and final reviews found no
   remaining material issue.
-- [ ] P05 suppress identical iOS/macOS collection snapshot applications and
+- [x] P05 suppress identical iOS/macOS collection snapshot applications and
   reconfigure only changed layout variants.
+  - [x] P05-A add deterministic platform contracts and internal diagnostics for
+    initial/identical/empty/append/reorder/content/size/appearance/render/
+    interaction updates, including direct collection callers and iOS live
+    callback forwarding.
+  - [x] P05-B derive one shared top-level collection update plan from positioned
+    stable identities plus existing render/appearance/size/interaction variant
+    metadata. Always refresh the identity lookup, but skip native diffable apply
+    when the main section, ordered identities, and retained variants are exact.
+  - [x] P05-C consume that plan in iOS and macOS while preserving iOS
+    reconfigure/layout-invalidation ordering, AppKit reload behavior, append/
+    move/delete semantics, visible interaction-mode refresh, and public direct
+    collection integration.
+  - [x] P05-D make iOS cell link/checkbox callbacks resolve through the live
+    collection view and assign representable callbacks before layouts, so a
+    callback-only SwiftUI parent update needs no snapshot and cannot leave
+    visible cells with stale handlers.
+  - [x] P05-E run simplification, SwiftUI performance, regression, reliability,
+    security, contracts, and final reviews; then run focused, fast,
+    documentation, API, snapshot, benchmark, and iOS gates before atomic commit
+    and push.
+  Acceptance: repeated empty or equivalent layout assignments after the first
+  section setup perform zero native snapshot applications; append/reorder/
+  replacement and retained render/appearance/size/interaction changes perform
+  exactly one apply; only changed retained identities reconfigure/reload; size
+  changes preserve post-apply iOS layout invalidation; callback-only updates
+  reach the latest host closures without applying a layout snapshot.
+  Validation: 54 focused collection/appearance/interaction tests, 523 fast
+  correctness tests, and 541 discoverable-test documentation checks pass.
+  macOS and iOS public API baselines remain 453/599 and 454/610; provenance and
+  4-test snapshot determinism pass. The four committed visual baselines retain
+  their known host drift, while current output is byte-identical to clean
+  `6e2debe`. All 12 isolated Release workloads pass; `solve(1000-lines)` is
+  31.71ms average / 33.00ms p95 and
+  `latest-settled(large-3-updates)` is 20.24ms average / 20.75ms p95. The iOS
+  gate executes exactly 575 XCTest tests with no restart/private-font
+  diagnostics and emits exactly one app-hosted real-WebKit Mermaid PASS marker.
+  Review found and resolved retained AppKit theme reload semantics, default
+  browser fallback, selectable-link preview handling, and completion-test
+  determinism; the final independent review found no remaining material issue.
 - [ ] P06 unify the iOS raster/prefetch key, scale, size, task-lifetime,
   in-flight-deduplication, and bitmap-cost behavior.
 - [ ] P07 add bounded width-independent attributed/highlight/arithmetic prepared

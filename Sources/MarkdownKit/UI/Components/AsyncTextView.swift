@@ -711,6 +711,8 @@ extension SelectableTextView: UITextViewDelegate {
         in characterRange: NSRange,
         interaction: UITextItemInteraction
     ) -> Bool {
+        guard interaction == .invokeDefaultAction else { return true }
+
         if let onLinkTap {
             onLinkTap(url)
             return false

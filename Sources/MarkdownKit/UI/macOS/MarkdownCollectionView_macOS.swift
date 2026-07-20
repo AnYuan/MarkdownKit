@@ -47,6 +47,11 @@ public class MarkdownCollectionView: NSView {
     private var lastReportedContentWidth: CGFloat = 0
     private var dataSource: NSCollectionViewDiffableDataSource<Section, StableNodeIdentity>!
     private var layoutsByIdentity: [StableNodeIdentity: LayoutResult] = [:]
+    private var lastReconciledTheme: Theme?
+
+    private(set) var layoutSnapshotApplicationCountForTesting = 0
+    private(set) var layoutSnapshotSkipCountForTesting = 0
+    private(set) var lastLayoutChangedIdentityCountForTesting = 0
 
     public var layouts: [LayoutResult] = [] {
         didSet {
@@ -101,7 +106,11 @@ public class MarkdownCollectionView: NSView {
                     self?.onToggleCheckbox?(interactionData)
                 },
                 onLinkTap: { [weak self] url in
-                    self?.onLinkTap?(url)
+                    if let handler = self?.onLinkTap {
+                        handler(url)
+                    } else {
+                        NSWorkspace.shared.open(url)
+                    }
                 }
             )
             return item
@@ -128,24 +137,40 @@ public class MarkdownCollectionView: NSView {
     // MARK: - Snapshot application
 
     private func applyLayouts(_ layouts: [LayoutResult]) {
-        let positionedLayouts = LayoutResult.positionedTopLevelLayouts(layouts)
-        let previousLookup = layoutsByIdentity
-        var lookup: [StableNodeIdentity: LayoutResult] = [:]
-        lookup.reserveCapacity(positionedLayouts.count)
-        for layout in positionedLayouts {
-            lookup[layout.stableIdentity] = layout
+        let currentSnapshot = dataSource.snapshot()
+        let hasMainSection = currentSnapshot.sectionIdentifiers.contains(.main)
+        let currentOrderedIdentities = hasMainSection
+            ? currentSnapshot.itemIdentifiers(inSection: .main)
+            : []
+        let plan = LayoutCollectionUpdatePlan(
+            layouts: layouts,
+            previousLayoutsByIdentity: layoutsByIdentity,
+            currentOrderedIdentities: currentOrderedIdentities,
+            hasMainSection: hasMainSection
+        )
+        let hasThemeChange = lastReconciledTheme.map { $0 != theme } ?? false
+        let identitiesToReload: [StableNodeIdentity]
+        if hasThemeChange {
+            let existingIdentities = Set(currentOrderedIdentities)
+            identitiesToReload = plan.orderedIdentities.filter(existingIdentities.contains)
+        } else {
+            identitiesToReload = plan.changedRetainedIdentities
         }
-        layoutsByIdentity = lookup
+
+        layoutsByIdentity = plan.layoutsByIdentity
+        lastReconciledTheme = theme
+        lastLayoutChangedIdentityCountForTesting = plan.changedRetainedIdentities.count
+
+        guard plan.requiresSnapshotApplication || !identitiesToReload.isEmpty else {
+            layoutSnapshotSkipCountForTesting += 1
+            return
+        }
 
         var snapshot = NSDiffableDataSourceSnapshot<Section, StableNodeIdentity>()
         snapshot.appendSections([.main])
-        snapshot.appendItems(positionedLayouts.map(\.stableIdentity), toSection: .main)
-        let existingIdentities = Set(dataSource.snapshot().itemIdentifiers)
-        let changedIdentities = LayoutResultVariantDiff.changedStableIdentities(
-            previous: previousLookup,
-            next: positionedLayouts
-        ).filter(existingIdentities.contains)
-        snapshot.reloadItems(changedIdentities)
+        snapshot.appendItems(plan.orderedIdentities, toSection: .main)
+        snapshot.reloadItems(identitiesToReload)
+        layoutSnapshotApplicationCountForTesting += 1
         dataSource.apply(snapshot, animatingDifferences: false)
     }
 
@@ -162,7 +187,7 @@ public class MarkdownCollectionView: NSView {
         dataSource.apply(snapshot, animatingDifferences: false)
     }
 
-    fileprivate func layoutResult(forIndexPath indexPath: IndexPath) -> LayoutResult? {
+    func layoutResult(forIndexPath indexPath: IndexPath) -> LayoutResult? {
         guard let identity = dataSource.itemIdentifier(for: indexPath) else { return nil }
         return layoutsByIdentity[identity]
     }

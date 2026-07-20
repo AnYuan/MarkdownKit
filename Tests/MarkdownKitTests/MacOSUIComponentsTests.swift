@@ -3,6 +3,7 @@ import XCTest
 
 #if canImport(AppKit) && !targetEnvironment(macCatalyst)
 import AppKit
+import Markdown
 
 @MainActor
 final class MacOSUIComponentsTests: XCTestCase {
@@ -383,6 +384,195 @@ final class MacOSUIComponentsTests: XCTestCase {
         XCTAssertNotNil(reportedWidth, "Expected the macOS view to report an effective content width")
         XCTAssertEqual(reportedWidth ?? 0, view.effectiveContentWidth, accuracy: 0.5)
         XCTAssertLessThanOrEqual(view.effectiveContentWidth, view.bounds.width)
+    }
+
+    func testCollectionViewSkipsEquivalentSnapshotsAndRefreshesLookup() throws {
+        let emptyView = makeCollectionView()
+        let emptyCollectionView = try collectionView(in: emptyView)
+
+        emptyView.layouts = []
+        XCTAssertEqual(emptyView.layoutSnapshotApplicationCountForTesting, 1)
+        XCTAssertEqual(emptyView.layoutSnapshotSkipCountForTesting, 0)
+        XCTAssertEqual(emptyCollectionView.numberOfSections, 1)
+        XCTAssertEqual(emptyCollectionView.numberOfItems(inSection: 0), 0)
+
+        emptyView.layouts = []
+        XCTAssertEqual(emptyView.layoutSnapshotApplicationCountForTesting, 1)
+        XCTAssertEqual(emptyView.layoutSnapshotSkipCountForTesting, 1)
+
+        let view = makeCollectionView()
+        let initial = [makeLayout("A"), makeLayout("B")]
+        view.layouts = initial
+        XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 1)
+        XCTAssertEqual(view.layoutSnapshotSkipCountForTesting, 0)
+
+        view.layouts = initial
+        XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 1)
+        XCTAssertEqual(view.layoutSnapshotSkipCountForTesting, 1)
+        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 0)
+
+        let equivalent = [makeLayout("A"), makeLayout("B")]
+        view.layouts = equivalent
+        XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 1)
+        XCTAssertEqual(view.layoutSnapshotSkipCountForTesting, 2)
+        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 0)
+
+        let latestA = try XCTUnwrap(view.layoutResult(forIndexPath: IndexPath(item: 0, section: 0)))
+        let latestB = try XCTUnwrap(view.layoutResult(forIndexPath: IndexPath(item: 1, section: 0)))
+        XCTAssertEqual(latestA.node.id, equivalent[0].node.id)
+        XCTAssertEqual(latestB.node.id, equivalent[1].node.id)
+        XCTAssertNotEqual(latestA.node.id, initial[0].node.id)
+        XCTAssertNotEqual(latestB.node.id, initial[1].node.id)
+    }
+
+    func testCollectionViewAppliesStructuralUpdatesOnceWithoutReloading() throws {
+        let view = makeCollectionView()
+        let collectionView = try collectionView(in: view)
+
+        view.layouts = [makeLayout("A"), makeLayout("B")]
+        XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 1)
+
+        view.layouts = [makeLayout("A"), makeLayout("B"), makeLayout("C")]
+        XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 2)
+        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 0)
+
+        view.layouts = [makeLayout("C"), makeLayout("A"), makeLayout("B")]
+        XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 3)
+        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 0)
+
+        view.layouts = [makeLayout("C"), makeLayout("D"), makeLayout("B")]
+        XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 4)
+        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 0)
+        XCTAssertEqual(collectionView.numberOfItems(inSection: 0), 3)
+        XCTAssertEqual(
+            try (0..<3).map {
+                let layout = try XCTUnwrap(
+                    view.layoutResult(forIndexPath: IndexPath(item: $0, section: 0))
+                )
+                return try XCTUnwrap(layout.attributedString?.string)
+            },
+            ["C", "D", "B"]
+        )
+    }
+
+    func testCollectionViewAppliesEachRetainedVariantOnce() {
+        let baseRange = sourceRange(line: 1)
+        let baseSize = CGSize(width: 320, height: 40)
+
+        assertVariantUpdate(
+            from: makeListItemLayout(range: baseRange, size: baseSize, renderFingerprint: 10),
+            to: makeListItemLayout(range: baseRange, size: baseSize, renderFingerprint: 11)
+        )
+        assertVariantUpdate(
+            from: makeListItemLayout(range: baseRange, size: baseSize, appearance: .light, renderFingerprint: 10),
+            to: makeListItemLayout(range: baseRange, size: baseSize, appearance: .dark, renderFingerprint: 10)
+        )
+        assertVariantUpdate(
+            from: makeListItemLayout(range: baseRange, size: baseSize, renderFingerprint: 10),
+            to: makeListItemLayout(
+                range: baseRange,
+                size: CGSize(width: 320, height: 80),
+                renderFingerprint: 10
+            )
+        )
+        assertVariantUpdate(
+            from: makeListItemLayout(range: baseRange, size: baseSize, renderFingerprint: 10),
+            to: makeListItemLayout(range: sourceRange(line: 2), size: baseSize, renderFingerprint: 10)
+        )
+    }
+
+    func testCollectionViewReloadsEquivalentLayoutsAfterThemeChange() {
+        let view = makeCollectionView()
+        view.layouts = [makeCodeLayout()]
+        XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 1)
+
+        let base = Theme.default
+        view.theme = Theme(
+            typography: base.typography,
+            colors: Theme.Colors(
+                textColor: base.colors.textColor,
+                codeColor: ColorToken(foreground: .white, background: .magenta),
+                inlineCodeColor: base.colors.inlineCodeColor,
+                tableColor: base.colors.tableColor,
+                linkColor: base.colors.linkColor,
+                blockQuoteColor: base.colors.blockQuoteColor,
+                thematicBreakColor: base.colors.thematicBreakColor
+            )
+        )
+        view.layouts = [makeCodeLayout()]
+
+        XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 2)
+        XCTAssertEqual(view.layoutSnapshotSkipCountForTesting, 0)
+        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 0)
+    }
+
+    private func makeCollectionView() -> MarkdownCollectionView {
+        MarkdownCollectionView(frame: NSRect(x: 0, y: 0, width: 320, height: 480))
+    }
+
+    private func collectionView(in view: MarkdownCollectionView) throws -> NSCollectionView {
+        let scrollView = try XCTUnwrap(view.subviews.compactMap { $0 as? NSScrollView }.first)
+        return try XCTUnwrap(scrollView.documentView as? NSCollectionView)
+    }
+
+    private func makeLayout(_ text: String) -> LayoutResult {
+        let node = ParagraphNode(range: nil, children: [TextNode(range: nil, text: text)])
+        return LayoutResult(
+            node: node,
+            size: CGSize(width: 320, height: 40),
+            attributedString: NSAttributedString(string: text)
+        )
+    }
+
+    private func makeCodeLayout() -> LayoutResult {
+        let node = CodeBlockNode(range: nil, language: "swift", code: "let value = 1")
+        return LayoutResult(
+            node: node,
+            size: CGSize(width: 320, height: 80),
+            attributedString: NSAttributedString(string: node.code)
+        )
+    }
+
+    private func makeListItemLayout(
+        range: SourceRange?,
+        size: CGSize = CGSize(width: 320, height: 40),
+        appearance: MarkdownAppearance = .light,
+        renderFingerprint: Int
+    ) -> LayoutResult {
+        LayoutResult(
+            node: ListItemNode(
+                range: range,
+                checkbox: .unchecked,
+                children: [TextNode(range: nil, text: "Task")]
+            ),
+            size: size,
+            attributedString: NSAttributedString(string: "Task"),
+            appearance: appearance,
+            renderFingerprint: renderFingerprint
+        )
+    }
+
+    private func sourceRange(line: Int) -> SourceRange {
+        SourceRange(
+            start: SourceLocation(line: line, column: 1, source: nil),
+            end: SourceLocation(line: line, column: 8, source: nil)
+        )
+    }
+
+    private func assertVariantUpdate(
+        from initial: LayoutResult,
+        to updated: LayoutResult,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let view = makeCollectionView()
+        view.layouts = [initial]
+        XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 1, file: file, line: line)
+
+        view.layouts = [updated]
+        XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 2, file: file, line: line)
+        XCTAssertEqual(view.layoutSnapshotSkipCountForTesting, 0, file: file, line: line)
+        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 1, file: file, line: line)
     }
 }
 #endif

@@ -49,6 +49,12 @@ public class MarkdownCollectionView: UIView {
     /// scrolls past the prefetched region before they appear on-screen.
     private var prefetchTasks: [IndexPath: Task<Void, Never>] = [:]
 
+    private(set) var layoutSnapshotApplicationCountForTesting = 0
+    private(set) var layoutSnapshotSkipCountForTesting = 0
+    private(set) var lastLayoutChangedIdentityCountForTesting = 0
+    private(set) var layoutInvalidationRequestCountForTesting = 0
+    var onLayoutSnapshotApplicationCompletionForTesting: (() -> Void)?
+
     public var layouts: [LayoutResult] = [] {
         didSet {
             applyLayouts(layouts)
@@ -88,8 +94,16 @@ public class MarkdownCollectionView: UIView {
             }
 
             cell.theme = self.theme
-            cell.onLinkTap = self.onLinkTap
-            cell.onCheckboxToggle = self.onCheckboxToggle
+            cell.onLinkTap = { [weak self] url in
+                if let handler = self?.onLinkTap {
+                    handler(url)
+                } else {
+                    UIApplication.shared.open(url)
+                }
+            }
+            cell.onCheckboxToggle = { [weak self] interactionData in
+                self?.onCheckboxToggle?(interactionData)
+            }
             cell.textInteractionMode = self.textInteractionMode
             cell.onDetailsTap = { [weak self] details in
                 // Resolve index from the live snapshot so external callers
@@ -119,40 +133,40 @@ public class MarkdownCollectionView: UIView {
     // MARK: - Snapshot application
 
     private func applyLayouts(_ layouts: [LayoutResult]) {
-        let positionedLayouts = LayoutResult.positionedTopLevelLayouts(layouts)
-        let previousLookup = layoutsByIdentity
+        let currentSnapshot = dataSource.snapshot()
+        let hasMainSection = currentSnapshot.sectionIdentifiers.contains(.main)
+        let plan = LayoutCollectionUpdatePlan(
+            layouts: layouts,
+            previousLayoutsByIdentity: layoutsByIdentity,
+            currentOrderedIdentities: hasMainSection
+                ? currentSnapshot.itemIdentifiers(inSection: .main)
+                : [],
+            hasMainSection: hasMainSection
+        )
 
-        // Build the lookup before applying the snapshot — the data source's
-        // cell provider may immediately try to resolve identities.
-        var lookup: [StableNodeIdentity: LayoutResult] = [:]
-        lookup.reserveCapacity(positionedLayouts.count)
-        for layout in positionedLayouts {
-            lookup[layout.stableIdentity] = layout
+        layoutsByIdentity = plan.layoutsByIdentity
+        lastLayoutChangedIdentityCountForTesting = plan.changedRetainedIdentities.count
+
+        guard plan.requiresSnapshotApplication else {
+            layoutSnapshotSkipCountForTesting += 1
+            return
         }
-        layoutsByIdentity = lookup
 
         var snapshot = NSDiffableDataSourceSnapshot<Section, StableNodeIdentity>()
         snapshot.appendSections([.main])
-        snapshot.appendItems(positionedLayouts.map(\.stableIdentity), toSection: .main)
-        let existingIdentities = Set(dataSource.snapshot().itemIdentifiers)
-        let changedIdentities = LayoutResultVariantDiff.changedStableIdentities(
-            previous: previousLookup,
-            next: positionedLayouts
-        ).filter(existingIdentities.contains)
-        let hasExistingSizeChange = positionedLayouts.contains { layout in
-            guard existingIdentities.contains(layout.stableIdentity),
-                  let previous = previousLookup[layout.stableIdentity] else {
-                return false
-            }
-            return previous.size != layout.size
-        }
-        snapshot.reconfigureItems(changedIdentities)
+        snapshot.appendItems(plan.orderedIdentities, toSection: .main)
+        snapshot.reconfigureItems(plan.changedRetainedIdentities)
         // animatingDifferences: false — streaming updates would otherwise
         // flicker. Hosts that want animations can tweak this later.
+        let hasRetainedSizeChange = plan.hasRetainedSizeChange
+        layoutSnapshotApplicationCountForTesting += 1
         dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
-            if hasExistingSizeChange {
-                self?.flowLayout.invalidateLayout()
+            guard let self else { return }
+            if hasRetainedSizeChange {
+                self.layoutInvalidationRequestCountForTesting += 1
+                self.flowLayout.invalidateLayout()
             }
+            self.onLayoutSnapshotApplicationCompletionForTesting?()
         }
     }
 
@@ -166,7 +180,7 @@ public class MarkdownCollectionView: UIView {
         dataSource.apply(snapshot, animatingDifferences: false)
     }
 
-    fileprivate func layoutResult(forIndexPath indexPath: IndexPath) -> LayoutResult? {
+    func layoutResult(forIndexPath indexPath: IndexPath) -> LayoutResult? {
         guard let identity = dataSource.itemIdentifier(for: indexPath) else { return nil }
         return layoutsByIdentity[identity]
     }

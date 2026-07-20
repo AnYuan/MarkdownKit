@@ -22,10 +22,10 @@ struct MarkdownViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ uiView: MarkdownCollectionView, context: Context) {
         uiView.theme = theme
-        uiView.layouts = layouts
         uiView.onToggleDetails = onToggleDetails
         uiView.onLinkTap = onLinkTap
         uiView.onCheckboxToggle = onCheckboxToggle
+        uiView.layouts = layouts
         uiView.textInteractionMode = textInteractionMode
     }
 }
@@ -51,11 +51,11 @@ struct MarkdownViewRepresentable: NSViewRepresentable {
 
     func updateNSView(_ nsView: MarkdownCollectionView, context: Context) {
         nsView.theme = theme
-        nsView.layouts = layouts
         nsView.onToggleDetails = onToggleDetails
         nsView.onEffectiveContentWidthChange = onEffectiveContentWidthChange
         nsView.onLinkTap = onLinkTap
         nsView.onToggleCheckbox = onCheckboxToggle
+        nsView.layouts = layouts
         nsView.textInteractionMode = textInteractionMode
     }
 }
