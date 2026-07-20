@@ -46,6 +46,58 @@ final class AppearanceAwareLayoutTests: XCTestCase {
         return l.0 == r.0 && l.1 == r.1 && l.2 == r.2 && l.3 == r.3
     }
 
+    private func assertColor(
+        in attributedString: NSAttributedString,
+        key: NSAttributedString.Key = .foregroundColor,
+        at location: Int = 0,
+        equals expected: Color,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard attributedString.length > location else {
+            XCTFail("Expected an attributed character at index \(location)", file: file, line: line)
+            return
+        }
+        guard let color = attributedString.attribute(
+            key,
+            at: location,
+            effectiveRange: nil
+        ) as? Color else {
+            XCTFail("Expected \(key.rawValue) color at index \(location)", file: file, line: line)
+            return
+        }
+
+        XCTAssertNotNil(
+            components(of: color),
+            "\(key.rawValue) must be concrete",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            componentsEqual(color, expected),
+            "\(key.rawValue) must match the explicitly resolved appearance color",
+            file: file,
+            line: line
+        )
+    }
+
+    private func assertEverySupportedColor(
+        in attributedString: NSAttributedString,
+        equals expected: Color,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        for key in appearanceTestColorKeys {
+            assertColor(
+                in: attributedString,
+                key: key,
+                equals: expected,
+                file: file,
+                line: line
+            )
+        }
+    }
+
     // MARK: - 1. Semantic color resolution differs light vs dark
 
     func testSemanticLabelColorDiffersLightVsDark() {
@@ -344,27 +396,82 @@ final class AppearanceAwareLayoutTests: XCTestCase {
         XCTAssertFalse(foundDynamic, "All foreground colors in solved attributed strings must be concrete (non-dynamic)")
     }
 
-    // MARK: - 10. Code block language label uses concrete secondary-label color
+    // MARK: - 10. Builder and adapter boundaries resolve semantic colors
 
-    func testCodeBlockLabelColorIsConcrete() async throws {
-        let markdown = "```swift\nlet x = 1\n```"
-        let layout = await TestHelper.solveLayout(markdown, appearance: .dark)
-        let child = try XCTUnwrap(layout.children.first)
-        guard let attrStr = child.attributedString else {
-            XCTFail("Expected attributed string for code block")
-            return
-        }
+    func testBuilderBoundaryColorsResolveAcrossAppearancesAndSolverPaths() async throws {
+        for appearance in [MarkdownAppearance.light, .dark] {
+            let expected = AppearanceColorResolver.resolveColor(
+                .platformSecondaryLabel,
+                for: appearance
+            )
+            let codeDocument = TestHelper.parse("```swift\nlet x = 1\n```")
+            let imageDocument = TestHelper.parse("![blocked](https://example.com/image.png)")
+            let solver = LayoutSolver(appearance: appearance)
 
-        var labelColors: [Color] = []
-        attrStr.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: attrStr.length)) { value, _, _ in
-            if let color = value as? Color {
-                labelColors.append(color)
+            let asyncCode = await solver.solve(node: codeDocument, constrainedToWidth: 400)
+            let syncCode = solver.solveSync(node: codeDocument, constrainedToWidth: 400)
+            let asyncImage = await solver.solve(node: imageDocument, constrainedToWidth: 400)
+            let syncImage = solver.solveSync(node: imageDocument, constrainedToWidth: 400)
+
+            for layout in [asyncCode, syncCode] {
+                let attributedString = try XCTUnwrap(layout.children.first?.attributedString)
+                XCTAssertTrue(attributedString.string.hasPrefix("SWIFT\n"))
+                assertColor(in: attributedString, equals: expected)
+            }
+
+            for layout in [asyncImage, syncImage] {
+                let attributedString = try XCTUnwrap(layout.children.first?.attributedString)
+                XCTAssertEqual(attributedString.string, "[blocked]")
+                assertColor(in: attributedString, equals: expected)
             }
         }
-        XCTAssertFalse(labelColors.isEmpty, "Expected at least one foreground color in code block")
+    }
 
-        let allConcrete = labelColors.allSatisfy { components(of: $0) != nil }
-        XCTAssertTrue(allConcrete, "All colors in dark code block must be concrete")
+    func testMathAdapterColorsResolveAcrossAppearancesAndSolverPaths() async throws {
+        let node = MathNode(range: nil, style: .block, equation: "x")
+
+        for appearance in [MarkdownAppearance.light, .dark] {
+            let expected = AppearanceColorResolver.resolveColor(
+                dynamicAppearanceTestColor,
+                for: appearance
+            )
+            let solver = LayoutSolver(
+                mathAdapter: AppearanceTestMathAdapter(),
+                appearance: appearance
+            )
+
+            let asyncResult = await solver.solve(node: node, constrainedToWidth: 400)
+            let syncResult = solver.solveSync(node: node, constrainedToWidth: 400)
+
+            for result in [asyncResult, syncResult] {
+                let attributedString = try XCTUnwrap(result.attributedString)
+                XCTAssertEqual(attributedString.string, "math")
+                assertEverySupportedColor(in: attributedString, equals: expected)
+            }
+        }
+    }
+
+    func testDiagramAdapterColorsResolveAcrossAppearances() async throws {
+        let node = DiagramNode(range: nil, language: .mermaid, source: "graph TD")
+
+        for appearance in [MarkdownAppearance.light, .dark] {
+            var registry = DiagramAdapterRegistry()
+            registry.register(AppearanceTestDiagramAdapter(), for: .mermaid)
+            let solver = LayoutSolver(
+                diagramRegistry: registry,
+                appearance: appearance
+            )
+            let expected = AppearanceColorResolver.resolveColor(
+                dynamicAppearanceTestColor,
+                for: appearance
+            )
+
+            let result = await solver.solve(node: node, constrainedToWidth: 400)
+            let attributedString = try XCTUnwrap(result.attributedString)
+
+            XCTAssertEqual(attributedString.string, "diagram")
+            assertEverySupportedColor(in: attributedString, equals: expected)
+        }
     }
 
     // MARK: - 11. Solver-produced appearance field is correct
@@ -459,5 +566,56 @@ final class AppearanceAwareLayoutTests: XCTestCase {
                 next: [unchanged, inserted]
             ).isEmpty
         )
+    }
+}
+
+private let appearanceTestColorKeys: [NSAttributedString.Key] = [
+    .foregroundColor,
+    .backgroundColor,
+    .strokeColor,
+    .underlineColor,
+    .strikethroughColor
+]
+
+private var dynamicAppearanceTestColor: Color {
+    #if canImport(UIKit)
+    .label
+    #elseif canImport(AppKit)
+    .labelColor
+    #endif
+}
+
+private func appearanceTestAttributedString(_ string: String) -> NSAttributedString {
+    NSAttributedString(
+        string: string,
+        attributes: Dictionary(
+            uniqueKeysWithValues: appearanceTestColorKeys.map {
+                ($0, dynamicAppearanceTestColor as Any)
+            }
+        )
+    )
+}
+
+private struct AppearanceTestMathAdapter: MathRenderingAdapter {
+    func render(
+        from node: MathNode,
+        theme: Theme,
+        contextFont: Font?
+    ) async -> NSAttributedString {
+        appearanceTestAttributedString("math")
+    }
+
+    func renderSync(
+        from node: MathNode,
+        theme: Theme,
+        contextFont: Font?
+    ) -> NSAttributedString {
+        appearanceTestAttributedString("math")
+    }
+}
+
+private struct AppearanceTestDiagramAdapter: DiagramRenderingAdapter {
+    func render(source: String, language: DiagramLanguage) async -> NSAttributedString? {
+        appearanceTestAttributedString("diagram")
     }
 }

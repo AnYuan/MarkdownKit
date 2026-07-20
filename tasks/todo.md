@@ -664,8 +664,36 @@ before the next stage starts.
   `origin/main`, so no P02 snapshot output was refreshed. Four-role review found
   the CommonMark entity-decoding seam; final main review also removed a
   mixed-syntax premature scan stop, with regressions covering both cases.
-- [ ] P03 eliminate redundant whole-attributed-string appearance resolution
-  while preserving explicit light/dark output and custom adapter colors.
+- [x] P03 eliminate redundant whole-attributed-string appearance resolution
+  while preserving explicit light/dark output and custom adapter colors. Keep
+  the public API, cache variants, render fingerprints, measurement, and
+  async/sync resource semantics unchanged.
+  - [x] P03-A lock end-to-end contracts for the two direct semantic-color
+    literals (code-language labels and blocked-image fallback) plus all five
+    supported color attributes returned by custom async/sync math and async
+    diagram adapters.
+  - [x] P03-B make `AttributedStringBuilder` the single appearance-aware
+    construction boundary: resolve the secondary-label color once, normalize
+    only opaque adapter payloads when they enter the builder, and remove the
+    per-node whole-string scan from `LayoutSolver.makeTextOutput`.
+  - [x] P03-C compare five isolated Release
+    `BenchmarkNodeTypeTests/testInputSizeScaling` runs against the pre-change
+    `solve(1000-lines)` median p95 of 53.49ms. The report key represents 1,000
+    generated paragraph blocks (2,002 physical lines). Exit requires at least
+    15% improvement (post-change median p95 <= 45.4665ms), then full
+    review/correctness/documentation/API/snapshot/benchmark/iOS gates, atomic
+    commit, and push. P01's persistent average policy remains unchanged.
+  Validation: exact post-change p95 values were 36.03, 38.11, 33.89, 40.45,
+  and 36.72ms (median 36.72ms), a 31.4% reduction from the 53.49ms pre-change
+  median. Ninety-two focused appearance/builder/layout tests, 514 fast
+  correctness tests, 532 discoverable documentation checks, the unchanged
+  453-symbol / 599-relationship macOS public API, all 12 Release benchmark
+  workloads, 565 iOS Simulator XCTest tests, and the app-hosted real-WebKit
+  Mermaid smoke pass. Snapshot determinism passes, and all four current
+  snapshot PNGs are byte-identical to clean commit `731a93e` in the same host
+  environment; both states share the same unrelated committed-baseline drift.
+  Four-role simplification and four-role regression/security/reliability/
+  contracts reviews found no material issues.
 - [ ] P04 make stale layout/materialization work cooperatively cancellable
   without changing public solve behavior or canceled-cache publication rules.
 - [ ] P05 suppress identical iOS/macOS collection snapshot applications and

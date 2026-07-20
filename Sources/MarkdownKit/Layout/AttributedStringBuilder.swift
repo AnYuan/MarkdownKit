@@ -18,6 +18,8 @@ struct AttributedStringBuilder {
     private let diagramRegistry: DiagramAdapterRegistry
     private let mathAdapter: any MathRenderingAdapter
     private let imageLoadingPolicy: ImageLoadingPolicy
+    private let appearance: MarkdownAppearance
+    private let secondaryLabelColor: Color
 
     private typealias Attributes = [NSAttributedString.Key: Any]
 
@@ -140,13 +142,19 @@ struct AttributedStringBuilder {
         highlighter: SplashHighlighter,
         diagramRegistry: DiagramAdapterRegistry,
         mathAdapter: any MathRenderingAdapter = DefaultMathRenderingAdapter(),
-        imageLoadingPolicy: ImageLoadingPolicy = .default
+        imageLoadingPolicy: ImageLoadingPolicy = .default,
+        appearance: MarkdownAppearance
     ) {
         self.theme = theme
         self.highlighter = highlighter
         self.diagramRegistry = diagramRegistry
         self.mathAdapter = mathAdapter
         self.imageLoadingPolicy = imageLoadingPolicy
+        self.appearance = appearance
+        self.secondaryLabelColor = AppearanceColorResolver.resolveColor(
+            .platformSecondaryLabel,
+            for: appearance
+        )
     }
 
     func buildString(for node: MarkdownNode, constrainedToWidth maxWidth: CGFloat) async -> NSAttributedString {
@@ -471,11 +479,12 @@ struct AttributedStringBuilder {
                     }
 
                 case let .math(math, contextFont):
-                    state.append(await mathAdapter.render(
+                    let rendered = await mathAdapter.render(
                         from: math,
                         theme: theme,
                         contextFont: contextFont
-                    ))
+                    )
+                    state.append(resolveAdapterColors(in: rendered))
 
                 case let .diagram(diagram):
                     state.append(await buildDiagramAttributedString(from: diagram))
@@ -512,11 +521,12 @@ struct AttributedStringBuilder {
                     ))
 
                 case let .math(math, contextFont):
-                    state.append(mathAdapter.renderSync(
+                    let rendered = mathAdapter.renderSync(
                         from: math,
                         theme: theme,
                         contextFont: contextFont
-                    ))
+                    )
+                    state.append(resolveAdapterColors(in: rendered))
 
                 case .diagram:
                     continue
@@ -711,7 +721,7 @@ struct AttributedStringBuilder {
 
             let labelAttrs: [NSAttributedString.Key: Any] = [
                 .font: theme.codeBlock.labelFont,
-                .foregroundColor: Color.platformSecondaryLabel,
+                .foregroundColor: secondaryLabelColor,
                 .paragraphStyle: labelStyle
             ]
             result.append(NSAttributedString(string: label + "\n", attributes: labelAttrs))
@@ -750,7 +760,7 @@ struct AttributedStringBuilder {
     func buildDiagramAttributedString(from diagram: DiagramNode) async -> NSAttributedString {
         if let adapter = diagramRegistry.adapter(for: diagram.language),
            let rendered = await adapter.render(source: diagram.source, language: diagram.language) {
-            return rendered
+            return resolveAdapterColors(in: rendered)
         }
 
         let fallback = CodeBlockNode(
@@ -774,8 +784,12 @@ struct AttributedStringBuilder {
         baseAttributes: [NSAttributedString.Key: Any]
     ) -> NSAttributedString {
         var attributes = baseAttributes
-        attributes[.foregroundColor] = Color.platformSecondaryLabel
+        attributes[.foregroundColor] = secondaryLabelColor
         let altText = image.altText ?? image.source ?? "image"
         return NSAttributedString(string: "[\(altText)]", attributes: attributes)
+    }
+
+    private func resolveAdapterColors(in attributedString: NSAttributedString) -> NSAttributedString {
+        AppearanceColorResolver.resolveColors(in: attributedString, for: appearance)
     }
 }

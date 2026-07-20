@@ -67,10 +67,10 @@ bash scripts/verify_benchmarks.sh
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **530** discoverable tests
+- `swift test list`: **532** discoverable tests
 - `swift test`: **516 tests passed** on 2026-07-18
-- `verify_fast.sh`: **512** correctness tests
-- `verify_ios.sh`: **563** XCTest tests plus one app-hosted Mermaid PASS marker
+- `verify_fast.sh`: **514** correctness tests
+- `verify_ios.sh`: **565** XCTest tests plus one app-hosted Mermaid PASS marker
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -136,7 +136,8 @@ Primary files:
 Key facts:
 - `LayoutCache` keys are `node.contentFingerprint` + optional interaction fingerprint + rounded width + solver variant hash (theme/diagram/math/image policy/appearance inputs). The separate interaction identity covers source ranges and URLs captured by checkbox/details callbacks without changing semantic stable identity or pixel-render identity.
 - `AttributedStringBuilder` classifies block and inline structure once into an invocation-local flat operation program. Sequential async/sync materializers share structural behavior while keeping image, math, and diagram mode differences explicit.
-- `LayoutSolver` performs cache lookup before classifying a node into a shallow recipe, then shares immediate output, measurement, color resolution, and `LayoutResult` assembly across its explicit async/sync envelopes.
+- `LayoutSolver` performs cache lookup before classifying a node into a shallow recipe, then shares immediate output, measurement, and `LayoutResult` assembly across its explicit async/sync envelopes.
+- `Theme.resolved(for:)` concretizes theme/highlighter/table/default-math colors once per solver. `AttributedStringBuilder` separately resolves the appearance-specific secondary-label color once for code labels and image fallback, and runs the generic five-key attributed-color resolver only when opaque custom math/diagram adapter output enters the builder; ordinary attributed output is not rescanned after measurement.
 - The internal `ArithmeticTextCalculator` is the pure-text routing/cache facade. Width-independent preparation streams UTF-16 spans through dedicated scanner, localized classifier/merger, and CoreText measurer value types; `ArithmeticTextLineBreaker` separately owns fit-versus-paint widths, indents, hard breaks, soft hyphens, and oversized-token fallback.
 - `TableLayoutShared` owns the immutable canonical rectangular table grid (cell text/display text, alignment, row role/body index) and sanitized uniform column geometry. Three thin adapters intentionally preserve platform-specific visuals: AppKit native `NSTextTableBlock`, UIKit nested attributed tab/narrow fallback, and UIKit top-level `TableCardRenderer` cards drawn through `CGContext`.
 - `ImageResourceLoader` is the sole production owner of image source resolution, policy gating, file/`URLSession` loading, pre-follow redirect policy, HTTP status, MIME, expected-byte-count, streamed final-byte limits, and typed rejection.
@@ -188,7 +189,7 @@ High-value suites:
 - Mermaid backend contracts: `MermaidDiagramAdapterTests` uses real WebKit on
   macOS and a deterministic image driver on iOS; the iOS verification script
   adds a separate app-hosted public-`MarkdownView` Mermaid-fence smoke using
-  real WebKit after its 563 XCTest tests.
+  real WebKit after its 565 XCTest tests.
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`,
   `BenchmarkCacheTests`, `MarkdownRenderCoordinatorBenchmarkTests`
 

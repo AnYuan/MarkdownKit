@@ -97,7 +97,8 @@ public final class LayoutSolver: @unchecked Sendable {
             highlighter: highlighter,
             diagramRegistry: diagramRegistry,
             mathAdapter: resolvedMathAdapter,
-            imageLoadingPolicy: imageLoadingPolicy
+            imageLoadingPolicy: imageLoadingPolicy,
+            appearance: appearance
         )
     }
     
@@ -241,14 +242,14 @@ public final class LayoutSolver: @unchecked Sendable {
             return executeImmediate(immediate, constrainedToWidth: maxWidth)
         case let .diagram(diagram):
             return makeTextOutput(
-                rawString: await builder.buildDiagramAttributedString(from: diagram),
+                attributedString: await builder.buildDiagramAttributedString(from: diagram),
                 node: diagram,
                 constrainedToWidth: maxWidth,
                 measurement: .codeBlockInset
             )
         case let .attributed(node):
             return makeTextOutput(
-                rawString: await builder.buildString(for: node, constrainedToWidth: maxWidth),
+                attributedString: await builder.buildString(for: node, constrainedToWidth: maxWidth),
                 node: node,
                 constrainedToWidth: maxWidth,
                 measurement: .standard
@@ -265,14 +266,14 @@ public final class LayoutSolver: @unchecked Sendable {
             return executeImmediate(immediate, constrainedToWidth: maxWidth)
         case let .diagram(diagram):
             return makeTextOutput(
-                rawString: builder.buildStringSync(for: diagram, constrainedToWidth: maxWidth),
+                attributedString: builder.buildStringSync(for: diagram, constrainedToWidth: maxWidth),
                 node: diagram,
                 constrainedToWidth: maxWidth,
                 measurement: .standard
             )
         case let .attributed(node):
             return makeTextOutput(
-                rawString: builder.buildStringSync(for: node, constrainedToWidth: maxWidth),
+                attributedString: builder.buildStringSync(for: node, constrainedToWidth: maxWidth),
                 node: node,
                 constrainedToWidth: maxWidth,
                 measurement: .standard
@@ -293,7 +294,7 @@ public final class LayoutSolver: @unchecked Sendable {
         #endif
         case let .codeBlock(codeBlock):
             return makeTextOutput(
-                rawString: builder.buildCodeBlockAttributedString(from: codeBlock),
+                attributedString: builder.buildCodeBlockAttributedString(from: codeBlock),
                 node: codeBlock,
                 constrainedToWidth: maxWidth,
                 measurement: .codeBlockInset
@@ -302,7 +303,7 @@ public final class LayoutSolver: @unchecked Sendable {
     }
 
     private func makeTextOutput(
-        rawString: NSAttributedString,
+        attributedString: NSAttributedString,
         node: MarkdownNode,
         constrainedToWidth maxWidth: CGFloat,
         measurement: TextMeasurement
@@ -310,21 +311,21 @@ public final class LayoutSolver: @unchecked Sendable {
         let size: CGSize
         switch measurement {
         case .standard:
-            if shouldUseArithmeticLayout(for: node, styledString: rawString) {
+            if shouldUseArithmeticLayout(for: node, styledString: attributedString) {
                 size = arithmeticCalculator.calculateSize(
-                    for: rawString,
+                    for: attributedString,
                     constrainedToWidth: maxWidth
                 )
             } else {
                 size = textCalculator.calculateSize(
-                    for: rawString,
+                    for: attributedString,
                     constrainedToWidth: maxWidth
                 )
             }
         case .codeBlockInset:
             let totalInset = builder.theme.codeBlock.layoutTotalInset
             var measuredSize = textCalculator.calculateSize(
-                for: rawString,
+                for: attributedString,
                 constrainedToWidth: max(0, maxWidth - totalInset)
             )
             measuredSize.width += totalInset
@@ -332,11 +333,7 @@ public final class LayoutSolver: @unchecked Sendable {
             size = measuredSize
         }
 
-        let styledString = AppearanceColorResolver.resolveColors(
-            in: rawString,
-            for: appearance
-        )
-        return ShallowLayoutOutput(size: size, attributedString: styledString)
+        return ShallowLayoutOutput(size: size, attributedString: attributedString)
     }
 
     private func makeLayoutResult(

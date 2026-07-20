@@ -32,13 +32,15 @@ final class AttributedStringBuilderEquivalenceTests: XCTestCase {
         mathAdapter: any MathRenderingAdapter = RecordingMathAdapter(recorder: ResourceCallRecorder()),
         imageLoadingPolicy: ImageLoadingPolicy = .default
     ) -> AttributedStringBuilder {
-        let theme = Theme.default
+        let appearance = MarkdownAppearance.light
+        let theme = Theme.default.resolved(for: appearance)
         return AttributedStringBuilder(
             theme: theme,
             highlighter: SplashHighlighter(theme: theme),
             diagramRegistry: diagramRegistry,
             mathAdapter: mathAdapter,
-            imageLoadingPolicy: imageLoadingPolicy
+            imageLoadingPolicy: imageLoadingPolicy,
+            appearance: appearance
         )
     }
 
