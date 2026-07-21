@@ -932,11 +932,10 @@ earlier items).
   list item, ~907) by `(prefix, fontName, pointSize)`.
 
 ### UI & scroll
-- [ ] P14.9 `fix: prefetch bitmaps at the real display scale` → fold into P06
-  `AsyncTextView.preheat` defaults to `scale: 2` while `configure` renders at
-  `currentDisplayScale` (3 on modern iPhones), so prefetched bitmaps miss on
-  first paint. P06 already owns raster/prefetch key + scale unification;
-  track it there and check this box when P06 lands. Files:
+- [x] P14.9 `fix: prefetch bitmaps at the real display scale` → folded into P06
+  P06 now derives preheat and visible raster keys from the actual target
+  display scale and exact renderer content size, so prefetched text/code
+  bitmaps are eligible for first-paint reuse. Files:
   `UI/Components/AsyncTextView.swift` (~114),
   `UI/iOS/MarkdownCollectionView_iOS.swift` (prefetch callback).
 - [ ] P14.10 `perf: reduce macOS main-thread TextKit work per configure`
