@@ -125,7 +125,7 @@ final class AsyncTextViewRenderTests: XCTestCase {
         XCTAssertNotNil(view.layer.contents, "Multi-line styled text should render to layer.contents")
     }
 
-    func testConfigureRendersAttachmentBackedString() {
+    func testConfigureRendersAttachmentBackedString() async {
         let attachment = NSTextAttachment()
         attachment.image = makeAttachmentImage()
         attachment.bounds = CGRect(x: 0, y: 0, width: 48, height: 20)
@@ -137,6 +137,8 @@ final class AsyncTextViewRenderTests: XCTestCase {
         )
 
         let view = AsyncTextView(frame: layout.size == .zero ? .zero : CGRect(origin: .zero, size: layout.size))
+        let pipeline = RasterImagePipeline()
+        view.rasterPipeline = pipeline
         view.displaysAsynchronously = false
         view.configure(with: layout)
 
@@ -154,10 +156,38 @@ final class AsyncTextViewRenderTests: XCTestCase {
             return
         }
         let cgImage = contents as! CGImage
+        XCTAssertEqual(pipeline.statistics.cacheEntryCount, 1)
+
+        view.configure(with: layout)
+        let reusedImage = view.layer.contents as! CGImage
+        XCTAssertTrue(reusedImage === cgImage)
+        XCTAssertEqual(pipeline.statistics.cacheHits, 0)
+
+        let cacheHitView = AsyncTextView(
+            frame: CGRect(origin: .zero, size: layout.size)
+        )
+        cacheHitView.rasterPipeline = pipeline
+        cacheHitView.displaysAsynchronously = false
+        cacheHitView.configure(with: layout)
+        let cachedImage = cacheHitView.layer.contents as! CGImage
+        XCTAssertTrue(cachedImage === cgImage)
+        XCTAssertEqual(pipeline.statistics.cacheHits, 1)
 
         XCTAssertTrue(
             TestHelper.imageContainsVisibleNonWhitePixel(cgImage),
             "Attachment rendering should draw visible pixels into layer.contents"
+        )
+
+        let asyncView = AsyncTextView(
+            frame: CGRect(origin: .zero, size: layout.size)
+        )
+        asyncView.rasterPipeline = RasterImagePipeline()
+        asyncView.configure(with: layout)
+        await asyncView.drainRasterMountForTesting()
+        let asyncImage = asyncView.layer.contents as! CGImage
+        XCTAssertTrue(
+            TestHelper.imageContainsVisibleNonWhitePixel(asyncImage),
+            "Attachment rendering should remain valid on the detached raster worker"
         )
     }
 

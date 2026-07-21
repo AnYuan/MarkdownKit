@@ -70,7 +70,7 @@ bash scripts/verify_benchmarks.sh
 - `swift test list`: **541** discoverable tests
 - `swift test`: **516 tests passed** on 2026-07-18
 - `verify_fast.sh`: **523** correctness tests
-- `verify_ios.sh`: **575** XCTest tests plus one app-hosted Mermaid PASS marker
+- `verify_ios.sh`: **583** XCTest tests plus one app-hosted Mermaid PASS marker
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -191,7 +191,7 @@ High-value suites:
 - Mermaid backend contracts: `MermaidDiagramAdapterTests` uses real WebKit on
   macOS and a deterministic image driver on iOS; the iOS verification script
   adds a separate app-hosted public-`MarkdownView` Mermaid-fence smoke using
-  real WebKit after its 575 XCTest tests.
+  real WebKit after its 583 XCTest tests.
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`,
   `BenchmarkCacheTests`, `MarkdownRenderCoordinatorBenchmarkTests`
 

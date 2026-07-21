@@ -20,8 +20,19 @@ class AsyncCodeView: UIView {
         set { textView.displaysAsynchronously = newValue }
     }
 
+    var rasterPipeline: RasterImagePipeline {
+        get { textView.rasterPipeline }
+        set { textView.rasterPipeline = newValue }
+    }
+
+    var displayScaleOverride: CGFloat? {
+        get { textView.displayScaleOverride }
+        set { textView.displayScaleOverride = newValue }
+    }
+
     private var theme: Theme
     private var rawCode: String = ""
+    private var currentContentSize: CGSize = .zero
     private var copyButtonDefaultImage: UIImage?
     private var copyFeedbackResetWorkItem: DispatchWorkItem?
     private var copyFeedbackGeneration = 0
@@ -115,7 +126,13 @@ class AsyncCodeView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         // Pin the internal async text view with padding
-        textView.frame = bounds.insetBy(dx: padding, dy: padding)
+        let contentSize = currentContentSize == .zero
+            ? RasterContentLayout.contentSize(containerSize: bounds.size, padding: padding)
+            : currentContentSize
+        textView.frame = CGRect(
+            origin: CGPoint(x: padding, y: padding),
+            size: contentSize
+        )
         
         // Pin Copy button to top right
         let buttonSize = theme.codeBlock.copyButtonSize
@@ -132,7 +149,16 @@ class AsyncCodeView: UIView {
     func prepareForReuse() {
         resetCopyFeedback()
         rawCode = ""
+        currentContentSize = .zero
         textView.prepareForReuse()
+    }
+
+    func cancelRendering() {
+        textView.cancelRendering()
+    }
+
+    static func contentLayout(for layout: LayoutResult, theme: Theme) -> RasterContentLayout {
+        RasterContentLayout.resolve(layout: layout, theme: theme)
     }
 
     /// Binds the `LayoutResult` constraint to the view.
@@ -145,26 +171,8 @@ class AsyncCodeView: UIView {
             applyTheme(sourceTheme.resolved(for: layout.appearance))
         }
         self.frame.size = layout.size
-        
-        // Pass the configuration down to the AsyncTextView to begin background text rasterization
-        // We artificially adjust the internal layout result size to account for our padding 
-        // to prevent clipping the background GPU drawing constraint.
-        let insetSize = CGSize(
-            width: max(0, layout.size.width - (padding * 2)), 
-            height: max(0, layout.size.height - (padding * 2))
-        )
-        
-        let insetLayout = LayoutResult(
-            node: layout.node, 
-            size: insetSize, 
-            attributedString: layout.attributedString, 
-            children: layout.children,
-            customDraw: layout.customDraw,
-            stableIdentity: layout.stableIdentity,
-            accessibility: layout.accessibility,
-            appearance: layout.appearance,
-            renderFingerprint: layout.renderFingerprint
-        )
+        let contentLayout = Self.contentLayout(for: layout, theme: sourceTheme)
+        currentContentSize = contentLayout.size
         
         if let codeNode = layout.node as? CodeBlockNode {
             self.rawCode = codeNode.code
@@ -174,7 +182,8 @@ class AsyncCodeView: UIView {
             self.rawCode = ""
         }
         
-        textView.configure(with: insetLayout)
+        textView.configure(with: contentLayout)
+        setNeedsLayout()
     }
 }
 #endif

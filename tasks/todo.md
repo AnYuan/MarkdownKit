@@ -774,8 +774,56 @@ before the next stage starts.
   Review found and resolved retained AppKit theme reload semantics, default
   browser fallback, selectable-link preview handling, and completion-test
   determinism; the final independent review found no remaining material issue.
-- [ ] P06 unify the iOS raster/prefetch key, scale, size, task-lifetime,
+- [x] P06 unify the iOS raster/prefetch key, scale, size, task-lifetime,
   in-flight-deduplication, and bitmap-cost behavior.
+  - [x] P06-A add deterministic UIKit contracts plus internal diagnostics for
+    exact logical-size/display-scale/content-kind raster keys, strict byte-cost
+    cache bounds, preheat/visible joins, cancellation/retry, code inset geometry,
+    selectable-mode bypass, cell replacement cancellation, and collection
+    bookkeeping cleanup without sleeps or timing thresholds.
+  - [x] P06-B introduce one internal MainActor-owned raster pipeline. Keep
+    synchronous cache hits on the UI thread, run only immutable pixel producers
+    explicitly off-main, deduplicate one publishable producer generation per key
+    through consumer leases, reject abandoned/cancelled late publication by
+    generation, and remove every in-flight entry on success, failure, or
+    final-consumer cancellation. A best-effort cancelled TextKit/custom producer
+    may finish physically while a fresh generation starts.
+  - [x] P06-C derive one exact key from render fingerprint, appearance, content
+    kind, unrounded logical size, and actual target display scale. Share code/
+    diagram inset layout between preheat and `AsyncCodeView`, pass the collection
+    scale through cells, rerasterize direct views when that scale changes, and
+    replace the count-only bitmap cache with a strict 128-entry / 64 MiB LRU store
+    that clears on memory pressure. Synchronous display remains an explicit
+    immediate-render bypass rather than waiting on async single-flight work.
+  - [x] P06-D keep one collection prefetch record per `IndexPath` containing the
+    captured stable identity, exact raster key, token, and pipeline lease; the
+    pipeline alone owns same-key task deduplication. Reconcile records against
+    P05's latest lookup after every layout assignment, preserve exact path+
+    identity+key no-ops, cancel changed/removed work, skip selectable-native
+    rows, remove completed entries, and cancel hosted raster work before
+    replacing a cell's view type.
+  - [x] P06-E run simplification, UIKit/SwiftUI performance, Swift 6.2
+    concurrency, regression, reliability, security, contracts, and final reviews;
+    then run focused, fast, documentation, API, snapshot, benchmark, and iOS
+    gates before atomic commit and push.
+  Acceptance: text/custom/code preheat and visible rendering derive the same key
+  and pixels at the target scale; one producer serves all same-key preheat/
+  visible consumers while active; completion/final-consumer cancellation returns
+  publishable pipeline and collection bookkeeping to zero and late abandoned work
+  cannot cache or mount; reorder/replacement cannot block or cancel the wrong row;
+  selectable rows perform no raster preheat; direct display-scale changes
+  rerasterize; cache entry count and byte cost stay within strict limits; custom
+  draw remains deterministic/background-safe as already required; P05 snapshot/
+  diff identity and all rendered output remain unchanged.
+  Validation: 29 focused package-only iOS tests, 523 fast correctness tests,
+  and 541 discoverable-test documentation checks pass. Provenance, unchanged
+  macOS/iOS public API baselines (453/599 and 454/610), both 4-test snapshot
+  gates, and all 12 isolated Release workloads pass. The complete iOS gate
+  executes exactly 583 XCTest tests with no restart/private-font diagnostics,
+  then emits exactly one app-hosted real-WebKit Mermaid PASS marker.
+  Simplification, UIKit/SwiftUI performance, concurrency, regression,
+  reliability, security, contracts, and final reviews found no remaining
+  material issue.
 - [ ] P07 add bounded width-independent attributed/highlight/arithmetic prepared
   content reuse.
 

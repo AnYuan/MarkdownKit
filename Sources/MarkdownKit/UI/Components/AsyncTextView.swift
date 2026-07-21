@@ -42,14 +42,15 @@ class AsyncTextView: UIView {
     // MARK: - Private State
 
     private var currentDrawTask: Task<Void, Never>?
+    private var currentRasterLease: RasterImageLease?
+    private var currentContentLayout: RasterContentLayout?
+    private var currentRasterKey: RasterRenderKey?
+    private var mountedRasterKey: RasterRenderKey?
+    private var configurationGeneration: UInt = 0
 
     /// Retained for hit-testing after rasterization and internal content-change checks.
     private(set) var currentAttributedString: NSAttributedString?
     private var currentSize: CGSize = .zero
-
-    /// Custom CGContext drawing closure from `LayoutResult.customDraw`.
-    /// When set, rasterization uses this instead of TextKit.
-    private var currentCustomDraw: (@Sendable (CGContext, CGSize) -> Void)?
 
     /// Lazily created on first tap. Invalidated on reconfigure.
     private var hitTester: TextKitHitTester?
@@ -69,30 +70,29 @@ class AsyncTextView: UIView {
     /// setups since iOS 16.
     private var currentDisplayScale: CGFloat = 1
 
-    /// Shared cache of rasterized text bitmaps. Key is render-variant based
-    /// (`renderFingerprint + size + scale`), NOT identity-based — using
-    /// `NSAttributedString.hash` would miss because `NSObject` hashes by
-    /// pointer, and two equal attributed strings have different pointers.
-    /// Cross-cell scroll-back and prefetch both benefit from this cache.
-    /// `countLimit` is a soft cap.
-    nonisolated(unsafe) private static let imageCache: NSCache<NSString, CGImageWrapper> = {
-        let c = NSCache<NSString, CGImageWrapper>()
-        c.countLimit = 128
-        return c
-    }()
-
-    /// `CGImage` is a CoreFoundation type that bridges to AnyObject but cannot
-    /// be stored directly in `NSCache<NSString, CGImage>` (the generic bound
-    /// requires `AnyObject`-conforming Swift class). A thin wrapper avoids
-    /// `Unmanaged` gymnastics.
-    private final class CGImageWrapper {
-        let image: CGImage
-        init(_ image: CGImage) { self.image = image }
+    var rasterPipeline: RasterImagePipeline = .shared {
+        didSet {
+            guard oldValue !== rasterPipeline else { return }
+            rerasterizeCurrentContent(force: true)
+        }
     }
 
-    /// Drops all cached rasterized bitmaps. The cache also auto-evicts under pressure.
+    var displayScaleOverride: CGFloat? {
+        didSet {
+            refreshDisplayScale()
+        }
+    }
+
+    var currentRasterKeyForTesting: RasterRenderKey? {
+        currentRasterKey
+    }
+
+    func drainRasterMountForTesting() async {
+        await currentDrawTask?.value
+    }
+
     static func clearImageCache() {
-        imageCache.removeAllObjects()
+        RasterImagePipeline.shared.clearCache()
     }
 
     static func imageCacheKey(
@@ -100,66 +100,21 @@ class AsyncTextView: UIView {
         appearance: MarkdownAppearance,
         size: CGSize,
         scale: CGFloat
-    ) -> String {
-        "\(renderFingerprint)|\(appearance)|\(Int(size.width.rounded()))x\(Int(size.height.rounded()))@\(scale)"
+    ) -> RasterRenderKey {
+        RasterRenderKey(
+            renderFingerprint: renderFingerprint,
+            appearance: appearance,
+            contentKind: .attributedText,
+            logicalSize: size,
+            displayScale: scale
+        )
     }
 
-    /// Pre-rasterizes a layout's bitmap on a background task so it's ready in
-    /// the cache by the time the cell scrolls into view. No-op if the bitmap
-    /// is already cached. Used by
-    /// `UICollectionViewDataSourcePrefetching.prefetchItemsAt`.
-    ///
-    /// Caller is responsible for retaining the returned `Task` so it can be
-    /// cancelled in `cancelPrefetchingForItemsAt` when scrolling reverses.
-    static func preheat(_ layout: LayoutResult, scale: CGFloat = 2) -> Task<Void, Never> {
-        let size = layout.size
-        let appearance = layout.appearance
-        let cacheKey = imageCacheKey(
-            renderFingerprint: layout.renderFingerprint,
-            appearance: appearance,
-            size: size,
-            scale: scale
-        )
-
-        // Already cached? Return an instantly-finished no-op task.
-        if imageCache.object(forKey: cacheKey as NSString) != nil {
-            return Task {}
-        }
-
-        if let customDraw = layout.customDraw {
-            return Task.detached(priority: .utility) {
-                let cgImage = await renderImageCustom(
-                    customDraw: customDraw,
-                    size: size,
-                    scale: scale,
-                    appearance: appearance
-                )
-                if Task.isCancelled { return }
-                if let cgImage {
-                    imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
-                }
-            }
-        }
-
-        guard let attributedString = layout.attributedString, attributedString.length > 0 else {
-            return Task {}
-        }
-
-        // Bridge `NSAttributedString` (not formally Sendable) into the detached
-        // task by copying. The cell-driven render path uses the same pattern.
-        nonisolated(unsafe) let drawString = NSAttributedString(attributedString: attributedString)
-        return Task.detached(priority: .utility) {
-            let cgImage = await renderImage(
-                drawString: drawString,
-                size: size,
-                scale: scale,
-                appearance: appearance
-            )
-            if Task.isCancelled { return }
-            if let cgImage {
-                imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
-            }
-        }
+    static func rasterKey(
+        for contentLayout: RasterContentLayout,
+        displayScale: CGFloat
+    ) -> RasterRenderKey? {
+        contentLayout.rasterKey(displayScale: displayScale)
     }
 
     // MARK: - Init
@@ -174,6 +129,10 @@ class AsyncTextView: UIView {
         setup()
     }
 
+    isolated deinit {
+        cancelRendering()
+    }
+
     private func setup() {
         self.backgroundColor = .clear
         // Pin old content at top-left during frame resizes so it doesn't stretch/distort
@@ -181,6 +140,11 @@ class AsyncTextView: UIView {
         self.layer.contentsGravity = .topLeft
         self.currentDisplayScale = resolveDisplayScale()
         self.layer.contentsScale = currentDisplayScale
+
+        registerForTraitChanges([UITraitDisplayScale.self]) {
+            (view: AsyncTextView, _) in
+            view.refreshDisplayScale()
+        }
 
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         addGestureRecognizer(tapGesture)
@@ -193,17 +157,15 @@ class AsyncTextView: UIView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        // When the view enters a new window (e.g. moved to an external
-        // display) the display scale may change. Refresh to keep rasterized
-        // text crisp.
-        let newScale = resolveDisplayScale()
-        if newScale != currentDisplayScale {
-            currentDisplayScale = newScale
-            layer.contentsScale = newScale
-        }
+        refreshDisplayScale()
     }
 
     private func resolveDisplayScale() -> CGFloat {
+        if let displayScaleOverride,
+           displayScaleOverride.isFinite,
+           displayScaleOverride > 0 {
+            return displayScaleOverride
+        }
         // Prefer the window's screen so external displays return the correct
         // value. `traitCollection.displayScale` is the canonical fallback once
         // the view is attached but before the window's scene resolves.
@@ -214,17 +176,31 @@ class AsyncTextView: UIView {
         return trait > 0 ? trait : 2
     }
 
+    private func refreshDisplayScale() {
+        let newScale = resolveDisplayScale()
+        guard newScale != currentDisplayScale else { return }
+        currentDisplayScale = newScale
+        layer.contentsScale = newScale
+        rerasterizeCurrentContent()
+    }
+
+    private func rerasterizeCurrentContent(force: Bool = false) {
+        guard let currentContentLayout else { return }
+        beginRasterization(for: currentContentLayout, force: force)
+    }
+
     // MARK: - Reuse
 
     /// Resets internal state so the view can be reused by a recycling cell.
     /// Does **not** remove the view from its superview — the caller keeps the
     /// instance alive across cell recycles to amortize allocation cost.
     func prepareForReuse() {
-        currentDrawTask?.cancel()
-        currentDrawTask = nil
+        cancelRendering()
         currentAttributedString = nil
         currentSize = .zero
-        currentCustomDraw = nil
+        currentContentLayout = nil
+        currentRasterKey = nil
+        mountedRasterKey = nil
         hitTester = nil
         // Clear the rasterized contents so stale text doesn't briefly flash before the
         // next async draw lands.
@@ -234,114 +210,101 @@ class AsyncTextView: UIView {
         highlightLayer.opacity = 0
     }
 
+    func cancelRendering() {
+        configurationGeneration &+= 1
+        currentDrawTask?.cancel()
+        currentDrawTask = nil
+        currentRasterLease?.release()
+        currentRasterLease = nil
+    }
+
     // MARK: - Configure
 
     /// Binds the `LayoutResult` constraint to the view, launching an asynchronous drawing operation.
     func configure(with layout: LayoutResult) {
-        // Cancel any pending draw operation if this view was recycled quickly
-        currentDrawTask?.cancel()
-        hitTester = nil // Invalidate stale hit-tester on reconfigure
+        configure(with: RasterContentLayout.resolve(layout: layout, theme: theme))
+    }
 
-        self.frame.size = layout.size
-        self.currentSize = layout.size
-        self.currentCustomDraw = layout.customDraw
+    func configure(with contentLayout: RasterContentLayout) {
+        hitTester = nil
+        frame.size = contentLayout.size
+        currentSize = contentLayout.size
+        currentAttributedString = contentLayout.attributedString
+        currentContentLayout = contentLayout
+        beginRasterization(for: contentLayout)
+    }
 
-        // Custom draw path: bypass TextKit entirely (e.g. table card rendering)
-        if let customDraw = layout.customDraw {
-            self.currentAttributedString = layout.attributedString
-            let size = layout.size
-            let scale = currentDisplayScale
-            let cacheKey = Self.imageCacheKey(
-                renderFingerprint: layout.renderFingerprint,
-                appearance: layout.appearance,
-                size: size,
-                scale: scale
-            )
+    private func beginRasterization(
+        for contentLayout: RasterContentLayout,
+        force: Bool = false
+    ) {
+        let scale = currentDisplayScale
+        layer.contentsScale = scale
 
-            // Cache hit: mount synchronously, skip the rasterization Task.
-            if let cached = Self.imageCache.object(forKey: cacheKey as NSString) {
-                layer.contents = cached.image
+        guard let request = contentLayout.rasterRequest(
+            displayScale: scale,
+            priority: .userInitiated
+        ) else {
+            cancelRendering()
+            currentRasterKey = nil
+            return
+        }
+        let key = request.key
+
+        let ownsReusableRaster = currentRasterLease != nil
+            || currentDrawTask != nil
+            || mountedRasterKey == key
+        let canReuseCurrentRaster = displaysAsynchronously
+            ? ownsReusableRaster
+            : currentRasterLease == nil && currentDrawTask == nil && mountedRasterKey == key
+        if !force, currentRasterKey == key, canReuseCurrentRaster {
+            return
+        }
+
+        cancelRendering()
+        let generation = configurationGeneration
+        currentRasterKey = key
+
+        guard displaysAsynchronously else {
+            if let image = rasterPipeline.cachedImageIfAvailable(for: key) {
+                layer.contents = image
+                mountedRasterKey = key
                 return
             }
 
-            if displaysAsynchronously {
-                currentDrawTask = Task {
-                    let cgImage = await Self.renderImageCustom(
-                        customDraw: customDraw,
-                        size: size,
-                        scale: scale,
-                        appearance: layout.appearance
-                    )
-                    if Task.isCancelled { return }
-                    if let cgImage {
-                        Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
-                    }
-                    self.layer.contents = cgImage
-                }
-            } else {
-                let cgImage = Self.renderImageSyncCustom(
-                    customDraw: customDraw,
-                    size: size,
-                    scale: scale,
-                    appearance: layout.appearance
-                )
-                if let cgImage {
-                    Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
-                }
-                self.layer.contents = cgImage
+            let image = request.produceSynchronously()
+            if let image {
+                rasterPipeline.storeDirectlyRenderedImage(image, for: key)
             }
+            layer.contents = image
+            mountedRasterKey = image.map { _ in key }
             return
         }
 
-        guard let string = layout.attributedString, string.length > 0 else {
-            self.currentAttributedString = nil
-            // Keep layer.contents — old rendered content remains visible as placeholder
-            return
-        }
+        switch rasterPipeline.acquire(request) {
+        case let .cacheHit(image):
+            layer.contents = image
+            mountedRasterKey = key
 
-        self.currentAttributedString = string
-
-        let size = layout.size
-        let scale = currentDisplayScale
-        let cacheKey = Self.imageCacheKey(
-            renderFingerprint: layout.renderFingerprint,
-            appearance: layout.appearance,
-            size: size,
-            scale: scale
-        )
-
-        // Cache hit: scroll-back or prefetch warmup landed here first.
-        if let cached = Self.imageCache.object(forKey: cacheKey as NSString) {
-            layer.contents = cached.image
-            return
-        }
-
-        if displaysAsynchronously {
-            nonisolated(unsafe) let drawString = NSAttributedString(attributedString: string)
-            currentDrawTask = Task {
-                let cgImage = await Self.renderImage(
-                    drawString: drawString,
-                    size: size,
-                    scale: scale,
-                    appearance: layout.appearance
-                )
-                if Task.isCancelled { return }
-                if let cgImage {
-                    Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
+        case let .pending(lease):
+            currentRasterLease = lease
+            currentDrawTask = Task { [weak self] in
+                let image = await lease.value()
+                guard !Task.isCancelled,
+                      let self,
+                      self.configurationGeneration == generation,
+                      self.currentRasterLease === lease,
+                      self.currentRasterKey == key else {
+                    lease.release()
+                    return
                 }
-                self.layer.contents = cgImage
+
+                lease.release()
+                self.currentRasterLease = nil
+                self.currentDrawTask = nil
+                self.layer.contents = image
+                self.mountedRasterKey = image.map { _ in key }
             }
-        } else {
-            let cgImage = Self.renderImageSync(
-                drawString: string,
-                size: size,
-                scale: scale,
-                appearance: layout.appearance
-            )
-            if let cgImage {
-                Self.imageCache.setObject(CGImageWrapper(cgImage), forKey: cacheKey as NSString)
-            }
-            self.layer.contents = cgImage
         }
     }
 
@@ -464,131 +427,6 @@ class AsyncTextView: UIView {
         CATransaction.commit()
     }
 
-    // MARK: - Rendering
-
-    /// Renders synchronously on the calling thread. Used when `displaysAsynchronously` is `false`.
-    private static func renderImageSync(
-        drawString: NSAttributedString,
-        size: CGSize,
-        scale: CGFloat,
-        appearance: MarkdownAppearance
-    ) -> CGImage? {
-        let traits = renderingTraits(appearance: appearance, scale: scale)
-        let format = UIGraphicsImageRendererFormat(for: traits)
-        format.scale = scale
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        var renderedImage: UIImage?
-        traits.performAsCurrent {
-            renderedImage = renderer.image { _ in
-                drawAttributedString(drawString, in: CGRect(origin: .zero, size: size))
-            }
-        }
-        return renderedImage?.cgImage
-    }
-
-    /// Renders the attributed string into a bitmap on a background executor.
-    private static nonisolated func renderImage(
-        drawString: sending NSAttributedString,
-        size: CGSize,
-        scale: CGFloat,
-        appearance: MarkdownAppearance
-    ) async -> CGImage? {
-        let traits = renderingTraits(appearance: appearance, scale: scale)
-        let format = UIGraphicsImageRendererFormat(for: traits)
-        format.scale = scale
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        var renderedImage: UIImage?
-        traits.performAsCurrent {
-            renderedImage = renderer.image { _ in
-                drawAttributedString(drawString, in: CGRect(origin: .zero, size: size))
-            }
-        }
-        return renderedImage?.cgImage
-    }
-
-    private static nonisolated func renderingTraits(
-        appearance: MarkdownAppearance,
-        scale: CGFloat
-    ) -> UITraitCollection {
-        let interfaceStyle: UIUserInterfaceStyle = appearance == .dark ? .dark : .light
-        return UITraitCollection(traitsFrom: [
-            UITraitCollection(userInterfaceStyle: interfaceStyle),
-            UITraitCollection(displayScale: scale)
-        ])
-    }
-
-    // Explicitly `nonisolated`: as a `private static` member of a `UIView`
-    // subclass this would otherwise infer `@MainActor` isolation, forcing an
-    // implicit main-actor hop from the synchronous, non-async
-    // `UIGraphicsImageRenderer.image(_:)` closure in `renderImage` below —
-    // which is not possible without `await` and triggers a compile error.
-    // The function only touches its parameters and TextKit locals, never
-    // main-actor state, so it is safe to run on whatever background executor
-    // the caller is isolated to.
-    private static nonisolated func drawAttributedString(
-        _ drawString: NSAttributedString,
-        in drawRect: CGRect
-    ) {
-        let textStorage = NSTextStorage(attributedString: drawString)
-        let layoutManager = NSLayoutManager()
-        let textContainer = NSTextContainer(size: drawRect.size)
-
-        textContainer.lineFragmentPadding = 0
-        textContainer.maximumNumberOfLines = 0
-        layoutManager.addTextContainer(textContainer)
-        textStorage.addLayoutManager(layoutManager)
-
-        let glyphRange = layoutManager.glyphRange(for: textContainer)
-        // Cancellation checkpoint: glyphRange computation is the heaviest
-        // step. Skip the actual paint if the cell was reused / view moved on.
-        // `Task.isCancelled` is `false` outside a Task, so the sync path is
-        // unaffected.
-        if Task.isCancelled { return }
-        layoutManager.drawBackground(forGlyphRange: glyphRange, at: drawRect.origin)
-        layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: drawRect.origin)
-    }
-
-    // MARK: - Custom Draw Rendering
-
-    /// Renders synchronously using a custom draw closure.
-    private static func renderImageSyncCustom(
-        customDraw: @Sendable (CGContext, CGSize) -> Void,
-        size: CGSize,
-        scale: CGFloat,
-        appearance: MarkdownAppearance
-    ) -> CGImage? {
-        let traits = renderingTraits(appearance: appearance, scale: scale)
-        let format = UIGraphicsImageRendererFormat(for: traits)
-        format.scale = scale
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        var renderedImage: UIImage?
-        traits.performAsCurrent {
-            renderedImage = renderer.image { rendererContext in
-                customDraw(rendererContext.cgContext, size)
-            }
-        }
-        return renderedImage?.cgImage
-    }
-
-    /// Renders using a custom draw closure on a background executor.
-    private static nonisolated func renderImageCustom(
-        customDraw: @Sendable (CGContext, CGSize) -> Void,
-        size: CGSize,
-        scale: CGFloat,
-        appearance: MarkdownAppearance
-    ) async -> CGImage? {
-        let traits = renderingTraits(appearance: appearance, scale: scale)
-        let format = UIGraphicsImageRendererFormat(for: traits)
-        format.scale = scale
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        var renderedImage: UIImage?
-        traits.performAsCurrent {
-            renderedImage = renderer.image { rendererContext in
-                customDraw(rendererContext.cgContext, size)
-            }
-        }
-        return renderedImage?.cgImage
-    }
 }
 
 /// A read-only native text surface that keeps MarkdownKit styling while enabling

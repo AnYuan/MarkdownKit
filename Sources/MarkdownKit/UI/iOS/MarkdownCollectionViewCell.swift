@@ -22,7 +22,50 @@ class MarkdownCollectionViewCell: UICollectionViewCell {
     var onCheckboxToggle: ((CheckboxInteractionData) -> Void)?
     var onDetailsTap: ((DetailsNode) -> Void)?
     var theme: Theme = .default
-    var textInteractionMode: MarkdownTextInteractionMode = .asyncReadOnly
+    var textInteractionMode: MarkdownTextInteractionMode = .asyncReadOnly {
+        didSet {
+            guard oldValue != textInteractionMode,
+                  let currentLayout,
+                  Self.shouldUseSelectableTextView(
+                    for: currentLayout,
+                    mode: textInteractionMode
+                  ) else {
+                return
+            }
+            cancelHostedRasterRendering()
+        }
+    }
+    var rasterPipeline: RasterImagePipeline = .shared {
+        didSet {
+            guard oldValue !== rasterPipeline else { return }
+            applyRasterDependencies(to: hostedView)
+        }
+    }
+    var resolvedDisplayScale: CGFloat? {
+        didSet {
+            guard oldValue != resolvedDisplayScale else { return }
+            applyRasterDependencies(to: hostedView)
+        }
+    }
+
+    private var currentLayout: LayoutResult?
+
+    var rasterPipelineForTesting: RasterImagePipeline? {
+        get { rasterPipeline }
+        set { rasterPipeline = newValue ?? .shared }
+    }
+
+    var displayScaleOverrideForTesting: CGFloat? {
+        get { resolvedDisplayScale }
+        set { resolvedDisplayScale = newValue }
+    }
+
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        if superview == nil {
+            cancelHostedRasterRendering()
+        }
+    }
 
     override func prepareForReuse() {
         super.prepareForReuse()
@@ -41,6 +84,7 @@ class MarkdownCollectionViewCell: UICollectionViewCell {
         onLinkTap = nil
         onCheckboxToggle = nil
         onDetailsTap = nil
+        currentLayout = nil
 
         self.isAccessibilityElement = false
         self.accessibilityLabel = nil
@@ -51,14 +95,17 @@ class MarkdownCollectionViewCell: UICollectionViewCell {
 
     /// Mounts the pre-calculated `LayoutResult` onto the main thread.
     func configure(with layout: LayoutResult) {
+        currentLayout = layout
         switch layout.node {
         case is CodeBlockNode, is DiagramNode:
             if let codeView = hostedView as? AsyncCodeView {
                 codeView.frame = CGRect(origin: .zero, size: layout.size)
+                applyRasterDependencies(to: codeView)
                 codeView.configure(with: layout, theme: theme)
             } else {
-                hostedView?.removeFromSuperview()
+                removeHostedView()
                 let codeView = AsyncCodeView(frame: CGRect(origin: .zero, size: layout.size), theme: theme)
+                applyRasterDependencies(to: codeView)
                 self.contentView.addSubview(codeView)
                 self.hostedView = codeView
                 codeView.configure(with: layout, theme: theme)
@@ -73,7 +120,7 @@ class MarkdownCollectionViewCell: UICollectionViewCell {
                     textView.onCheckboxToggle = onCheckboxToggle
                     textView.configure(with: layout)
                 } else {
-                    hostedView?.removeFromSuperview()
+                    removeHostedView()
                     let textView = SelectableTextView(frame: CGRect(origin: .zero, size: layout.size))
                     textView.isAccessibilityElement = false
                     textView.onLinkTap = onLinkTap
@@ -84,13 +131,15 @@ class MarkdownCollectionViewCell: UICollectionViewCell {
                 }
             } else if let textView = hostedView as? AsyncTextView {
                 textView.frame = CGRect(origin: .zero, size: layout.size)
+                applyRasterDependencies(to: textView)
                 textView.theme = theme
                 textView.onLinkTap = onLinkTap
                 textView.onCheckboxToggle = onCheckboxToggle
                 textView.configure(with: layout)
             } else {
-                hostedView?.removeFromSuperview()
+                removeHostedView()
                 let textView = AsyncTextView(frame: CGRect(origin: .zero, size: layout.size))
+                applyRasterDependencies(to: textView)
                 textView.theme = theme
                 textView.onLinkTap = onLinkTap
                 textView.onCheckboxToggle = onCheckboxToggle
@@ -116,9 +165,51 @@ class MarkdownCollectionViewCell: UICollectionViewCell {
     }
 
     private func shouldUseSelectableTextView(for layout: LayoutResult) -> Bool {
-        textInteractionMode == .selectableNative
+        Self.shouldUseSelectableTextView(for: layout, mode: textInteractionMode)
+    }
+
+    static func shouldUseSelectableTextView(
+        for layout: LayoutResult,
+        mode: MarkdownTextInteractionMode
+    ) -> Bool {
+        mode == .selectableNative
+            && !(layout.node is CodeBlockNode)
+            && !(layout.node is DiagramNode)
             && layout.customDraw == nil
             && layout.attributedString?.length ?? 0 > 0
+    }
+
+    func cancelHostedRasterRendering() {
+        switch hostedView {
+        case let codeView as AsyncCodeView:
+            codeView.cancelRendering()
+        case let textView as AsyncTextView:
+            textView.cancelRendering()
+        default:
+            break
+        }
+    }
+
+    private func applyRasterDependencies(to view: UIView?) {
+        switch view {
+        case let codeView as AsyncCodeView:
+            codeView.rasterPipeline = rasterPipeline
+            codeView.displayScaleOverride = resolvedDisplayScale
+        case let textView as AsyncTextView:
+            textView.rasterPipeline = rasterPipeline
+            textView.displayScaleOverride = resolvedDisplayScale
+        default:
+            break
+        }
+    }
+
+    private func removeHostedView() {
+        cancelHostedRasterRendering()
+        if let selectableTextView = hostedView as? SelectableTextView {
+            selectableTextView.prepareForReuse()
+        }
+        hostedView?.removeFromSuperview()
+        hostedView = nil
     }
 }
 #endif
