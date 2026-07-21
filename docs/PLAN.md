@@ -190,9 +190,11 @@ The review predated the Evidence-Driven Performance Wave; several of its finding
 - Identical collection snapshot suppression and variant-scoped reconfigure → P05.
 - Hard-coded @2x raster prefetch → P06.
 - Unchanged-content width relayout/highlight/arithmetic reuse → P07.
+- Lazy accessibility metadata → P14.1 closed without code: corrected profiling
+  measured it at about 0.9%, and laziness would move mounted-row scans to main.
 
 The remaining findings fall into four groups:
 1. **Streaming structure**: the growing block still changes `StableNodeIdentity` every tick (Diffable delete+insert instead of reconfigure); the whole document is still re-parsed on every text change; when the relevant syntax *is* present, Details/Diagram/Math still walk the AST separately (Math three times); Mermaid re-runs `mermaid.initialize` per render and caches intermediate streamed sources; the MathJax engine is cold per solver instance.
-2. **Cold layout taxes**: eager `AccessibilityMetadata.make` per `LayoutResult`; PreparedText cache keys that copy and hash the full string on every lookup plus always-on stats locks; one global TextKit lock with per-call stack allocation, and arithmetic routing limited to paragraph/header. P14.7 keeps the residual direct PreparedText key/stats/structured-measurer-key cleanup pending.
+2. **Cold layout taxes**: PreparedText cache keys that copy and hash the full string on every lookup plus always-on stats locks; one global TextKit lock with per-call stack allocation, and arithmetic routing limited to paragraph/header. P14.7 keeps the residual direct PreparedText key/stats/structured-measurer-key cleanup pending.
 3. **UI**: a per-byte async image download loop; macOS main-thread `ensureLayout` per item configure; per-body-evaluation theme fingerprint resolution in `MarkdownView`.
 4. **Hygiene**: `LayoutCache` lacks a `totalCostLimit`; O(n) LRU eviction in `FontTraitResolver`; the cache-reuse requirement for one-shot `MarkdownKitEngine.layout` hosts is undocumented.

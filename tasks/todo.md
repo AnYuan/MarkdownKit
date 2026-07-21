@@ -929,14 +929,15 @@ P14.10 → P14.14 → P14.4 last (largest scope, benefits already reduced by
 earlier items).
 
 ### Cold layout quick wins
-- [ ] P14.1 `perf: make accessibility metadata lazy`
-  Every solver-built `LayoutResult` eagerly runs `AccessibilityMetadata.make`
-  (a `.markdownCheckbox` enumeration per block) at construction time —
-  historically attributed as the dominant cost of the archival
-  `solve(1000-lines)` Debug regression (`docs/BENCHMARK_POST_PHASE_6.md`).
-  Compute on first access with a cached box (or only when accessibility is
-  active) while keeping main-thread cell configure scan-free. File:
-  `Layout/LayoutResult.swift` (~117).
+- [x] P14.1 `perf: make accessibility metadata lazy` → closed as disproven;
+  no production change. The corrected isolated Release profile places
+  `AccessibilityMetadata.make` at about 0.9% of all samples, not the dominant
+  cost claimed by the archival Debug/composite run. `LayoutSolver` produces
+  one unmounted document root plus the top-level rows consumed by collection
+  cells; laziness would save only the root while moving every mounted row's
+  first checkbox scan onto the main thread. Keep eager off-main metadata so
+  platform configure remains O(1). Reconsider only with new profiling and a
+  builder-produced eager sidecar, not a mutable lazy box.
 - [ ] P14.2 `perf: download images in chunks, not per byte`
   `ImageResourceLoader` accumulates `for try await byte in bytes {
   data.append(byte) }` — millions of AsyncSequence suspensions per MB. Use
