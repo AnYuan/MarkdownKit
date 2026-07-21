@@ -1120,11 +1120,50 @@ earlier items).
   required before introducing a different 0.5pt comparison boundary.
 
 ### Hygiene
-- [ ] P14.12 `perf: bound LayoutCache by cost`
-  Set `totalCostLimit` (cost = attributed string length) alongside
-  `countLimit: 100_000` — 100k entries retaining attributed strings and
-  custom-draw closures is not "single-digit megabytes" as the comment
-  claims. File: `Layout/LayoutCache.swift` (~168).
+- [x] P14.12 `perf: bound LayoutCache by cost`
+  Add an advisory retained-cost budget alongside `countLimit: 100_000` without
+  changing public API, cache identity, lookup statistics, or transactional
+  write-batch behavior. `LayoutResult` precomputes one immutable O(1)-to-read
+  estimate from a fixed entry charge, the existing 64-bytes-per-UTF-16-unit
+  attributed-content heuristic, direct child aggregate costs/array storage,
+  and a conservative custom-draw size charge. The shared cache uses a 64 MiB
+  default, and a single entry larger than a configured positive limit is not
+  retained. `NSCache` count/cost limits remain explicitly advisory rather than
+  a strict RSS guarantee.
+  - [x] P14.12-A add a temporary isolated Release batch-store benchmark and
+    record five pre-change processes. Freeze a no-material-regression threshold
+    before production implementation. The exact 16,384-store workload measured
+    averages of 3.86, 3.54, 3.52, 3.45, and 3.48ms (median 3.52ms); p95 values
+    were 4.16, 3.64, 3.61, 3.50, and 3.56ms (median 3.61ms). The post-change
+    median average must be <=4.05ms (no more than 15% slower).
+  - [x] P14.12-B implement the precomputed saturating cost estimate, preserve the
+    existing public `init(countLimit:)`, add only an internal injectable cost
+    limit for deterministic tests, forward the estimate to
+    `NSCache.setObject(..., cost:)`, and skip individually oversized entries.
+  - [x] P14.12-C add deterministic contracts for default/custom limits, positive
+    and scaling estimates, child aggregation, custom drawing, saturation,
+    oversized direct/batched writes, stable-identity copies, immutable
+    attributed payload/cost preservation, and unchanged
+    clear/count/concurrency behavior. Record five post-change benchmark
+    processes and remove the temporary benchmark. Post-change averages were
+    3.82, 3.63, 3.48, 3.75, and 3.67ms (median 3.67ms, 4.3% above the 3.52ms
+    pre-change median and below the 4.05ms ceiling); p95 values were 4.19, 3.79,
+    3.56, 3.96, and 3.83ms (median 3.83ms). The temporary benchmark is removed.
+  - [x] P14.12-D update directly related cache documentation, complete multi-role
+    review and all relevant gates, then commit and push atomically.
+    Review found and fixed mutable attributed payloads that could invalidate a
+    precomputed cost after insertion, plus redundant payload freezing/cost
+    recomputation during identity-only restamping. Conservative parent/child
+    overlap is intentional and documented because either entry independently
+    retains the subtree. Final validation: 27 focused tests, 614 fast tests,
+    633-test documentation freshness, package build/describe, 10 public API
+    smoke tests, provenance, unchanged macOS API (453 symbols / 599
+    relationships), unchanged iOS APIs on both Simulator architectures
+    (454 / 610), both four-test snapshot contracts, exactly 674 iOS XCTest tests
+    plus one app-hosted real-WebKit Mermaid smoke, and all 13 isolated Release
+    workloads pass. Final review found no material issue.
+  Files: `Layout/LayoutCache.swift`, `Layout/LayoutResult.swift`,
+  `LayoutCacheEdgeCaseTests.swift`, and temporary `BenchmarkCacheTests.swift`.
 - [ ] P14.13 `perf: O(1) LRU eviction in FontTraitResolver`
   Eviction uses `Array.removeFirst()` (O(n) shift). Fine at capacity 256;
   cheap to fix while touching the file. File:

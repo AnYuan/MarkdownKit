@@ -44,7 +44,7 @@ cd "$ROOT_DIR"
 
 SCHEME="MarkdownKit-Package"
 TEST_TARGET="MarkdownKitTests"
-EXPECTED_IOS_TEST_COUNT=662
+EXPECTED_IOS_TEST_COUNT=674
 WORKSPACE_DIR="$ROOT_DIR/build/ios-package-workspace"
 BUILD_LOG_DIR="$ROOT_DIR/build"
 LOG_FILE="$BUILD_LOG_DIR/ios-verify-xcodebuild.log"

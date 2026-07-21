@@ -61,6 +61,10 @@ public struct LayoutResult {
     /// attributed string. Kept separate from pixel-only rendering identity.
     internal let interactionFingerprint: Int?
 
+    /// Advisory retained-cost estimate used by `LayoutCache`.
+    /// Computed once so cache insertion remains O(1).
+    internal let estimatedCacheCost: Int
+
     /// Creates a host-supplied render payload. MarkdownKit derives diff and
     /// redraw metadata internally; opaque custom drawing closures are
     /// conservatively treated as a fresh render variant on each construction.
@@ -104,9 +108,10 @@ public struct LayoutResult {
         appearance: MarkdownAppearance = .light,
         renderFingerprint: Int? = nil
     ) {
+        let frozenAttributedString = attributedString.map(NSAttributedString.init(attributedString:))
         self.node = node
         self.size = size
-        self.attributedString = attributedString
+        self.attributedString = frozenAttributedString
         self.children = children
         self.customDraw = customDraw
         // Default to a top-level (empty-path) identity. `LayoutSolver` overrides
@@ -114,26 +119,36 @@ public struct LayoutResult {
         self.stableIdentity = stableIdentity
             ?? StableNodeIdentity(contentFingerprint: node.contentFingerprint, pathHash: 0)
         self.accessibility = accessibility
-            ?? AccessibilityMetadata.make(for: node, attributedString: attributedString)
+            ?? AccessibilityMetadata.make(for: node, attributedString: frozenAttributedString)
         self.appearance = appearance
         self.renderFingerprint = renderFingerprint ?? node.contentFingerprint
         self.interactionFingerprint = node._interactionFingerprint
+        self.estimatedCacheCost = LayoutCacheCostEstimator.estimate(
+            attributedString: frozenAttributedString,
+            children: children,
+            size: size,
+            hasCustomDraw: customDraw != nil
+        )
+    }
+
+    private init(copying result: LayoutResult, stableIdentity: StableNodeIdentity) {
+        node = result.node
+        size = result.size
+        attributedString = result.attributedString
+        children = result.children
+        customDraw = result.customDraw
+        self.stableIdentity = stableIdentity
+        accessibility = result.accessibility
+        appearance = result.appearance
+        renderFingerprint = result.renderFingerprint
+        interactionFingerprint = result.interactionFingerprint
+        estimatedCacheCost = result.estimatedCacheCost
     }
 
     /// Returns a copy with its module-owned diffable identity replaced.
     func withStableIdentity(_ identity: StableNodeIdentity) -> LayoutResult {
         guard stableIdentity != identity else { return self }
-        return LayoutResult(
-            node: node,
-            size: size,
-            attributedString: attributedString,
-            children: children,
-            customDraw: customDraw,
-            stableIdentity: identity,
-            accessibility: accessibility,
-            appearance: appearance,
-            renderFingerprint: renderFingerprint
-        )
+        return LayoutResult(copying: self, stableIdentity: identity)
     }
 
     func positionedAtTopLevel(index: Int) -> LayoutResult {
@@ -267,6 +282,68 @@ public struct LayoutResult {
             hasher.combine(String(reflecting: type(of: value)))
             hasher.combine(String(describing: value))
         }
+    }
+}
+
+enum LayoutCacheCostEstimator {
+    private static let baseEntryCost = 256
+    private static let attributedStringUnitCost = 64
+    private static let customDrawClosureCost = 1_024
+    private static let customDrawSquarePointCost = 4
+
+    static func estimate(
+        attributedString: NSAttributedString?,
+        children: [LayoutResult],
+        size: CGSize,
+        hasCustomDraw: Bool
+    ) -> Int {
+        var cost = baseEntryCost
+        cost = saturatingAdd(
+            cost,
+            saturatingMultiply(attributedString?.length ?? 0, attributedStringUnitCost)
+        )
+        cost = saturatingAdd(
+            cost,
+            saturatingMultiply(children.count, MemoryLayout<LayoutResult>.stride)
+        )
+        // A parent independently retains its complete child tree even when the
+        // solver also caches those children as separate entries. Charging the
+        // overlap is deliberate: otherwise an evicted child entry could leave a
+        // near-zero-cost root retaining the same subtree.
+        for child in children {
+            cost = saturatingAdd(cost, child.estimatedCacheCost)
+        }
+
+        if hasCustomDraw {
+            cost = saturatingAdd(cost, customDrawClosureCost)
+            cost = saturatingAdd(cost, customDrawGeometryCost(for: size))
+        }
+        return cost
+    }
+
+    static func saturatingAdd(_ lhs: Int, _ rhs: Int) -> Int {
+        let (value, overflow) = lhs.addingReportingOverflow(rhs)
+        return overflow ? .max : value
+    }
+
+    static func saturatingMultiply(_ lhs: Int, _ rhs: Int) -> Int {
+        let (value, overflow) = lhs.multipliedReportingOverflow(by: rhs)
+        return overflow ? .max : value
+    }
+
+    static func customDrawGeometryCost(for size: CGSize) -> Int {
+        let width = Double(size.width)
+        let height = Double(size.height)
+        guard width.isFinite, height.isFinite, width >= 0, height >= 0 else {
+            return .max
+        }
+
+        let area = width * height
+        guard area.isFinite, area >= 0,
+              let roundedSquarePoints = Int(exactly: area.rounded(.up)) else {
+            return .max
+        }
+        return saturatingMultiply(roundedSquarePoints, customDrawSquarePointCost)
     }
 }
 

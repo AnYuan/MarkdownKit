@@ -50,6 +50,14 @@ rendering-variant fingerprint. The interaction fingerprint invalidates cached ca
 when source ranges or source URLs change without changing semantic stable identity or pixel-render
 identity. Collection views answer cell-size queries from already-computed `LayoutResult.size`; a
 changed width, rendering variant, or visible interaction identity can require new layout work.
+The default limits remain a `countLimit` of 100,000 entries plus a 64 MiB `totalCostLimit`.
+`LayoutResult` precomputes an O(1)-to-read saturating retained-cost estimate from a fixed entry
+charge, frozen attributed UTF-16 length × 64, direct child array/subtree estimates, and a
+conservative custom-draw size cost. Parent and child entries may deliberately charge shared
+subtrees more than once because either entry independently retains that tree. These are advisory
+`NSCache` pressure hints rather than a strict LRU policy or exact unique-heap/RSS bound, but a
+single entry whose estimated cost exceeds a positive configured limit is deterministically not
+retained.
 Coordinator-cancellable solves stage cache misses in an invocation-local write batch. Staged
 entries serve duplicate nodes during that solve, are discarded if cancellation is observed, and
 commit child-before-parent only after the complete root result succeeds.

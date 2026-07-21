@@ -217,6 +217,254 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
         XCTAssertNotNil(cache.getLayout(for: node2, constrainedToWidth: 400))
     }
 
+    // MARK: - Retained-cost budget
+
+    func testCacheDefaultLimits() {
+        let cache = LayoutCache()
+
+        XCTAssertEqual(cache.countLimitForTesting, 100_000)
+        XCTAssertEqual(cache.totalCostLimitForTesting, 64 * 1_024 * 1_024)
+    }
+
+    func testCacheCustomAndNegativeLimitsAreNormalized() {
+        let custom = LayoutCache(countLimit: 7, totalCostLimit: 12_345)
+        XCTAssertEqual(custom.countLimitForTesting, 7)
+        XCTAssertEqual(custom.totalCostLimitForTesting, 12_345)
+
+        let negative = LayoutCache(countLimit: -7, totalCostLimit: -12_345)
+        XCTAssertEqual(negative.countLimitForTesting, 0)
+        XCTAssertEqual(negative.totalCostLimitForTesting, 0)
+
+        let unlimited = LayoutCache(countLimit: 0, totalCostLimit: 0)
+        XCTAssertEqual(unlimited.countLimitForTesting, 0)
+        XCTAssertEqual(unlimited.totalCostLimitForTesting, 0)
+    }
+
+    func testLayoutResultEmptyCostIsPositive() {
+        let result = LayoutResult(
+            node: DocumentNode(range: nil, children: []),
+            size: .zero
+        )
+
+        XCTAssertEqual(result.estimatedCacheCost, 256)
+        XCTAssertGreaterThan(result.estimatedCacheCost, 0)
+    }
+
+    func testAttributedStringCostUsesUTF16Length() {
+        let node = DocumentNode(range: nil, children: [])
+        let empty = LayoutResult(
+            node: node,
+            size: .zero,
+            attributedString: NSAttributedString(string: "")
+        )
+        let oneUnit = LayoutResult(
+            node: node,
+            size: .zero,
+            attributedString: NSAttributedString(string: "a")
+        )
+        let twoUnits = LayoutResult(
+            node: node,
+            size: .zero,
+            attributedString: NSAttributedString(string: "😀")
+        )
+
+        XCTAssertEqual(oneUnit.estimatedCacheCost - empty.estimatedCacheCost, 64)
+        XCTAssertEqual(twoUnits.estimatedCacheCost - empty.estimatedCacheCost, 2 * 64)
+    }
+
+    func testLayoutResultFreezesMutableAttributedStringAndCost() {
+        let node = DocumentNode(range: nil, children: [])
+        let source = NSMutableAttributedString(string: "before")
+        let result = LayoutResult(
+            node: node,
+            size: .zero,
+            attributedString: source
+        )
+        let estimatedCost = result.estimatedCacheCost
+
+        source.mutableString.setString(String(repeating: "x", count: 10_000))
+
+        XCTAssertEqual(result.attributedString?.string, "before")
+        XCTAssertEqual(result.estimatedCacheCost, estimatedCost)
+    }
+
+    func testChildCostsIncludeArrayStorageAndAggregatedSubtreeCost() {
+        let node = DocumentNode(range: nil, children: [])
+        let firstChild = LayoutResult(node: node, size: .zero)
+        let secondChild = LayoutResult(
+            node: node,
+            size: .zero,
+            attributedString: NSAttributedString(string: "child")
+        )
+        let parent = LayoutResult(
+            node: node,
+            size: .zero,
+            children: [firstChild, secondChild]
+        )
+        let childSum = firstChild.estimatedCacheCost + secondChild.estimatedCacheCost
+        let expectedParentOverhead = 256 + 2 * MemoryLayout<LayoutResult>.stride
+
+        XCTAssertGreaterThan(parent.estimatedCacheCost, firstChild.estimatedCacheCost)
+        XCTAssertGreaterThan(parent.estimatedCacheCost, childSum)
+        XCTAssertEqual(parent.estimatedCacheCost, childSum + expectedParentOverhead)
+    }
+
+    func testCustomDrawCostScalesWithFiniteDrawArea() {
+        let node = DocumentNode(range: nil, children: [])
+        let noDraw = LayoutResult(node: node, size: CGSize(width: 1, height: 1))
+        let smallDraw = LayoutResult(
+            node: node,
+            size: CGSize(width: 1, height: 1),
+            customDraw: { _, _ in }
+        )
+        let largeDraw = LayoutResult(
+            node: node,
+            size: CGSize(width: 10, height: 10),
+            customDraw: { _, _ in }
+        )
+
+        XCTAssertGreaterThan(smallDraw.estimatedCacheCost, noDraw.estimatedCacheCost)
+        XCTAssertGreaterThan(largeDraw.estimatedCacheCost, smallDraw.estimatedCacheCost)
+        XCTAssertEqual(
+            LayoutCacheCostEstimator.customDrawGeometryCost(
+                for: CGSize(width: 2.1, height: 3)
+            ),
+            28
+        )
+    }
+
+    func testCostEstimatorSaturatesArithmeticAndInvalidDrawGeometry() {
+        XCTAssertEqual(LayoutCacheCostEstimator.saturatingAdd(.max, 1), .max)
+        XCTAssertEqual(LayoutCacheCostEstimator.saturatingMultiply(.max, 2), .max)
+
+        let invalidSizes = [
+            CGSize(width: CGFloat.nan, height: 1),
+            CGSize(width: CGFloat.infinity, height: 1),
+            CGSize(width: -1, height: 1),
+            CGSize(width: CGFloat.greatestFiniteMagnitude, height: 2)
+        ]
+        for size in invalidSizes {
+            XCTAssertEqual(
+                LayoutCacheCostEstimator.customDrawGeometryCost(for: size),
+                .max
+            )
+        }
+
+        let saturatedResult = LayoutResult(
+            node: DocumentNode(range: nil, children: []),
+            size: CGSize(width: CGFloat.infinity, height: 1),
+            customDraw: { _, _ in }
+        )
+        XCTAssertEqual(saturatedResult.estimatedCacheCost, .max)
+    }
+
+    func testStableIdentityCopiesPreserveEstimatedCost() {
+        let child = LayoutResult(
+            node: DocumentNode(range: nil, children: []),
+            size: CGSize(width: 4, height: 5),
+            attributedString: NSAttributedString(string: "child"),
+            customDraw: { _, _ in }
+        )
+        let result = LayoutResult(
+            node: DocumentNode(range: nil, children: []),
+            size: CGSize(width: 20, height: 10),
+            attributedString: NSAttributedString(string: "parent"),
+            children: [child]
+        )
+
+        let restamped = result.withStableIdentity(
+            StableNodeIdentity(contentFingerprint: 123, pathHash: 456)
+        )
+        let positioned = result.positionedAtTopLevel(index: 3)
+
+        XCTAssertEqual(restamped.estimatedCacheCost, result.estimatedCacheCost)
+        XCTAssertEqual(positioned.estimatedCacheCost, result.estimatedCacheCost)
+        XCTAssertTrue(restamped.attributedString === result.attributedString)
+        XCTAssertTrue(positioned.attributedString === result.attributedString)
+    }
+
+    func testEntryAtCostLimitIsRetainedAndOversizedEntryIsSkipped() {
+        let node = DocumentNode(range: nil, children: [])
+        let result = LayoutResult(
+            node: node,
+            size: .zero,
+            attributedString: NSAttributedString(string: "budgeted")
+        )
+
+        let exactCache = LayoutCache(
+            countLimit: 10,
+            totalCostLimit: result.estimatedCacheCost
+        )
+        exactCache.setLayout(result, constrainedToWidth: 320)
+        XCTAssertNotNil(exactCache.getLayout(for: node, constrainedToWidth: 320))
+
+        let undersizedCache = LayoutCache(
+            countLimit: 10,
+            totalCostLimit: result.estimatedCacheCost - 1
+        )
+        undersizedCache.setLayout(result, constrainedToWidth: 320)
+        XCTAssertNil(undersizedCache.getLayout(for: node, constrainedToWidth: 320))
+    }
+
+    func testZeroTotalCostLimitRetainsOtherwiseOversizedEntry() {
+        let node = DocumentNode(range: nil, children: [])
+        let result = LayoutResult(
+            node: node,
+            size: .zero,
+            attributedString: NSAttributedString(string: String(repeating: "x", count: 1_000))
+        )
+        let cache = LayoutCache(countLimit: 10, totalCostLimit: 0)
+
+        cache.setLayout(result, constrainedToWidth: 320)
+
+        XCTAssertNotNil(cache.getLayout(for: node, constrainedToWidth: 320))
+    }
+
+    func testWriteBatchKeepsOversizedEntryLocalButPublishesFittingEntry() {
+        let oversizedNode = TextNode(range: nil, text: "oversized")
+        let fittingNode = TextNode(range: nil, text: "fitting")
+        let oversized = LayoutResult(
+            node: oversizedNode,
+            size: .zero,
+            attributedString: NSAttributedString(string: "too large")
+        )
+        let fitting = LayoutResult(node: fittingNode, size: .zero)
+        let cache = LayoutCache(
+            countLimit: 10,
+            totalCostLimit: fitting.estimatedCacheCost
+        )
+        var batch = cache.makeWriteBatch()
+
+        batch.stage(oversized, constrainedToWidth: 320, variantHash: 7)
+        batch.stage(fitting, constrainedToWidth: 320, variantHash: 7)
+
+        XCTAssertEqual(
+            batch.getLayout(
+                for: oversizedNode,
+                constrainedToWidth: 320,
+                variantHash: 7
+            )?.attributedString?.string,
+            "too large"
+        )
+
+        batch.commit()
+
+        XCTAssertNil(
+            cache.getLayout(
+                for: oversizedNode,
+                constrainedToWidth: 320,
+                variantHash: 7
+            )
+        )
+        XCTAssertNotNil(
+            cache.getLayout(
+                for: fittingNode,
+                constrainedToWidth: 320,
+                variantHash: 7
+            )
+        )
+    }
+
     func testClearRemovesAllEntries() {
         let cache = LayoutCache()
         let node = DocumentNode(range: nil, children: [])

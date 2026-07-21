@@ -17,8 +17,10 @@ This document is a practical snapshot of the current repository, with emphasis o
   - Source files (`Sources/MarkdownKit/**/*.swift`): **91**
   - Test files (`Tests/MarkdownKitTests/*.swift`): **81**
   - Test-bearing files: **73**
-  - Static test methods: **721**
-  - macOS-discoverable tests: **621**
+  - Static test methods: **733**
+  - macOS-discoverable tests: **633**
+  - Fast correctness tests: **614**
+  - iOS XCTest tests: **674**
 
 ## 2. Build / Run / Test Commands
 
@@ -69,10 +71,10 @@ bash scripts/verify_benchmarks.sh
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **621** discoverable tests
+- `swift test list`: **633** discoverable tests
 - Last full `swift test`: **516 tests passed** on 2026-07-18
-- `verify_fast.sh`: **602** correctness tests
-- `verify_ios.sh`: **662** XCTest tests plus one app-hosted Mermaid PASS marker
+- `verify_fast.sh`: **614** correctness tests
+- `verify_ios.sh`: **674** XCTest tests plus one app-hosted Mermaid PASS marker
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -142,6 +144,7 @@ Primary files:
 
 Key facts:
 - `LayoutCache` keys are `node.contentFingerprint` + optional interaction fingerprint + rounded width + solver variant hash (theme/diagram/math/image policy/appearance inputs). The separate interaction identity covers source ranges and URLs captured by checkbox/details callbacks without changing semantic stable identity or pixel-render identity.
+- `LayoutCache` keeps its 100,000-entry limit and now also applies a 64 MiB advisory total-cost hint from each `LayoutResult`'s frozen, precomputed saturating retained-cost estimate; oversize entries above a positive configured limit are skipped deterministically. Parent/child entries conservatively charge overlapping retained subtrees, so the hint is not an exact unique-heap or RSS measurement.
 - The solver-owned `PreparedContentCache` is a strict 2,048-entry / 32 MiB estimated-cost LRU keyed by content + optional interaction + async/sync render variant + locale, excluding width. Prepared payloads freeze `NSAttributedString` and store textKit/codeInset/arithmetic `PreparedText` plans.
 - `AttributedStringBuilder` classifies block and inline structure once into an invocation-local flat operation program. Sequential async/sync materializers share structural behavior while keeping image, math, and diagram mode differences explicit.
 - `LayoutSolver` performs cache lookup before classifying a node into a shallow recipe, then shares immediate output, measurement, and `LayoutResult` assembly across its explicit async/sync envelopes.
@@ -199,7 +202,7 @@ High-value suites:
 - Mermaid backend contracts: `MermaidDiagramAdapterTests` uses real WebKit on
   macOS and a deterministic image driver on iOS; the iOS verification script
   adds a separate app-hosted public-`MarkdownView` Mermaid-fence smoke using
-  real WebKit after its 662 XCTest tests.
+  real WebKit after its 674 XCTest tests.
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`,
   `BenchmarkCacheTests`, `MarkdownRenderCoordinatorBenchmarkTests`, with
   13 canonical isolated Release workloads and the prepared-content relational

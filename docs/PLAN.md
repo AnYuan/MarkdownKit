@@ -41,7 +41,7 @@ package/build checks, macOS and iOS public API checks, provenance, fast and iOS 
 documentation freshness, visual and determinism snapshots, and benchmarks; `verify_all.sh --full`
 alone is not release validation.
 
-The iOS release gate is deliberately two-part: 662 app-less XCTest tests exercise Mermaid's
+The iOS release gate is deliberately two-part: 674 app-less XCTest tests exercise Mermaid's
 queue/cache/cancellation state machine through a deterministic image driver, then a separately
 assembled SwiftUI Simulator app proves that a Mermaid fence can traverse public `MarkdownView`
 and its registry-backed real-WebKit adapter.
@@ -209,8 +209,19 @@ to 3.09ms (92.5%) while preserving theme/appearance invalidation, raw width
 semantics, and solver configuration. Six focused coordinator contracts cover
 memoizer hits, appearance slots, theme replacement, and render submission.
 
+P14.12 added a 64 MiB advisory `LayoutCache.totalCostLimit` while keeping the
+100,000-entry limit, cache key identity, write-batch cancellation/commit
+behavior, public `init(countLimit:)`, and public API unchanged. `LayoutResult`
+now precomputes a saturating retained-cost estimate from a fixed entry charge,
+attributed UTF-16 length, direct child/subtree estimates, and conservative
+custom-draw size cost, and entries larger than a positive configured limit are
+deterministically not retained. The temporary benchmark was removed after the
+isolated pre median average moved from 3.52ms to 3.67ms (+4.3%), still within
+the 4.05ms threshold; 27 focused tests pass, including immutable attributed
+payload/cost preservation after source mutation.
+
 The remaining findings fall into four groups:
 1. **Streaming structure**: the growing block still changes `StableNodeIdentity` every tick (Diffable delete+insert instead of reconfigure); the whole document is still re-parsed on every text change; when the relevant syntax *is* present, Details/Diagram/Math still walk the AST separately (Math three times); Mermaid re-runs `mermaid.initialize` per render and caches intermediate streamed sources; the MathJax engine is cold per solver instance.
 2. **Cold layout taxes**: PreparedText cache keys that copy and hash the full string on every lookup plus always-on stats locks; one global TextKit lock with per-call stack allocation, and arithmetic routing limited to paragraph/header. P14.7 keeps the residual direct PreparedText key/stats/structured-measurer-key cleanup pending.
 3. **UI**: macOS main-thread `ensureLayout` per item configure.
-4. **Hygiene**: `LayoutCache` lacks a `totalCostLimit`; O(n) LRU eviction in `FontTraitResolver`; the cache-reuse requirement for one-shot `MarkdownKitEngine.layout` hosts is undocumented.
+4. **Hygiene**: O(n) LRU eviction in `FontTraitResolver`; the cache-reuse requirement for one-shot `MarkdownKitEngine.layout` hosts is undocumented.

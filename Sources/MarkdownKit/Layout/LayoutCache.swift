@@ -130,7 +130,10 @@ public final class LayoutCache: @unchecked Sendable {
 
     // MARK: - Storage
 
-    private let cache = NSCache<CacheKey, LayoutResultWrapper>()
+    private static let defaultTotalCostLimit = 64 * 1_024 * 1_024
+
+    private let cache: NSCache<CacheKey, LayoutResultWrapper>
+    private let configuredTotalCostLimit: Int
 
     // MARK: - Test diagnostics (do not use in production paths)
 
@@ -150,6 +153,14 @@ public final class LayoutCache: @unchecked Sendable {
         return missCountStorage
     }
 
+    var countLimitForTesting: Int {
+        cache.countLimit
+    }
+
+    var totalCostLimitForTesting: Int {
+        configuredTotalCostLimit
+    }
+
     func resetStatsForTesting() {
         statsLock.lock()
         hitCountStorage = 0
@@ -166,9 +177,19 @@ public final class LayoutCache: @unchecked Sendable {
     }
 
     public init(countLimit: Int = 100_000) {
-        // Limit cache to prevent memory pressure on massive documents.
-        // 100k layout models usually take single-digit megabytes since they are purely structs of CGRects.
-        cache.countLimit = countLimit
+        configuredTotalCostLimit = Self.defaultTotalCostLimit
+        cache = Self.makeCache(
+            countLimit: countLimit,
+            totalCostLimit: configuredTotalCostLimit
+        )
+    }
+
+    init(countLimit: Int, totalCostLimit: Int) {
+        configuredTotalCostLimit = max(0, totalCostLimit)
+        cache = Self.makeCache(
+            countLimit: countLimit,
+            totalCostLimit: configuredTotalCostLimit
+        )
     }
 
     func makeWriteBatch() -> WriteBatch {
@@ -206,8 +227,23 @@ public final class LayoutCache: @unchecked Sendable {
     }
 
     private func setLayout(_ result: LayoutResult, for key: Key) {
+        let cost = result.estimatedCacheCost
+        guard configuredTotalCostLimit == 0 || cost <= configuredTotalCostLimit else { return }
+
         let wrapper = LayoutResultWrapper(result)
-        cache.setObject(wrapper, forKey: CacheKey(key))
+        cache.setObject(wrapper, forKey: CacheKey(key), cost: cost)
+    }
+
+    private static func makeCache(
+        countLimit: Int,
+        totalCostLimit: Int
+    ) -> NSCache<CacheKey, LayoutResultWrapper> {
+        let cache = NSCache<CacheKey, LayoutResultWrapper>()
+        // NSCache count and cost limits are advisory pressure hints, not strict
+        // LRU bounds or guarantees about process resident memory.
+        cache.countLimit = max(0, countLimit)
+        cache.totalCostLimit = max(0, totalCostLimit)
+        return cache
     }
 
     private func recordLookup(hit: Bool) {
