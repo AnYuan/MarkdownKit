@@ -5,10 +5,18 @@ import XCTest
 ///
 /// Baseline source: `Tests/MarkdownKitTests/Fixtures/benchmark_baseline.json`, the
 /// single machine-readable baseline shared with `scripts/render_benchmark_baseline.py`
-/// (which renders it into `docs/BENCHMARK_BASELINE.md`). No timing value, policy
-/// value, or guarded key list is duplicated in this file — everything is decoded
-/// through `BenchmarkBaselineLoader`.
+/// (which renders it into `docs/BENCHMARK_BASELINE.md`). Absolute timing values
+/// and policies are decoded through `BenchmarkBaselineLoader`; same-process
+/// relational workloads keep only their exact key contracts here.
 enum BenchmarkRegressionGuard {
+
+    static let preparedContentRelayoutBudgetRatio = 0.60
+
+    static let preparedContentRelayoutExpectedKeys: Set<String> = [
+        "solve(cold-first)(large)",
+        "solve(width-sweep)(large)",
+        "solve(rebuild-sweep)(large)"
+    ]
 
     // MARK: - Focused entry points
 
@@ -97,6 +105,97 @@ enum BenchmarkRegressionGuard {
             group: .coordinatorStreaming,
             baseline: baseline,
             isGuardedFamily: { $0.label == "latest-settled" },
+            file: file,
+            line: line
+        )
+    }
+
+    static func assertPreparedContentRelayout(
+        results: [BenchmarkResult],
+        widthCount: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard widthCount > 1 else {
+            XCTFail(
+                "Prepared-content relayout guard requires widthCount > 1; got \(widthCount).",
+                file: file,
+                line: line
+            )
+            return
+        }
+
+        var measuredByKey: [String: BenchmarkResult] = [:]
+        for result in results {
+            let resultKey = key(for: result)
+            if measuredByKey.updateValue(result, forKey: resultKey) != nil {
+                XCTFail(
+                    "Prepared-content relayout produced duplicate result key \(resultKey).",
+                    file: file,
+                    line: line
+                )
+                return
+            }
+        }
+        let measuredKeys = Set(measuredByKey.keys)
+        guard measuredKeys == preparedContentRelayoutExpectedKeys else {
+            XCTFail(
+                """
+                Prepared-content relayout workload keys mismatch: expected \
+                \(preparedContentRelayoutExpectedKeys.sorted()), got \(measuredKeys.sorted()).
+                """,
+                file: file,
+                line: line
+            )
+            return
+        }
+
+        guard let baseline = BenchmarkBaselineLoader.load(file: file, line: line) else { return }
+
+        let cold = measuredByKey["solve(cold-first)(large)"]!
+        let widthSweep = measuredByKey["solve(width-sweep)(large)"]!
+        let rebuildSweep = measuredByKey["solve(rebuild-sweep)(large)"]!
+
+        // Cold p95 is retained as five-process stage evidence. Persistent timing
+        // policy remains average-baseline guards plus this same-process relation.
+        for (keyName, result) in [
+            ("solve(cold-first)(large)", cold),
+            ("solve(width-sweep)(large)", widthSweep),
+            ("solve(rebuild-sweep)(large)", rebuildSweep)
+        ] {
+            assertHarnessMatches(result, key: keyName, baseline: baseline, file: file, line: line)
+        }
+
+        guard let avgBudget = preparedContentRelayoutBudget(rebuildMetric: rebuildSweep.avg, widthCount: widthCount),
+              let p95Budget = preparedContentRelayoutBudget(rebuildMetric: rebuildSweep.p95, widthCount: widthCount) else {
+            XCTFail(
+                "Prepared-content relayout guard could not derive a rebuild budget for widthCount \(widthCount).",
+                file: file,
+                line: line
+            )
+            return
+        }
+
+        XCTAssertLessThanOrEqual(
+            widthSweep.avg,
+            avgBudget,
+            """
+            Prepared-content relayout regression: solve(width-sweep)(large) avg \(fmt(widthSweep.avg)) \
+            exceeded 60% of solve(rebuild-sweep)(large) avg \(fmt(rebuildSweep.avg)) \
+            across \(widthCount) widths (budget \(fmt(avgBudget))).
+            """,
+            file: file,
+            line: line
+        )
+
+        XCTAssertLessThanOrEqual(
+            widthSweep.p95,
+            p95Budget,
+            """
+            Prepared-content relayout regression: solve(width-sweep)(large) p95 \(fmt(widthSweep.p95)) \
+            exceeded 60% of solve(rebuild-sweep)(large) p95 \(fmt(rebuildSweep.p95)) \
+            across \(widthCount) widths (budget \(fmt(p95Budget))).
+            """,
             file: file,
             line: line
         )
@@ -260,6 +359,11 @@ enum BenchmarkRegressionGuard {
                 line: line
             )
         }
+    }
+
+    static func preparedContentRelayoutBudget(rebuildMetric: Double, widthCount: Int) -> Double? {
+        guard widthCount > 1 else { return nil }
+        return rebuildMetric * preparedContentRelayoutBudgetRatio
     }
 
     /// Verifies a measured result was produced with the exact warmup/measure

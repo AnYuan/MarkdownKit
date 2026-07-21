@@ -41,7 +41,7 @@ package/build checks, macOS and iOS public API checks, provenance, fast and iOS 
 documentation freshness, visual and determinism snapshots, and benchmarks; `verify_all.sh --full`
 alone is not release validation.
 
-The iOS release gate is deliberately two-part: 583 app-less XCTest tests exercise Mermaid's
+The iOS release gate is deliberately two-part: 647 app-less XCTest tests exercise Mermaid's
 queue/cache/cancellation state machine through a deterministic image driver, then a separately
 assembled SwiftUI Simulator app proves that a Mermaid fence can traverse public `MarkdownView`
 and its registry-backed real-WebKit adapter.
@@ -97,7 +97,7 @@ Phase C note: this coordinator/details regression fix does **not** claim the sep
    - diagrams
    - task lists
    - math
-3. Add benchmark regression assertions with versioned baseline thresholds:
+3. Add benchmark regression assertions with versioned baseline thresholds and the relational prepared-content guard:
    - compare measured metrics against baseline budget
    - fail test on significant regression
    - keep baseline update path explicit
@@ -108,7 +108,7 @@ Phase C note: this coordinator/details regression fix does **not** claim the sep
 5. Normalize concurrency benchmark methodology:
    - align sequential vs concurrent measurement scope
    - include 1/2/4/8 worker scaling in full-report path
-6. Keep deep/full benchmark report feature-complete (no scenario drop between ad-hoc and full-report tests).
+6. Keep deep/full benchmark report feature-complete (no scenario drop between ad-hoc and full-report tests) across the 13 canonical isolated Release workloads.
 
 **Status (2026-02-27)**: In progress
 - [x] F1. Add missing fixtures and wire them into benchmark suites
@@ -188,9 +188,11 @@ The review predated the Evidence-Driven Performance Wave; several of its finding
 - Redundant whole-attributed-string appearance color resolution → P03.
 - Per-node unconditional `Task.yield()` replaced with bounded periodic yields on a cancellable path → P04.
 - Identical collection snapshot suppression and variant-scoped reconfigure → P05.
+- Hard-coded @2x raster prefetch → P06.
+- Unchanged-content width relayout/highlight/arithmetic reuse → P07.
 
 The remaining findings fall into four groups:
 1. **Streaming structure**: the growing block still changes `StableNodeIdentity` every tick (Diffable delete+insert instead of reconfigure); the whole document is still re-parsed on every text change; when the relevant syntax *is* present, Details/Diagram/Math still walk the AST separately (Math three times); Mermaid re-runs `mermaid.initialize` per render and caches intermediate streamed sources; the MathJax engine is cold per solver instance.
-2. **Cold layout taxes**: eager `AccessibilityMetadata.make` per `LayoutResult`; PreparedText cache keys that copy and hash the full string on every lookup plus always-on stats locks; one global TextKit lock with per-call stack allocation, and arithmetic routing limited to paragraph/header.
-3. **UI**: bitmap prefetch at hard-coded @2x (folds into pending P06); a per-byte async image download loop; macOS main-thread `ensureLayout` per item configure; per-body-evaluation theme fingerprint resolution in `MarkdownView`.
+2. **Cold layout taxes**: eager `AccessibilityMetadata.make` per `LayoutResult`; PreparedText cache keys that copy and hash the full string on every lookup plus always-on stats locks; one global TextKit lock with per-call stack allocation, and arithmetic routing limited to paragraph/header. P14.7 keeps the residual direct PreparedText key/stats/structured-measurer-key cleanup pending.
+3. **UI**: a per-byte async image download loop; macOS main-thread `ensureLayout` per item configure; per-body-evaluation theme fingerprint resolution in `MarkdownView`.
 4. **Hygiene**: `LayoutCache` lacks a `totalCostLimit`; O(n) LRU eviction in `FontTraitResolver`; the cache-reuse requirement for one-shot `MarkdownKitEngine.layout` hosts is undocumented.

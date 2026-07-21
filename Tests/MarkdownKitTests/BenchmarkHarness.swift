@@ -71,8 +71,26 @@ struct BenchmarkHarness {
         fixture: String = "",
         operation: () async -> Void
     ) async -> BenchmarkResult {
+        await measureAsync(
+            label: label,
+            fixture: fixture,
+            prepare: {},
+            operation: { (_: Void) in
+                await operation()
+            }
+        )
+    }
+
+    func measureAsync<Context>(
+        label: String,
+        fixture: String = "",
+        prepare: () async -> Context,
+        operation: (Context) async -> Void
+    ) async -> BenchmarkResult {
         for _ in 0..<warmupIterations {
-            await operation()
+            let context = await prepare()
+            await operation(context)
+            withExtendedLifetime(context) {}
         }
 
         var timings: [Double] = []
@@ -81,13 +99,15 @@ struct BenchmarkHarness {
         memoryDeltas.reserveCapacity(measureIterations)
 
         for _ in 0..<measureIterations {
+            let context = await prepare()
             let memBefore = currentResidentSize()
             let start = mach_absolute_time()
 
-            await operation()
+            await operation(context)
 
             let end = mach_absolute_time()
             let memAfter = currentResidentSize()
+            withExtendedLifetime(context) {}
 
             timings.append(machToMilliseconds(end - start))
             memoryDeltas.append(Swift.max(0, memAfter - memBefore))

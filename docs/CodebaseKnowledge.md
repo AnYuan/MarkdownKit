@@ -1,4 +1,4 @@
-# MarkdownKit Codebase Knowledge (2026-07-18)
+# MarkdownKit Codebase Knowledge (2026-07-21)
 
 This document is a practical snapshot of the current repository, with emphasis on commands, architecture, and known risks that are still actionable.
 
@@ -13,10 +13,12 @@ This document is a practical snapshot of the current repository, with emphasis o
   - `JohnSundell/Splash` (`>= 0.16.0`)
   - `colinc86/MathJaxSwift` (`>= 3.4.0`)
   - `pointfreeco/swift-snapshot-testing` (`>= 1.17.0`)
-- File counts at snapshot:
-  - Source files (`Sources/MarkdownKit/**/*.swift`): **87**
-  - Test files (`Tests/MarkdownKitTests/*.swift`): **75**
-  - Docs files (`docs/*.md`): **23**
+- Current inventory from `docs/TestCoverage.md`:
+  - Source files (`Sources/MarkdownKit/**/*.swift`): **91**
+  - Test files (`Tests/MarkdownKitTests/*.swift`): **81**
+  - Test-bearing files: **73**
+  - Static test methods: **706**
+  - macOS-discoverable tests: **606**
 
 ## 2. Build / Run / Test Commands
 
@@ -67,10 +69,10 @@ bash scripts/verify_benchmarks.sh
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **541** discoverable tests
-- `swift test`: **516 tests passed** on 2026-07-18
-- `verify_fast.sh`: **523** correctness tests
-- `verify_ios.sh`: **583** XCTest tests plus one app-hosted Mermaid PASS marker
+- `swift test list`: **606** discoverable tests
+- Last full `swift test`: **516 tests passed** on 2026-07-18
+- `verify_fast.sh`: **587** correctness tests
+- `verify_ios.sh`: **647** XCTest tests plus one app-hosted Mermaid PASS marker
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -135,10 +137,11 @@ Primary files:
 
 Key facts:
 - `LayoutCache` keys are `node.contentFingerprint` + optional interaction fingerprint + rounded width + solver variant hash (theme/diagram/math/image policy/appearance inputs). The separate interaction identity covers source ranges and URLs captured by checkbox/details callbacks without changing semantic stable identity or pixel-render identity.
+- The solver-owned `PreparedContentCache` is a strict 2,048-entry / 32 MiB estimated-cost LRU keyed by content + optional interaction + async/sync render variant + locale, excluding width. Prepared payloads freeze `NSAttributedString` and store textKit/codeInset/arithmetic `PreparedText` plans.
 - `AttributedStringBuilder` classifies block and inline structure once into an invocation-local flat operation program. Sequential async/sync materializers share structural behavior while keeping image, math, and diagram mode differences explicit.
 - `LayoutSolver` performs cache lookup before classifying a node into a shallow recipe, then shares immediate output, measurement, and `LayoutResult` assembly across its explicit async/sync envelopes.
 - Public async `LayoutSolver.solve` remains total under cancellation and yields once initially plus periodically across recursive solver work. The SwiftUI coordinator alone uses internal `solveCancellable`, whose one-child/one-operation checkpoints stop stale planning, materialization, and top-level layout after any in-flight host resource await returns.
-- Coordinator-cancellable cache writes stay in an invocation-local `LayoutCache.WriteBatch`; staged entries satisfy same-solve duplicate lookups, are discarded on cancellation, and publish child-before-parent only after successful root completion. Synchronous commit is the point of no return, while the coordinator generation check still rejects stale UI output.
+- Coordinator-cancellable cache writes stay in an invocation-local `LayoutCache.WriteBatch`; staged prepared entries satisfy same-solve duplicate lookups, are discarded on cancellation, and publish child-before-parent only after successful root completion. Synchronous commit is the point of no return, while the coordinator generation check still rejects stale UI output; tables/images/math/diagrams/documents/custom draw stay excluded from preparation.
 - `Theme.resolved(for:)` concretizes theme/highlighter/table/default-math colors once per solver. `AttributedStringBuilder` separately resolves the appearance-specific secondary-label color once for code labels and image fallback, and runs the generic five-key attributed-color resolver only when opaque custom math/diagram adapter output enters the builder; ordinary attributed output is not rescanned after measurement.
 - The internal `ArithmeticTextCalculator` is the pure-text routing/cache facade. Width-independent preparation streams UTF-16 spans through dedicated scanner, localized classifier/merger, and CoreText measurer value types; `ArithmeticTextLineBreaker` separately owns fit-versus-paint widths, indents, hard breaks, soft hyphens, and oversized-token fallback.
 - `TableLayoutShared` owns the immutable canonical rectangular table grid (cell text/display text, alignment, row role/body index) and sanitized uniform column geometry. Three thin adapters intentionally preserve platform-specific visuals: AppKit native `NSTextTableBlock`, UIKit nested attributed tab/narrow fallback, and UIKit top-level `TableCardRenderer` cards drawn through `CGContext`.
@@ -191,9 +194,11 @@ High-value suites:
 - Mermaid backend contracts: `MermaidDiagramAdapterTests` uses real WebKit on
   macOS and a deterministic image driver on iOS; the iOS verification script
   adds a separate app-hosted public-`MarkdownView` Mermaid-fence smoke using
-  real WebKit after its 583 XCTest tests.
+  real WebKit after its 647 XCTest tests.
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`,
-  `BenchmarkCacheTests`, `MarkdownRenderCoordinatorBenchmarkTests`
+  `BenchmarkCacheTests`, `MarkdownRenderCoordinatorBenchmarkTests`, with
+  13 canonical isolated Release workloads and the prepared-content relational
+  guard in `BenchmarkPreparedContentTests`.
 
 ## 6. Known Gaps / Risks / Technical Debt
 

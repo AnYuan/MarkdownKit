@@ -824,8 +824,85 @@ before the next stage starts.
   Simplification, UIKit/SwiftUI performance, concurrency, regression,
   reliability, security, contracts, and final reviews found no remaining
   material issue.
-- [ ] P07 add bounded width-independent attributed/highlight/arithmetic prepared
+- [x] P07 add bounded width-independent attributed/highlight/arithmetic prepared
   content reuse.
+  - [x] P07-A add one canonical isolated Release workload for persistent
+    distinct-width relayout. Parse the large fixture once, measure cold first
+    solves with a fresh solver per sample, and measure a persistent solver across
+    a width sweep while clearing only exact-width `LayoutCache` entries outside
+    the timed interval. Record five pre-change processes from production commit
+    `3a99565`; p95 remains stage acceptance evidence rather than changing the
+    average-only baseline schema.
+  - [x] P07-B add one internal solver-owned `PreparedContentCache` with strict
+    entry-count and estimated retained-cost LRU bounds. Key by content
+    fingerprint, range-sensitive interaction fingerprint, async/sync render
+    variant, and locale, but never width. Store only frozen attributed output plus its
+    measurement plan; add deterministic key, hit, clear, replacement, and
+    count/cost eviction contracts.
+  - [x] P07-C integrate the cache across async, cancellable, and synchronous
+    solver paths. Cache ordinary known builder output only when the subtree has
+    no table/image/math/diagram resource and cache highlighted code-block output
+    separately. Reuse cached `ArithmeticTextCalculator.PreparedText` directly
+    so width changes skip builder planning/materialization, highlighting,
+    arithmetic profiling, and prepared-text key construction while still
+    running width-dependent arithmetic line breaking or TextKit measurement.
+  - [x] P07-D add deterministic integration contracts for width hits, fresh
+    sizes, code highlighting, arithmetic preparation, interaction/theme/
+    appearance/sync isolation, cancellation non-publication, direct solver
+    reuse, and resource exclusions. Run five post-change benchmark processes;
+    require median width-sweep p95 at least 40% below P07-A and cold-first median
+    p95 no worse than `max(1.10x baseline, baseline + 1ms)`. Record the exact
+    reviewed Release baseline and regenerate benchmark/test documentation.
+  - [x] P07-E run simplification, layout-performance, Swift 6.2 concurrency,
+    regression, reliability, security, contracts, and final reviews; then run
+    focused, fast, documentation, API, snapshot, benchmark, and iOS gates before
+    atomic commit and push.
+  Acceptance: every distinct width remains a `LayoutCache` miss and receives a
+  newly measured size, but unchanged eligible rows reuse one width-independent
+  frozen attributed payload and arithmetic preparation; code blocks highlight
+  once per content/render variant; tables, images, math, diagrams, custom draw,
+  and resource cancellation semantics remain unchanged; async/sync and
+  interaction/appearance/theme variants cannot collide; canceled work cannot
+  publish prepared content; strict cache count/cost bounds hold; public API and
+  cold first-render behavior do not materially regress.
+  P07-A evidence: after resetting process-global arithmetic preparation outside
+  every cold timing interval, five isolated pre-change Release processes
+  produced `solve(cold-first)(large)` p95 values of 101.7, 106.4, 63.76,
+  74.33, and 64.32ms (median 74.33ms), and
+  `solve(width-sweep)(large)` p95 values of 157.7, 88.90, 81.96, 86.75, and
+  82.50ms (median 86.75ms). P07-D therefore requires post-change medians no
+  greater than 81.763ms cold and 52.05ms for the width sweep.
+  P07-B evidence: 41 deterministic cache contracts cover frozen payloads,
+  width-free key identity, diagnostics, concurrent access, transactional
+  staging/drop/commit, strict count/cost LRU eviction, oversized replacement,
+  and arithmetic retained-cost accounting; the focused suite and package build
+  pass without Swift concurrency warnings.
+  P07-C evidence: 20 integration contracts plus the 41 cache contracts pass
+  across async, cancellable, and sync paths. Locale, theme, appearance,
+  interaction, and sync namespaces are isolated; resource/custom-draw roots are
+  excluded; canceled root work drops staged prepared entries. Five final
+  Release processes produced cold p95 values of 107.0, 77.34, 103.8, 63.55,
+  and 67.39ms (median 77.34ms, 4.1% above pre-change) and width-sweep p95
+  values of 59.23, 39.13, 37.13, 38.63, and 38.70ms (median 38.70ms, 55.4%
+  below pre-change). The permanent workload also compares persistent reuse
+  against a fresh-solver rebuild sweep and requires both average and p95 to
+  remain at most 60% of the control. After isolating every phase from the
+  process-global arithmetic preparation cache, the final 13-workload Release
+  gate measured 34.60ms average / 37.47ms p95 persistent versus 135.5ms
+  average / 149.4ms p95 rebuild. Current inventory is 91 source files, 81 test
+  files, 73 test-bearing files, 706 static test methods, and 606
+  macOS-discoverable tests; documentation freshness passes.
+  P07-E evidence: review fixed resource exclusion for `DetailsNode.summary`,
+  isolated benchmark phases from the process-global arithmetic cache, added
+  async/cancellable code-block coverage, and restored the public designated
+  initializer after symbol-graph review caught `convenience` drift. Final
+  validation passes 587 fast correctness tests, 606-test documentation
+  freshness, provenance, package build, 10 public API smokes, unchanged
+  macOS/iOS public API baselines (453/599 and 454/610), both four-test snapshot
+  gates, all 13 isolated Release workloads, exactly 647 iOS XCTest tests, and
+  one app-hosted real-WebKit Mermaid PASS marker. Simplification, performance,
+  Swift 6.2 concurrency, regression, security, reliability, contracts, and
+  final whole-diff reviews found no remaining material issue.
 
 P01 scope correction: p95/max remain informational with the current 20-sample
 harness; RSS deltas remain informational because they measure the whole XCTest
@@ -836,13 +913,12 @@ production/infrastructure stages and are not mixed into P01-A.
 
 Source: the 2026-07-19 whole-repo performance review (context in
 `docs/PLAN.md` Phase 14). This backlog excludes findings already resolved by
-Phase 13 stages P01–P05: streaming/coordinator benchmarks and the Release
+Phase 13 stages P01–P07: streaming/coordinator benchmarks and the Release
 baseline (P01), no-op plugin traversal skipping (P02), redundant appearance
 color resolution (P03), per-node unconditional yields (P04), and
-identical-snapshot suppression with variant-scoped reconfigure (P05). Where an
-item overlaps a pending Phase 13 stage, fold it into that stage instead of
-duplicating work: P14.9 belongs to P06, and the highlight-reuse half of P14.6
-belongs to P07.
+identical-snapshot suppression with variant-scoped reconfigure (P05), coherent
+iOS raster prefetch (P06), and unchanged-content width-independent preparation
+reuse (P07).
 
 Each item is one atomic commit validated with the P01 isolated Release
 harness plus `bash scripts/verify_fast.sh`. Quoted timings from the review
@@ -905,14 +981,17 @@ earlier items).
   - Math: the MathJax `Engine` actor is per-adapter instance (cold start per
     new solver); make it process-shared. Skip MathJax for unclosed `$…`
     spans. File: `Math/DefaultMathRenderingAdapter.swift` (~126).
-  - Highlight-result reuse for growing code fences is P07's scope — do not
-    duplicate it here.
+  - P07 reuses unchanged highlighted output across widths, but it does not reuse
+    growing code-fence prefixes. Any growing-source debounce or prefix-reuse
+    policy remains in this item.
 
 ### Cold layout throughput
 - [ ] P14.7 `perf: fingerprint-based PreparedText cache keys`
-  `ArithmeticTextCalculator.preparedTextCacheKey` does a full attribute
-  enumeration + `attributedString.string` copy + full-string hash on every
-  `prepare`, including hits — often comparable to the measurement it saves.
+  Direct `ArithmeticTextCalculator` preparation and prepared-content misses
+  still build `preparedTextCacheKey` through a full attribute enumeration,
+  `attributedString.string` copy, and full-string hash — often comparable to
+  the measurement it saves. P07 bypasses this work for eligible solver width
+  hits but does not change the direct cache contract.
   Key on the node's `contentFingerprint` + variant hash instead (the solver
   has both). Also make the per-hit `testCounterLock`
   (`ArithmeticTextCalculator`) and `LayoutCache.statsLock` hit/miss counters

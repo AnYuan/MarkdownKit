@@ -26,6 +26,7 @@ public final class LayoutSolver: @unchecked Sendable {
     /// The explicit appearance this solver was initialised with. Stored so that
     /// every `LayoutResult` it creates carries the correct appearance value.
     private let appearance: MarkdownAppearance
+    private let preparedCache: PreparedContentCache
 
     private enum ImmediateLayoutRecipe {
         #if canImport(UIKit) && !os(watchOS)
@@ -62,6 +63,12 @@ public final class LayoutSolver: @unchecked Sendable {
         }
     }
 
+    private struct InitializationComponents {
+        let cacheVariantHash: Int
+        let syncCacheVariantHash: Int
+        let builder: AttributedStringBuilder
+    }
+
     public init(
         theme: Theme = .default,
         cache: LayoutCache = LayoutCache(),
@@ -74,6 +81,52 @@ public final class LayoutSolver: @unchecked Sendable {
         self.arithmeticCalculator = ArithmeticTextCalculator()
         self.cache = cache
         self.appearance = appearance
+        self.preparedCache = PreparedContentCache()
+        let components = Self.makeInitializationComponents(
+            theme: theme,
+            diagramRegistry: diagramRegistry,
+            mathAdapter: mathAdapter,
+            imageLoadingPolicy: imageLoadingPolicy,
+            appearance: appearance
+        )
+        self.cacheVariantHash = components.cacheVariantHash
+        self.syncCacheVariantHash = components.syncCacheVariantHash
+        self.builder = components.builder
+    }
+
+    init(
+        theme: Theme = .default,
+        cache: LayoutCache = LayoutCache(),
+        diagramRegistry: DiagramAdapterRegistry = DiagramAdapterRegistry(),
+        mathAdapter: (any MathRenderingAdapter)? = nil,
+        imageLoadingPolicy: ImageLoadingPolicy = .default,
+        appearance: MarkdownAppearance = .light,
+        preparedCache: PreparedContentCache
+    ) {
+        self.textCalculator = TextKitCalculator()
+        self.arithmeticCalculator = ArithmeticTextCalculator()
+        self.cache = cache
+        self.appearance = appearance
+        self.preparedCache = preparedCache
+        let components = Self.makeInitializationComponents(
+            theme: theme,
+            diagramRegistry: diagramRegistry,
+            mathAdapter: mathAdapter,
+            imageLoadingPolicy: imageLoadingPolicy,
+            appearance: appearance
+        )
+        self.cacheVariantHash = components.cacheVariantHash
+        self.syncCacheVariantHash = components.syncCacheVariantHash
+        self.builder = components.builder
+    }
+
+    private static func makeInitializationComponents(
+        theme: Theme,
+        diagramRegistry: DiagramAdapterRegistry,
+        mathAdapter: (any MathRenderingAdapter)?,
+        imageLoadingPolicy: ImageLoadingPolicy,
+        appearance: MarkdownAppearance
+    ) -> InitializationComponents {
         // Resolve every appearance-sensitive color in the theme once, up front.
         // Downstream builders and the highlighter receive only concrete colors so
         // no ambient UITraitCollection / NSAppearance state is read during layout.
@@ -86,19 +139,21 @@ public final class LayoutSolver: @unchecked Sendable {
             imageLoadingPolicy: imageLoadingPolicy,
             appearance: appearance
         )
-        self.cacheVariantHash = cacheVariantHash
         var syncHasher = Hasher()
         syncHasher.combine(cacheVariantHash)
         syncHasher.combine("synchronous-layout")
-        self.syncCacheVariantHash = syncHasher.finalize()
         let highlighter = SplashHighlighter(theme: resolvedTheme)
-        self.builder = AttributedStringBuilder(
-            theme: resolvedTheme,
-            highlighter: highlighter,
-            diagramRegistry: diagramRegistry,
-            mathAdapter: resolvedMathAdapter,
-            imageLoadingPolicy: imageLoadingPolicy,
-            appearance: appearance
+        return InitializationComponents(
+            cacheVariantHash: cacheVariantHash,
+            syncCacheVariantHash: syncHasher.finalize(),
+            builder: AttributedStringBuilder(
+                theme: resolvedTheme,
+                highlighter: highlighter,
+                diagramRegistry: diagramRegistry,
+                mathAdapter: resolvedMathAdapter,
+                imageLoadingPolicy: imageLoadingPolicy,
+                appearance: appearance
+            )
         )
     }
     
@@ -128,6 +183,123 @@ public final class LayoutSolver: @unchecked Sendable {
         hasher.combine(node.contentFingerprint)
         hasher.combine(variantHash)
         return hasher.finalize()
+    }
+
+    // MARK: - PreparedContentCache helpers
+
+    /// Returns true for node types whose attributed output is width-independent enough
+    /// to be a prepared-cache candidate root. Does NOT scan descendants.
+    private func isOrdinaryEligibleRoot(_ node: MarkdownNode) -> Bool {
+        return node is ParagraphNode || node is HeaderNode || node is TextNode ||
+               node is ListNode || node is BlockQuoteNode ||
+               node is DetailsNode || node is SummaryNode
+    }
+
+    private struct PreparedNodeClassification {
+        let isCacheEligible: Bool
+        let supportsArithmeticLayout: Bool
+    }
+
+    private func appendPreparedClassificationChildren(
+        of node: MarkdownNode,
+        to work: inout [MarkdownNode]
+    ) {
+        if let summary = (node as? DetailsNode)?.summary {
+            work.append(summary)
+        }
+        work.append(contentsOf: node.children)
+    }
+
+    /// Classifies a prepared-cache miss in one traversal. Resource-bearing
+    /// subtrees remain uncached, while code/details descendants only disable
+    /// arithmetic routing because their attributed output is still width-free.
+    private func classifyPreparedNode(_ node: MarkdownNode) -> PreparedNodeClassification {
+        var supportsArithmeticLayout = node is ParagraphNode || node is HeaderNode
+        var work: [MarkdownNode] = []
+        appendPreparedClassificationChildren(of: node, to: &work)
+
+        while let current = work.popLast() {
+            if current is TableNode ||
+                current is ImageNode ||
+                current is MathNode ||
+                current is DiagramNode {
+                return PreparedNodeClassification(
+                    isCacheEligible: false,
+                    supportsArithmeticLayout: false
+                )
+            }
+            if current is CodeBlockNode || current is DetailsNode {
+                supportsArithmeticLayout = false
+            }
+            appendPreparedClassificationChildren(of: current, to: &work)
+        }
+
+        return PreparedNodeClassification(
+            isCacheEligible: true,
+            supportsArithmeticLayout: supportsArithmeticLayout
+        )
+    }
+
+    /// Builds a frozen `PreparedContentCache.Payload` for an ordinary eligible node.
+    /// Selects `.arithmetic` only when `isPureTextBlock` and the profile agree.
+    private func makePreparedPayload(
+        attributedString: NSAttributedString,
+        supportsArithmeticLayout: Bool
+    ) -> PreparedContentCache.Payload {
+        if supportsArithmeticLayout {
+            let profile = arithmeticCalculator.profile(for: attributedString)
+            if profile.supportsArithmeticLayout {
+                let prepared = arithmeticCalculator.prepare(attributedString: attributedString)
+                return PreparedContentCache.Payload(
+                    attributedString: attributedString,
+                    measurementPlan: .arithmetic(prepared)
+                )
+            }
+        }
+        return PreparedContentCache.Payload(attributedString: attributedString, measurementPlan: .textKit)
+    }
+
+    /// Shared code-block inset sizing. One source of truth for both cached and uncached paths.
+    private func codeBlockInsetSize(
+        for attributedString: NSAttributedString,
+        constrainedToWidth maxWidth: CGFloat
+    ) -> CGSize {
+        let totalInset = builder.theme.codeBlock.layoutTotalInset
+        var size = textCalculator.calculateSize(
+            for: attributedString,
+            constrainedToWidth: max(0, maxWidth - totalInset)
+        )
+        size.width += totalInset
+        size.height += totalInset
+        return size
+    }
+
+    /// Computes the size from a cached payload without re-running the builder,
+    /// profile, or ArithmeticTextCalculator.prepare.
+    private func sizeFromPreparedPayload(
+        _ payload: PreparedContentCache.Payload,
+        constrainedToWidth maxWidth: CGFloat
+    ) -> CGSize {
+        switch payload.measurementPlan {
+        case .arithmetic(let prepared):
+            return arithmeticCalculator.layout(prepared: prepared, constrainedToWidth: maxWidth)
+        case .textKit:
+            return textCalculator.calculateSize(for: payload.attributedString, constrainedToWidth: maxWidth)
+        case .codeBlockInset:
+            return codeBlockInsetSize(for: payload.attributedString, constrainedToWidth: maxWidth)
+        }
+    }
+
+    /// Returns a `ShallowLayoutOutput` sized from a prepared payload, reusing its
+    /// frozen attributed string. Skips all builder and measurement-plan work.
+    private func outputFromPreparedPayload(
+        _ payload: PreparedContentCache.Payload,
+        constrainedToWidth maxWidth: CGFloat
+    ) -> ShallowLayoutOutput {
+        ShallowLayoutOutput(
+            size: sizeFromPreparedPayload(payload, constrainedToWidth: maxWidth),
+            attributedString: payload.attributedString
+        )
     }
 
     /// Recursively calculates the layout for a node and all its children.
@@ -203,18 +375,21 @@ public final class LayoutSolver: @unchecked Sendable {
     ) async -> LayoutResult? {
         var cooperation = LayoutCooperationState()
         var writeBatch = cache.makeWriteBatch()
+        var preparedBatch = preparedCache.makeWriteBatch()
 
         guard let result = await solveCancellable(
             node: node,
             constrainedToWidth: maxWidth,
             cooperation: &cooperation,
-            writeBatch: &writeBatch
+            writeBatch: &writeBatch,
+            preparedBatch: &preparedBatch
         ) else {
             return nil
         }
 
         guard !Task.isCancelled else { return nil }
         writeBatch.commit()
+        preparedBatch.commit()
         return result
     }
 
@@ -222,7 +397,8 @@ public final class LayoutSolver: @unchecked Sendable {
         node: MarkdownNode,
         constrainedToWidth maxWidth: CGFloat,
         cooperation: inout LayoutCooperationState,
-        writeBatch: inout LayoutCache.WriteBatch
+        writeBatch: inout LayoutCache.WriteBatch,
+        preparedBatch: inout PreparedContentCache.WriteBatch
     ) async -> LayoutResult? {
         guard !Task.isCancelled else { return nil }
         if cooperation.shouldYield(after: .solver) {
@@ -243,7 +419,8 @@ public final class LayoutSolver: @unchecked Sendable {
         guard let output = await executeCancellable(
             recipe,
             constrainedToWidth: maxWidth,
-            cooperation: &cooperation
+            cooperation: &cooperation,
+            preparedBatch: &preparedBatch
         ) else {
             return nil
         }
@@ -256,7 +433,8 @@ public final class LayoutSolver: @unchecked Sendable {
                     node: child,
                     constrainedToWidth: maxWidth,
                     cooperation: &cooperation,
-                    writeBatch: &writeBatch
+                    writeBatch: &writeBatch,
+                    preparedBatch: &preparedBatch
                 ) else {
                     return nil
                 }
@@ -341,7 +519,20 @@ public final class LayoutSolver: @unchecked Sendable {
     ) async -> ShallowLayoutOutput {
         switch recipe {
         case let .immediate(immediate):
+            if case let .codeBlock(codeBlock) = immediate {
+                let key = PreparedContentCache.Key(node: codeBlock, variantHash: cacheVariantHash)
+                if let hit = preparedCache.get(key) {
+                    return outputFromPreparedPayload(hit, constrainedToWidth: maxWidth)
+                }
+                let attrStr = builder.buildCodeBlockAttributedString(from: codeBlock)
+                let payload = PreparedContentCache.Payload(
+                    attributedString: attrStr, measurementPlan: .codeBlockInset
+                )
+                if !Task.isCancelled { preparedCache.set(payload, for: key) }
+                return outputFromPreparedPayload(payload, constrainedToWidth: maxWidth)
+            }
             return executeImmediate(immediate, constrainedToWidth: maxWidth)
+
         case let .diagram(diagram):
             return makeTextOutput(
                 attributedString: await builder.buildDiagramAttributedString(from: diagram),
@@ -349,20 +540,34 @@ public final class LayoutSolver: @unchecked Sendable {
                 constrainedToWidth: maxWidth,
                 measurement: .codeBlockInset
             )
+
         case let .attributed(node):
-            return makeTextOutput(
-                attributedString: await builder.buildString(for: node, constrainedToWidth: maxWidth),
-                node: node,
-                constrainedToWidth: maxWidth,
-                measurement: .standard
-            )
+            let isEligible = isOrdinaryEligibleRoot(node)
+            let prepKey = isEligible ? PreparedContentCache.Key(node: node, variantHash: cacheVariantHash) : nil
+            if let prepKey, let hit = preparedCache.get(prepKey) {
+                return outputFromPreparedPayload(hit, constrainedToWidth: maxWidth)
+            }
+            let attrStr = await builder.buildString(for: node, constrainedToWidth: maxWidth)
+            if let prepKey {
+                let classification = classifyPreparedNode(node)
+                if classification.isCacheEligible {
+                    let payload = makePreparedPayload(
+                        attributedString: attrStr,
+                        supportsArithmeticLayout: classification.supportsArithmeticLayout
+                    )
+                    if !Task.isCancelled { preparedCache.set(payload, for: prepKey) }
+                    return outputFromPreparedPayload(payload, constrainedToWidth: maxWidth)
+                }
+            }
+            return makeTextOutput(attributedString: attrStr, node: node, constrainedToWidth: maxWidth, measurement: .standard)
         }
     }
 
     private func executeCancellable(
         _ recipe: ShallowLayoutRecipe,
         constrainedToWidth maxWidth: CGFloat,
-        cooperation: inout LayoutCooperationState
+        cooperation: inout LayoutCooperationState,
+        preparedBatch: inout PreparedContentCache.WriteBatch
     ) async -> ShallowLayoutOutput? {
         guard !Task.isCancelled else { return nil }
 
@@ -370,7 +575,8 @@ public final class LayoutSolver: @unchecked Sendable {
         case let .immediate(immediate):
             return executeImmediateCancellable(
                 immediate,
-                constrainedToWidth: maxWidth
+                constrainedToWidth: maxWidth,
+                preparedBatch: &preparedBatch
             )
 
         case let .diagram(diagram):
@@ -388,7 +594,13 @@ public final class LayoutSolver: @unchecked Sendable {
             )
 
         case let .attributed(node):
-            guard let attributedString = await builder.buildStringCancellable(
+            let isEligible = isOrdinaryEligibleRoot(node)
+            let prepKey = isEligible ? PreparedContentCache.Key(node: node, variantHash: cacheVariantHash) : nil
+            if let prepKey, let hit = preparedBatch.get(prepKey) {
+                guard !Task.isCancelled else { return nil }
+                return outputFromPreparedPayload(hit, constrainedToWidth: maxWidth)
+            }
+            guard let attrStr = await builder.buildStringCancellable(
                 for: node,
                 constrainedToWidth: maxWidth,
                 cooperation: &cooperation
@@ -396,8 +608,21 @@ public final class LayoutSolver: @unchecked Sendable {
                 return nil
             }
             guard !Task.isCancelled else { return nil }
+            if let prepKey {
+                let classification = classifyPreparedNode(node)
+                if classification.isCacheEligible {
+                    let payload = makePreparedPayload(
+                        attributedString: attrStr,
+                        supportsArithmeticLayout: classification.supportsArithmeticLayout
+                    )
+                    let output = outputFromPreparedPayload(payload, constrainedToWidth: maxWidth)
+                    guard !Task.isCancelled else { return nil }
+                    preparedBatch.stage(payload, for: prepKey)
+                    return output
+                }
+            }
             return makeTextOutputCancellable(
-                attributedString: attributedString,
+                attributedString: attrStr,
                 node: node,
                 constrainedToWidth: maxWidth,
                 measurement: .standard
@@ -411,7 +636,20 @@ public final class LayoutSolver: @unchecked Sendable {
     ) -> ShallowLayoutOutput {
         switch recipe {
         case let .immediate(immediate):
+            if case let .codeBlock(codeBlock) = immediate {
+                let key = PreparedContentCache.Key(node: codeBlock, variantHash: syncCacheVariantHash)
+                if let hit = preparedCache.get(key) {
+                    return outputFromPreparedPayload(hit, constrainedToWidth: maxWidth)
+                }
+                let attrStr = builder.buildCodeBlockAttributedString(from: codeBlock)
+                let payload = PreparedContentCache.Payload(
+                    attributedString: attrStr, measurementPlan: .codeBlockInset
+                )
+                preparedCache.set(payload, for: key)
+                return outputFromPreparedPayload(payload, constrainedToWidth: maxWidth)
+            }
             return executeImmediate(immediate, constrainedToWidth: maxWidth)
+
         case let .diagram(diagram):
             return makeTextOutput(
                 attributedString: builder.buildStringSync(for: diagram, constrainedToWidth: maxWidth),
@@ -419,13 +657,26 @@ public final class LayoutSolver: @unchecked Sendable {
                 constrainedToWidth: maxWidth,
                 measurement: .standard
             )
+
         case let .attributed(node):
-            return makeTextOutput(
-                attributedString: builder.buildStringSync(for: node, constrainedToWidth: maxWidth),
-                node: node,
-                constrainedToWidth: maxWidth,
-                measurement: .standard
-            )
+            let isEligible = isOrdinaryEligibleRoot(node)
+            let prepKey = isEligible ? PreparedContentCache.Key(node: node, variantHash: syncCacheVariantHash) : nil
+            if let prepKey, let hit = preparedCache.get(prepKey) {
+                return outputFromPreparedPayload(hit, constrainedToWidth: maxWidth)
+            }
+            let attrStr = builder.buildStringSync(for: node, constrainedToWidth: maxWidth)
+            if let prepKey {
+                let classification = classifyPreparedNode(node)
+                if classification.isCacheEligible {
+                    let payload = makePreparedPayload(
+                        attributedString: attrStr,
+                        supportsArithmeticLayout: classification.supportsArithmeticLayout
+                    )
+                    preparedCache.set(payload, for: prepKey)
+                    return outputFromPreparedPayload(payload, constrainedToWidth: maxWidth)
+                }
+            }
+            return makeTextOutput(attributedString: attrStr, node: node, constrainedToWidth: maxWidth, measurement: .standard)
         }
     }
 
@@ -452,7 +703,8 @@ public final class LayoutSolver: @unchecked Sendable {
 
     private func executeImmediateCancellable(
         _ recipe: ImmediateLayoutRecipe,
-        constrainedToWidth maxWidth: CGFloat
+        constrainedToWidth maxWidth: CGFloat,
+        preparedBatch: inout PreparedContentCache.WriteBatch
     ) -> ShallowLayoutOutput? {
         guard !Task.isCancelled else { return nil }
 
@@ -473,14 +725,20 @@ public final class LayoutSolver: @unchecked Sendable {
         #endif
 
         case let .codeBlock(codeBlock):
-            let attributedString = builder.buildCodeBlockAttributedString(from: codeBlock)
+            let key = PreparedContentCache.Key(node: codeBlock, variantHash: cacheVariantHash)
+            if let hit = preparedBatch.get(key) {
+                guard !Task.isCancelled else { return nil }
+                return outputFromPreparedPayload(hit, constrainedToWidth: maxWidth)
+            }
+            let attrStr = builder.buildCodeBlockAttributedString(from: codeBlock)
             guard !Task.isCancelled else { return nil }
-            return makeTextOutputCancellable(
-                attributedString: attributedString,
-                node: codeBlock,
-                constrainedToWidth: maxWidth,
-                measurement: .codeBlockInset
+            let payload = PreparedContentCache.Payload(
+                attributedString: attrStr, measurementPlan: .codeBlockInset
             )
+            let output = outputFromPreparedPayload(payload, constrainedToWidth: maxWidth)
+            guard !Task.isCancelled else { return nil }
+            preparedBatch.stage(payload, for: key)
+            return output
         }
     }
 
@@ -505,14 +763,7 @@ public final class LayoutSolver: @unchecked Sendable {
                 )
             }
         case .codeBlockInset:
-            let totalInset = builder.theme.codeBlock.layoutTotalInset
-            var measuredSize = textCalculator.calculateSize(
-                for: attributedString,
-                constrainedToWidth: max(0, maxWidth - totalInset)
-            )
-            measuredSize.width += totalInset
-            measuredSize.height += totalInset
-            size = measuredSize
+            size = codeBlockInsetSize(for: attributedString, constrainedToWidth: maxWidth)
         }
 
         return ShallowLayoutOutput(size: size, attributedString: attributedString)

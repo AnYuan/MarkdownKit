@@ -2,17 +2,17 @@
 
 > 最近更新: 2026-07-21
 > 生成方式: `python3 scripts/generate_test_coverage_report.py [--run-tests|--from-log <path>]`
-> 生成时间: 2026-07-21 08:29:35
+> 生成时间: 2026-07-21 13:09:16
 
 ## 1. 总览
 
 | 指标 | 当前值 | 说明 |
 | --- | ---: | --- |
-| 源码文件数 (`Sources/MarkdownKit/*.swift`) | 90 | 不含 Demo target |
-| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 78 | 含基准/夹具/辅助文件 |
-| 含 `test*` 方法的测试文件 | 70 | 静态扫描结果 |
-| 静态扫描 `test*` 方法总数 | 641 | 受编译条件影响，可能高于可执行测试数 |
-| 可发现测试数 (`swift test list`) | 541 | 当前平台可执行测试 |
+| 源码文件数 (`Sources/MarkdownKit/*.swift`) | 91 | 不含 Demo target |
+| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 81 | 含基准/夹具/辅助文件 |
+| 含 `test*` 方法的测试文件 | 73 | 静态扫描结果 |
+| 静态扫描 `test*` 方法总数 | 706 | 受编译条件影响，可能高于可执行测试数 |
+| 可发现测试数 (`swift test list`) | 606 | 当前平台可执行测试 |
 | 全量执行结果 (`swift test`) | 未提供 | 未执行或未提供日志 |
 
 ## 2. 本次执行状态
@@ -36,6 +36,7 @@
 | `BenchmarkFixtures.swift` | 0 |
 | `BenchmarkHarness.swift` | 0 |
 | `BenchmarkNodeTypeTests.swift` | 7 |
+| `BenchmarkPreparedContentTests.swift` | 1 |
 | `BenchmarkRegressionGuard.swift` | 0 |
 | `BenchmarkReportFormatter.swift` | 0 |
 | `BenchmarkTieredFixtures.swift` | 0 |
@@ -75,9 +76,11 @@
 | `ParserInlineFormattingTests.swift` | 12 |
 | `ParserLinkListTableTests.swift` | 11 |
 | `ParserResourceLimitTests.swift` | 16 |
-| `PerformanceBaselineContractTests.swift` | 10 |
+| `PerformanceBaselineContractTests.swift` | 13 |
 | `PerformanceProfilerTests.swift` | 2 |
 | `PlatformAccessibilityTests.swift` | 8 |
+| `PreparedContentCacheTests.swift` | 41 |
+| `PreparedContentReuseTests.swift` | 20 |
 | `PublicAPISmokeTests.swift` | 11 |
 | `SendableTests.swift` | 3 |
 | `SnapshotTestHelper.swift` | 0 |

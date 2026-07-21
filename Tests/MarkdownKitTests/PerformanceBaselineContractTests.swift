@@ -74,6 +74,39 @@ final class PerformanceBaselineContractTests: XCTestCase {
         XCTAssertEqual(actualCoordinatorKeys, expectedCoordinatorKeys)
     }
 
+    func testPreparedContentRelayoutBudgetUsesExactSixtyPercent() throws {
+        XCTAssertEqual(
+            BenchmarkRegressionGuard.preparedContentRelayoutBudget(rebuildMetric: 10, widthCount: 9),
+            6
+        )
+        let fractionalBudget = try XCTUnwrap(BenchmarkRegressionGuard.preparedContentRelayoutBudget(
+            rebuildMetric: 0.5,
+            widthCount: 9
+        ))
+        XCTAssertEqual(
+            fractionalBudget,
+            0.3,
+            accuracy: 0.000_000_1
+        )
+    }
+
+    func testPreparedContentRelayoutBudgetRejectsNonSweepWidthCounts() {
+        XCTAssertNil(BenchmarkRegressionGuard.preparedContentRelayoutBudget(rebuildMetric: 10, widthCount: 1))
+        XCTAssertNil(BenchmarkRegressionGuard.preparedContentRelayoutBudget(rebuildMetric: 10, widthCount: 0))
+        XCTAssertNil(BenchmarkRegressionGuard.preparedContentRelayoutBudget(rebuildMetric: 10, widthCount: -1))
+    }
+
+    func testPreparedContentRelayoutWorkloadKeysMatchExpectedContract() {
+        XCTAssertEqual(
+            BenchmarkRegressionGuard.preparedContentRelayoutExpectedKeys,
+            Set([
+                "solve(cold-first)(large)",
+                "solve(width-sweep)(large)",
+                "solve(rebuild-sweep)(large)"
+            ])
+        )
+    }
+
     func testMeasurementKeysAreGloballyUnique() throws {
         let baseline = try XCTUnwrap(BenchmarkBaselineLoader.load())
         let keys = baseline.measurements.map(\.key)
