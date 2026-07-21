@@ -1084,13 +1084,40 @@ earlier items).
   solver-provided size is trusted; evaluate reconfigure over reload within
   the P05 plan semantics. Files: `UI/macOS/MarkdownItemView.swift`,
   `UI/macOS/MarkdownCollectionView_macOS.swift`.
-- [ ] P14.11 `perf: memoize theme fingerprint in MarkdownView body`
+- [x] P14.11 `perf: memoize theme fingerprint in MarkdownView body`
   Every body evaluation constructs `MarkdownRenderInput`, whose init calls
   `themeFingerprint` → `theme.resolved(for:)` — ~30 color resolutions (with
   the AppKit resolution lock) on the main thread, inside a `GeometryReader`
-  that re-evaluates on scroll/resize. Memoize the fingerprint per (theme
-  value, appearance) and snap widths to 0.5pt before comparing. File:
-  `UI/SwiftUI/MarkdownView.swift` (~205).
+  that re-evaluates on scroll/resize.
+  - [x] P14.11-A add a temporary isolated Release benchmark around the exact
+    engine-owned render-input factory and record five pre-change processes.
+    Batch averages were 44.29, 42.86, 41.10, 40.11, and 36.23ms (median
+    41.10ms); p95 values were 54.49, 44.29, 44.67, 43.34, and 37.72ms
+    (median 44.29ms). The post-change median average must be <=26.72ms
+    (at least 35% faster).
+  - [x] P14.11-B add one bounded per-engine memoizer retaining light and dark
+    fingerprints for the current `Theme`; route body input construction and
+    solver-key construction through the same value without publishing
+    observable state during `body`.
+  - [x] P14.11-C prove same-theme hits, independent light/dark entries,
+    theme-change invalidation, and unchanged real theme/appearance rerenders;
+    record five post-change processes and remove the temporary benchmark.
+    Batch averages were 3.31, 3.09, 2.92, 3.24, and 2.87ms (median 3.09ms,
+    92.5% below pre-change); p95 values were 3.51, 3.64, 3.07, 4.13, and
+    2.93ms (median 3.51ms). The temporary benchmark is removed.
+  - [x] P14.11-D complete review, fast/platform/API/snapshot/benchmark gates,
+    then commit and push atomically.
+    Validation: 17 focused render-input/coordinator tests, 602 fast correctness
+    tests, 621-test documentation freshness, package build/describe, 10 public
+    API smoke tests, provenance, unchanged macOS API (453 symbols / 599
+    relationships), unchanged iOS APIs on both Simulator architectures
+    (454 / 610), both four-test snapshot contracts, exactly 662 iOS XCTest
+    tests plus one app-hosted real-WebKit Mermaid smoke, and all 13 isolated
+    Release workloads pass. Four-role regression/security/reliability/contracts
+    review found no material issue.
+  Width snapping is no longer bundled into this packet: `LayoutCache` currently
+  keys widths by rounded integer buckets, so a separate correctness contract is
+  required before introducing a different 0.5pt comparison boundary.
 
 ### Hygiene
 - [ ] P14.12 `perf: bound LayoutCache by cost`

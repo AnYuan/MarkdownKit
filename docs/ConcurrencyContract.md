@@ -4,7 +4,7 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 
 ## 1. Isolation Boundaries
 
-1. `MarkdownEngine` (`UI/SwiftUI/MarkdownRenderCoordinator.swift`) is the SwiftUI `@MainActor` coordinator boundary for request coalescing, cancellation, and publication.
+1. `MarkdownEngine` (`UI/SwiftUI/MarkdownRenderCoordinator.swift`) is the SwiftUI `@MainActor` coordinator boundary for request coalescing, cancellation, and publication. Its private, non-observable theme-fingerprint memoizer retains light/dark values only for the current `Theme`; body input construction and solver keying reuse the same value without crossing actors.
 2. Coordinator single-flight rule: only one detached parse/layout task runs at a time, with only one latest pending request retained; newer requests replace older pending work.
 3. Publication is generation-guarded (`output.generation == latestGeneration`), so canceled or stale completions never overwrite current `layouts`.
 4. `MarkdownParser` is synchronous and intentionally non-`Sendable`; parser/plugin instances are constructed inside each detached render task and remain task-confined.
@@ -47,7 +47,12 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 
 ## 3. Verification Coverage
 
-1. `MarkdownRenderCoordinatorTests` covers single-flight no-overlap behavior, latest-request publication, parse-key/raw-AST reuse boundaries, the details stale-configuration regression, and a 1,000-diagram stale-layout handoff that proves only the first in-flight adapter call runs before the latest request takes over.
+1. `MarkdownRenderCoordinatorTests` covers theme-fingerprint memoization and
+   invalidation, precomputed/direct solver-key reuse, real theme/appearance
+   rerenders, single-flight no-overlap behavior, latest-request publication,
+   parse-key/raw-AST reuse boundaries, the details stale-configuration
+   regression, and a 1,000-diagram stale-layout handoff that proves only the
+   first in-flight adapter call runs before the latest request takes over.
 2. `MarkdownRenderInputTests` covers parse-key boundaries and layout-only dimensions (`width`, `theme`, `appearance`, diagram registry, image policy).
 3. `GitHubAutolinkPluginTests` and `MarkdownKitTests` cover resolver forwarding, fallback destinations, resolver retention, fingerprinting, and detached parser construction/use.
 4. `MermaidDiagramAdapterTests` validates source-cache reuse/isolation, fresh

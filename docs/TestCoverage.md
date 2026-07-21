@@ -2,7 +2,7 @@
 
 > 最近更新: 2026-07-21
 > 生成方式: `python3 scripts/generate_test_coverage_report.py [--run-tests|--from-log <path>]`
-> 生成时间: 2026-07-21 16:54:04
+> 生成时间: 2026-07-21 21:07:15
 
 ## 1. 总览
 
@@ -11,8 +11,8 @@
 | 源码文件数 (`Sources/MarkdownKit/*.swift`) | 91 | 不含 Demo target |
 | 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 81 | 含基准/夹具/辅助文件 |
 | 含 `test*` 方法的测试文件 | 73 | 静态扫描结果 |
-| 静态扫描 `test*` 方法总数 | 715 | 受编译条件影响，可能高于可执行测试数 |
-| 可发现测试数 (`swift test list`) | 615 | 当前平台可执行测试 |
+| 静态扫描 `test*` 方法总数 | 721 | 受编译条件影响，可能高于可执行测试数 |
+| 可发现测试数 (`swift test list`) | 621 | 当前平台可执行测试 |
 | 全量执行结果 (`swift test`) | 未提供 | 未执行或未提供日志 |
 
 ## 2. 本次执行状态
@@ -65,7 +65,7 @@
 | `MarkdownKitBenchmarkTests.swift` | 4 |
 | `MarkdownKitTests.swift` | 7 |
 | `MarkdownRenderCoordinatorBenchmarkTests.swift` | 1 |
-| `MarkdownRenderCoordinatorTests.swift` | 5 |
+| `MarkdownRenderCoordinatorTests.swift` | 11 |
 | `MarkdownRenderInputTests.swift` | 6 |
 | `MathCacheTests.swift` | 3 |
 | `MathExtractionPluginTests.swift` | 16 |

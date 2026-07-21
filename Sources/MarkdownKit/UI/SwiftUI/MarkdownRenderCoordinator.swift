@@ -35,12 +35,88 @@ final class MarkdownEngine: ObservableObject {
     /// entries simply don't match and sit until evicted.
     private var cachedSolver: LayoutSolver?
     private var cachedSolverKey: SolverKey?
+    private var themeFingerprintMemoizer = ThemeFingerprintMemoizer()
 
     private struct SolverKey: Equatable {
         let themeFingerprint: Int
         let diagramFingerprint: Int
         let policyFingerprint: Int
         let appearance: MarkdownAppearance
+    }
+
+    private struct ThemeFingerprintMemoizer {
+        private var theme: Theme?
+        private var lightFingerprint: Int?
+        private var darkFingerprint: Int?
+        private(set) var computationCount = 0
+
+        mutating func fingerprint(
+            for theme: Theme,
+            appearance: MarkdownAppearance
+        ) -> Int {
+            if self.theme != theme {
+                self.theme = theme
+                lightFingerprint = nil
+                darkFingerprint = nil
+            }
+
+            switch appearance {
+            case .light:
+                if let lightFingerprint {
+                    return lightFingerprint
+                }
+                let fingerprint = computeFingerprint(for: theme, appearance: appearance)
+                lightFingerprint = fingerprint
+                return fingerprint
+            case .dark:
+                if let darkFingerprint {
+                    return darkFingerprint
+                }
+                let fingerprint = computeFingerprint(for: theme, appearance: appearance)
+                darkFingerprint = fingerprint
+                return fingerprint
+            }
+        }
+
+        private mutating func computeFingerprint(
+            for theme: Theme,
+            appearance: MarkdownAppearance
+        ) -> Int {
+            computationCount += 1
+            return MarkdownRenderInput.themeFingerprint(theme, appearance: appearance)
+        }
+    }
+
+    var themeFingerprintComputationCountForTesting: Int {
+        themeFingerprintMemoizer.computationCount
+    }
+
+    func makeRenderInput(
+        text: String,
+        width: CGFloat,
+        resourceLimits: MarkdownParser.ResourceLimits,
+        appearance: MarkdownAppearance,
+        theme: Theme,
+        plugins: [ASTPlugin],
+        diagramRegistry: DiagramAdapterRegistry,
+        imageLoadingPolicy: ImageLoadingPolicy
+    ) -> MarkdownRenderInput {
+        let parseKey = MarkdownParseKey(
+            text: text,
+            resourceLimits: resourceLimits,
+            plugins: plugins
+        )
+        return MarkdownRenderInput(
+            parseKey: parseKey,
+            width: width,
+            appearance: appearance,
+            themeFingerprint: themeFingerprintMemoizer.fingerprint(
+                for: theme,
+                appearance: appearance
+            ),
+            diagramFingerprint: diagramRegistry.cacheFingerprint,
+            imagePolicyFingerprint: imageLoadingPolicy.cacheFingerprint
+        )
     }
 
     func preferredWidth(fallback: CGFloat) -> CGFloat {
@@ -55,7 +131,8 @@ final class MarkdownEngine: ObservableObject {
         diagramRegistry: DiagramAdapterRegistry,
         imageLoadingPolicy: ImageLoadingPolicy,
         resourceLimits: MarkdownParser.ResourceLimits,
-        appearance: MarkdownAppearance
+        appearance: MarkdownAppearance,
+        precomputedThemeFingerprint: Int? = nil
     ) {
         let resolvedWidth = resolvedRenderWidth(fallbackWidth: fallbackWidth)
         let configuration = makeConfiguration(
@@ -66,7 +143,8 @@ final class MarkdownEngine: ObservableObject {
             diagramRegistry: diagramRegistry,
             imageLoadingPolicy: imageLoadingPolicy,
             resourceLimits: resourceLimits,
-            appearance: appearance
+            appearance: appearance,
+            precomputedThemeFingerprint: precomputedThemeFingerprint
         )
         storeLatestConfiguration(configuration)
         guard let resolvedWidth else { return }
@@ -81,7 +159,8 @@ final class MarkdownEngine: ObservableObject {
         diagramRegistry: DiagramAdapterRegistry,
         imageLoadingPolicy: ImageLoadingPolicy,
         resourceLimits: MarkdownParser.ResourceLimits,
-        appearance: MarkdownAppearance
+        appearance: MarkdownAppearance,
+        precomputedThemeFingerprint: Int? = nil
     ) {
         let resolvedWidth = resolvedRenderWidth(fallbackWidth: fallbackWidth)
         let configuration = makeConfiguration(
@@ -92,7 +171,8 @@ final class MarkdownEngine: ObservableObject {
             diagramRegistry: diagramRegistry,
             imageLoadingPolicy: imageLoadingPolicy,
             resourceLimits: resourceLimits,
-            appearance: appearance
+            appearance: appearance,
+            precomputedThemeFingerprint: precomputedThemeFingerprint
         )
         scheduleDebounced(configuration: configuration, shouldSubmitAfterDelay: resolvedWidth != nil)
     }
@@ -105,7 +185,8 @@ final class MarkdownEngine: ObservableObject {
         diagramRegistry: DiagramAdapterRegistry,
         imageLoadingPolicy: ImageLoadingPolicy,
         resourceLimits: MarkdownParser.ResourceLimits,
-        appearance: MarkdownAppearance
+        appearance: MarkdownAppearance,
+        precomputedThemeFingerprint: Int? = nil
     ) {
         guard width > 50 else { return }
         guard abs(width - currentWidth) > 0.5 else { return }
@@ -120,7 +201,8 @@ final class MarkdownEngine: ObservableObject {
             diagramRegistry: diagramRegistry,
             imageLoadingPolicy: imageLoadingPolicy,
             resourceLimits: resourceLimits,
-            appearance: appearance
+            appearance: appearance,
+            precomputedThemeFingerprint: precomputedThemeFingerprint
         )
 
         if !hasKnownEffectiveWidth {
@@ -194,11 +276,14 @@ final class MarkdownEngine: ObservableObject {
         diagramRegistry: DiagramAdapterRegistry,
         imageLoadingPolicy: ImageLoadingPolicy,
         resourceLimits: MarkdownParser.ResourceLimits,
-        appearance: MarkdownAppearance
+        appearance: MarkdownAppearance,
+        precomputedThemeFingerprint: Int?
     ) -> MarkdownRenderConfiguration {
         MarkdownRenderConfiguration(
             parseKey: MarkdownParseKey(text: markdown, resourceLimits: resourceLimits, plugins: plugins),
             theme: theme,
+            themeFingerprint: precomputedThemeFingerprint
+                ?? themeFingerprintMemoizer.fingerprint(for: theme, appearance: appearance),
             plugins: plugins,
             width: width,
             diagramRegistry: diagramRegistry,
@@ -315,6 +400,7 @@ final class MarkdownEngine: ObservableObject {
             rawASTPreparation: rawASTPreparation,
             solver: solver(
                 for: request.configuration.theme,
+                themeFingerprint: request.configuration.themeFingerprint,
                 diagramRegistry: request.configuration.diagramRegistry,
                 imageLoadingPolicy: request.configuration.imageLoadingPolicy,
                 appearance: request.configuration.appearance
@@ -336,12 +422,13 @@ final class MarkdownEngine: ObservableObject {
 
     private func solver(
         for theme: Theme,
+        themeFingerprint: Int,
         diagramRegistry: DiagramAdapterRegistry,
         imageLoadingPolicy: ImageLoadingPolicy,
         appearance: MarkdownAppearance
     ) -> LayoutSolver {
         let key = SolverKey(
-            themeFingerprint: MarkdownRenderInput.themeFingerprint(theme, appearance: appearance),
+            themeFingerprint: themeFingerprint,
             diagramFingerprint: diagramRegistry.cacheFingerprint,
             policyFingerprint: imageLoadingPolicy.cacheFingerprint,
             appearance: appearance
@@ -442,6 +529,7 @@ final class MarkdownEngine: ObservableObject {
 private struct MarkdownRenderConfiguration {
     let parseKey: MarkdownParseKey
     let theme: Theme
+    let themeFingerprint: Int
     let plugins: [ASTPlugin]
     let width: CGFloat
     let diagramRegistry: DiagramAdapterRegistry
@@ -455,6 +543,7 @@ private struct MarkdownRenderConfiguration {
         MarkdownRenderConfiguration(
             parseKey: parseKey,
             theme: theme,
+            themeFingerprint: themeFingerprint,
             plugins: plugins,
             width: width,
             diagramRegistry: diagramRegistry,

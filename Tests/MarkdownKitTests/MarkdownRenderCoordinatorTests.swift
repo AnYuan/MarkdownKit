@@ -106,6 +106,132 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
     private let initialWidth: CGFloat = 360
     private let limits = MarkdownParser.ResourceLimits.default
 
+    func testRenderInputFactoryMemoizesSameThemeAndAppearance() {
+        let engine = MarkdownEngine()
+
+        let first = makeRenderInput(engine, theme: .default, appearance: .light)
+        let second = makeRenderInput(engine, theme: .default, appearance: .light)
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(engine.themeFingerprintComputationCountForTesting, 1)
+    }
+
+    func testRenderInputFactoryCachesAppearancesIndependently() {
+        let engine = MarkdownEngine()
+
+        let light = makeRenderInput(engine, theme: .default, appearance: .light)
+        let dark = makeRenderInput(engine, theme: .default, appearance: .dark)
+        _ = makeRenderInput(engine, theme: .default, appearance: .light)
+        _ = makeRenderInput(engine, theme: .default, appearance: .dark)
+
+        XCTAssertNotEqual(light.themeFingerprint, dark.themeFingerprint)
+        XCTAssertEqual(engine.themeFingerprintComputationCountForTesting, 2)
+    }
+
+    func testRenderInputFactoryInvalidatesBothAppearancesWhenThemeChanges() {
+        let engine = MarkdownEngine()
+        let updatedTheme = themed(textColor: .systemRed)
+
+        _ = makeRenderInput(engine, theme: .default, appearance: .light)
+        _ = makeRenderInput(engine, theme: .default, appearance: .dark)
+        XCTAssertEqual(engine.themeFingerprintComputationCountForTesting, 2)
+
+        _ = makeRenderInput(engine, theme: updatedTheme, appearance: .light)
+        _ = makeRenderInput(engine, theme: updatedTheme, appearance: .dark)
+        _ = makeRenderInput(engine, theme: updatedTheme, appearance: .light)
+        _ = makeRenderInput(engine, theme: updatedTheme, appearance: .dark)
+        XCTAssertEqual(engine.themeFingerprintComputationCountForTesting, 4)
+
+        _ = makeRenderInput(engine, theme: .default, appearance: .light)
+        XCTAssertEqual(engine.themeFingerprintComputationCountForTesting, 5)
+    }
+
+    func testPrecomputedThemeFingerprintIsReusedByRenderSubmission() async {
+        let engine = MarkdownEngine()
+        let input = makeRenderInput(engine, theme: .default, appearance: .light)
+        XCTAssertEqual(engine.themeFingerprintComputationCountForTesting, 1)
+
+        engine.updateEffectiveContentWidth(
+            initialWidth,
+            markdown: input.text,
+            plugins: [],
+            theme: .default,
+            diagramRegistry: DiagramAdapterRegistry(),
+            imageLoadingPolicy: .default,
+            resourceLimits: input.resourceLimits,
+            appearance: input.appearance,
+            precomputedThemeFingerprint: input.themeFingerprint
+        )
+        await engine.waitUntilSettled()
+
+        XCTAssertFalse(engine.layouts.isEmpty)
+        XCTAssertEqual(engine.themeFingerprintComputationCountForTesting, 1)
+    }
+
+    func testDirectRenderSubmissionMemoizesFingerprintForSolverKeying() async {
+        let engine = MarkdownEngine()
+        let markdown = "Direct render fingerprint reuse"
+
+        submitInitialRender(
+            engine,
+            markdown: markdown,
+            plugins: [],
+            appearance: .light
+        )
+        await engine.waitUntilSettled()
+        XCTAssertEqual(engine.themeFingerprintComputationCountForTesting, 1)
+
+        renderImmediately(
+            engine,
+            markdown: markdown,
+            plugins: [],
+            appearance: .light
+        )
+        await engine.waitUntilSettled()
+
+        XCTAssertFalse(engine.layouts.isEmpty)
+        XCTAssertEqual(engine.themeFingerprintComputationCountForTesting, 1)
+    }
+
+    func testThemeAndAppearanceChangesStillReplaceSolverConfiguration() async throws {
+        let engine = MarkdownEngine()
+        let markdown = "Theme and appearance rerender"
+        let updatedTheme = themed(textColor: .systemRed)
+
+        submitInitialRender(
+            engine,
+            markdown: markdown,
+            plugins: [],
+            appearance: .light
+        )
+        await engine.waitUntilSettled()
+        let initial = try XCTUnwrap(engine.layouts.first)
+
+        renderImmediately(
+            engine,
+            markdown: markdown,
+            plugins: [],
+            theme: updatedTheme,
+            appearance: .light
+        )
+        await engine.waitUntilSettled()
+        let themed = try XCTUnwrap(engine.layouts.first)
+
+        renderImmediately(
+            engine,
+            markdown: markdown,
+            plugins: [],
+            theme: updatedTheme,
+            appearance: .dark
+        )
+        await engine.waitUntilSettled()
+        let dark = try XCTUnwrap(engine.layouts.first)
+
+        XCTAssertNotEqual(initial.renderFingerprint, themed.renderFingerprint)
+        XCTAssertNotEqual(themed.renderFingerprint, dark.renderFingerprint)
+        XCTAssertEqual(dark.appearance, .dark)
+    }
+
     func testSingleFlightKeepsOnlyLatestPendingRender() async {
         let engine = MarkdownEngine()
         let firstVisitEntered = expectation(description: "first plugin visit entered")
@@ -424,6 +550,23 @@ final class MarkdownRenderCoordinatorTests: XCTestCase {
             imageLoadingPolicy: .default,
             resourceLimits: resourceLimits,
             appearance: appearance
+        )
+    }
+
+    private func makeRenderInput(
+        _ engine: MarkdownEngine,
+        theme: Theme,
+        appearance: MarkdownAppearance
+    ) -> MarkdownRenderInput {
+        engine.makeRenderInput(
+            text: "Render input fingerprint contract",
+            width: initialWidth,
+            resourceLimits: limits,
+            appearance: appearance,
+            theme: theme,
+            plugins: [],
+            diagramRegistry: DiagramAdapterRegistry(),
+            imageLoadingPolicy: .default
         )
     }
 

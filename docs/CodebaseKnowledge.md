@@ -17,8 +17,8 @@ This document is a practical snapshot of the current repository, with emphasis o
   - Source files (`Sources/MarkdownKit/**/*.swift`): **91**
   - Test files (`Tests/MarkdownKitTests/*.swift`): **81**
   - Test-bearing files: **73**
-  - Static test methods: **715**
-  - macOS-discoverable tests: **615**
+  - Static test methods: **721**
+  - macOS-discoverable tests: **621**
 
 ## 2. Build / Run / Test Commands
 
@@ -69,17 +69,22 @@ bash scripts/verify_benchmarks.sh
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **615** discoverable tests
+- `swift test list`: **621** discoverable tests
 - Last full `swift test`: **516 tests passed** on 2026-07-18
-- `verify_fast.sh`: **596** correctness tests
-- `verify_ios.sh`: **656** XCTest tests plus one app-hosted Mermaid PASS marker
+- `verify_fast.sh`: **602** correctness tests
+- `verify_ios.sh`: **662** XCTest tests plus one app-hosted Mermaid PASS marker
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
 
 Pipeline:
 
-1. `MarkdownView` creates `MarkdownRenderInput`; `MarkdownEngine` (`@MainActor`) coalesces single-flight requests (one active detached render + one latest pending request).
+1. `MarkdownView` asks its persistent `MarkdownEngine` (`@MainActor`) to create
+   `MarkdownRenderInput`. The engine memoizes the current theme's light/dark
+   fingerprints without observable-state publication, carries the selected
+   value through render configuration and solver identity, and coalesces
+   single-flight requests (one active detached render + one latest pending
+   request).
 2. Parse boundary uses `MarkdownParseKey` (`text` + `resourceLimits` + ordered plugin fingerprint); only matching keys can reuse cached raw AST.
 3. On parse misses, task-confined `MarkdownParser` + plugin chain produce a fresh internal `DocumentNode`.
 4. Details disclosure overrides are reapplied to the latest configuration before layout.
@@ -194,7 +199,7 @@ High-value suites:
 - Mermaid backend contracts: `MermaidDiagramAdapterTests` uses real WebKit on
   macOS and a deterministic image driver on iOS; the iOS verification script
   adds a separate app-hosted public-`MarkdownView` Mermaid-fence smoke using
-  real WebKit after its 656 XCTest tests.
+  real WebKit after its 662 XCTest tests.
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`,
   `BenchmarkCacheTests`, `MarkdownRenderCoordinatorBenchmarkTests`, with
   13 canonical isolated Release workloads and the prepared-content relational

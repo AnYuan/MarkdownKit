@@ -60,7 +60,7 @@ public struct MarkdownView: View {
     public var body: some View {
         GeometryReader { geometry in
             let appearance = MarkdownAppearance(colorScheme: colorScheme)
-            let renderInput = MarkdownRenderInput(
+            let renderInput = engine.makeRenderInput(
                 text: text,
                 width: geometry.size.width,
                 resourceLimits: resourceLimits,
@@ -85,7 +85,8 @@ public struct MarkdownView: View {
                         diagramRegistry: diagramRegistry,
                         imageLoadingPolicy: imageLoadingPolicy,
                         resourceLimits: resourceLimits,
-                        appearance: appearance
+                        appearance: appearance,
+                        precomputedThemeFingerprint: renderInput.themeFingerprint
                     )
                 },
                 onLinkTap: linkTapHandler,
@@ -104,7 +105,8 @@ public struct MarkdownView: View {
                     diagramRegistry: diagramRegistry,
                     imageLoadingPolicy: imageLoadingPolicy,
                     resourceLimits: resourceLimits,
-                    appearance: appearance
+                    appearance: appearance,
+                    precomputedThemeFingerprint: renderInput.themeFingerprint
                 )
             }
             .onChange(of: renderInput) { _, newInput in
@@ -116,7 +118,8 @@ public struct MarkdownView: View {
                     diagramRegistry: diagramRegistry,
                     imageLoadingPolicy: imageLoadingPolicy,
                     resourceLimits: newInput.resourceLimits,
-                    appearance: newInput.appearance
+                    appearance: newInput.appearance,
+                    precomputedThemeFingerprint: newInput.themeFingerprint
                 )
             }
         }
