@@ -938,12 +938,71 @@ earlier items).
   first checkbox scan onto the main thread. Keep eager off-main metadata so
   platform configure remains O(1). Reconsider only with new profiling and a
   builder-produced eager sidecar, not a mutable lazy box.
-- [ ] P14.2 `perf: download images in chunks, not per byte`
+- [x] P14.2 `perf: download images in chunks, not per byte`
   `ImageResourceLoader` accumulates `for try await byte in bytes {
-  data.append(byte) }` — millions of AsyncSequence suspensions per MB. Use
-  `URLSession.data(for:)` when the expected length is acceptable, or read in
-  chunks; keep the byte-cap check per chunk. File:
-  `ImageResourceLoader.swift` (~214).
+  data.append(byte) }` — millions of AsyncSequence suspensions per MB.
+  Plain `URLSession.data(for:)` is not acceptable because a missing or dishonest
+  `Content-Length` could buffer an unbounded response before the final cap is
+  checked. Replace the byte sequence with one reusable internal
+  `URLSessionDataDelegate` transport that receives `Data` chunks and isolates
+  concurrent requests by task identifier.
+
+  P14.2 packets:
+  - [x] P14.2-A Add a temporary, noncanonical isolated Release benchmark using
+    an injected `URLProtocol` and a 4 MiB in-memory image response. Record five
+    independent pre-change processes with the existing 3-warmup/20-sample
+    harness, then remove the temporary benchmark before commit. Keep the 13
+    canonical benchmark workloads unchanged.
+  - [x] P14.2-B Implement the bounded chunk transport. Preserve the current
+    request cache policy, injected session configuration, allowed redirects,
+    final-URL policy, HTTP/MIME/expected-length validation, exact maximum-byte
+    boundary, first-invalid-byte error, and typed failure behavior.
+  - [x] P14.2-C Add deterministic contracts for multi-chunk assembly, exact
+    boundary success, unknown/lying-length overflow, rejection before body
+    delivery, cancellation cleanup, partial transport failure, concurrent
+    request isolation, and late-callback single completion.
+  - [x] P14.2-D Record five identical post-change Release processes. Require the
+    median 4 MiB average to be at most 65% of the pre-change median, with p95
+    retained as stage evidence rather than a permanent baseline.
+  - [x] P14.2-E Complete concurrency, security, reliability, simplification, and
+    contract review; run focused image tests, `swift build`, the fast gate,
+    documentation freshness, public API checks, snapshots, iOS correctness, and
+    all 13 canonical Release workloads; then commit and push atomically.
+
+  Acceptance:
+  - Response bytes are appended only in Foundation-delivered `Data` chunks;
+    no production path performs one async iterator suspension per byte.
+  - Disallowed redirects are rejected before follow, and accepted final
+    responses are validated before body accumulation.
+  - Missing or dishonest lengths cannot retain more than the configured body
+    cap plus the currently delivered chunk; overflow cancels immediately and
+    reports the first invalid byte count.
+  - Swift task cancellation stops the underlying task and resumes exactly once
+    with `CancellationError`; typed validation failures are not replaced by
+    `URLError.cancelled`.
+  - One loader safely supports concurrent image requests without state sharing,
+    continuation leaks, or public API drift.
+
+  P14.2-A evidence: five independent pre-change Release-process averages were
+  79.10, 73.69, 74.37, 75.65, and 84.02ms; median average 75.65ms. The p95
+  values were 85.95, 75.46, 79.29, 79.53, and 107.6ms; median p95 79.53ms.
+  The required post-change median-average ceiling is 49.17ms.
+
+  P14.2-D evidence from the final reviewed source: five independent
+  post-change averages were 0.246, 0.245, 0.233, 0.228, and 0.354ms; median
+  average 0.245ms, 99.7% below the pre-change median and far below the 49.17ms
+  ceiling. The p95 values were 0.300, 0.287, 0.271, 0.248, and 0.431ms; median
+  p95 0.287ms. The temporary stage benchmark was removed; the 13 canonical
+  workloads remain unchanged.
+
+  P14.2-E validation: 53 focused image-pipeline tests, 596 fast correctness
+  tests, 615-test documentation freshness, provenance, unchanged macOS public
+  API (453 symbols / 599 relationships), unchanged iOS public API on both
+  simulator architectures (454 / 610), both four-test snapshot contracts,
+  exactly 656 iOS XCTest tests plus one app-hosted real-WebKit Mermaid smoke,
+  and all 13 isolated Release workloads pass. Parallel simplification,
+  regression, security, reliability, contracts, and Swift concurrency reviews
+  found no remaining material issue.
 
 ### Streaming structure
 - [ ] P14.3 `perf: key diffable items by path, reconfigure on fingerprint`

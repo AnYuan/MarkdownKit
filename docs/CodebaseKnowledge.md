@@ -17,8 +17,8 @@ This document is a practical snapshot of the current repository, with emphasis o
   - Source files (`Sources/MarkdownKit/**/*.swift`): **91**
   - Test files (`Tests/MarkdownKitTests/*.swift`): **81**
   - Test-bearing files: **73**
-  - Static test methods: **706**
-  - macOS-discoverable tests: **606**
+  - Static test methods: **715**
+  - macOS-discoverable tests: **615**
 
 ## 2. Build / Run / Test Commands
 
@@ -69,10 +69,10 @@ bash scripts/verify_benchmarks.sh
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **606** discoverable tests
+- `swift test list`: **615** discoverable tests
 - Last full `swift test`: **516 tests passed** on 2026-07-18
-- `verify_fast.sh`: **587** correctness tests
-- `verify_ios.sh`: **647** XCTest tests plus one app-hosted Mermaid PASS marker
+- `verify_fast.sh`: **596** correctness tests
+- `verify_ios.sh`: **656** XCTest tests plus one app-hosted Mermaid PASS marker
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -83,7 +83,7 @@ Pipeline:
 2. Parse boundary uses `MarkdownParseKey` (`text` + `resourceLimits` + ordered plugin fingerprint); only matching keys can reuse cached raw AST.
 3. On parse misses, task-confined `MarkdownParser` + plugin chain produce a fresh internal `DocumentNode`.
 4. Details disclosure overrides are reapplied to the latest configuration before layout.
-5. `LayoutSolver.solve(node:width:)` builds attributed content + measured sizes through the internal `TextKitCalculator`. Parser-produced images remain inline: `ImageAttachmentBuilder` loads through `ImageResourceLoader`, builds a bounded thumbnail attachment, or emits bracketed secondary-color alt text.
+5. `LayoutSolver.solve(node:width:)` builds attributed content + measured sizes through the internal `TextKitCalculator`. Parser-produced images remain inline: `ImageAttachmentBuilder` loads through `ImageResourceLoader`, whose reusable delegate transport validates response headers before appending bounded `Data` chunks, then builds a bounded thumbnail attachment or emits bracketed secondary-color alt text.
 6. Each `LayoutResult` caches accessibility label, value, hint, role, and task-checkbox state during layout so UIKit/AppKit cells apply metadata without re-scanning attributed strings.
 7. `LayoutCache` memoizes `(node.contentFingerprint, optional interaction fingerprint, rounded width, solver variant hash)` results, including image-policy inputs.
 8. UI containers mount top-level `LayoutResult` rows (`MarkdownCollectionView` iOS/macOS).
@@ -186,7 +186,7 @@ High-value suites:
 - Layout invariants: `LayoutSolverExtendedTests`, `InlineFormattingLayoutTests`, `InteractionCacheIdentityTests`, `CrossPlatformLayoutTests`
 - Arithmetic preparation/layout contracts: `ArithmeticTextCalculatorTests`
 - Table canonicalization/adapters: `TableLayoutSharedTests`, `TableAttributedStringBuilderTests`, `iOSTableLayoutTests`
-- Unified image pipeline: `ImageResourceLoaderTests` (12 injected-`URLProtocol`/local policy and validation tests), `ImageAttachmentBuilderTests` (5 decode/cache tests)
+- Unified image pipeline: `ImageResourceLoaderTests` (21 injected-`URLProtocol`/local policy, redirect, chunk-limit, cancellation, concurrency, and validation tests), `ImageAttachmentBuilderTests` (5 decode/cache tests)
 - Safety and Utils: `URLSanitizerTests`, `DepthLimitTests`, `FuzzTests`, `TableOfContentsBuilderTests`, `PlatformAccessibilityTests`, `PerformanceProfilerTests`
 - Committed visual regression: macOS `SnapshotTests`
 - Deferred visual coverage: `iOSSnapshotTests` has no committed baseline or dedicated lane
@@ -194,7 +194,7 @@ High-value suites:
 - Mermaid backend contracts: `MermaidDiagramAdapterTests` uses real WebKit on
   macOS and a deterministic image driver on iOS; the iOS verification script
   adds a separate app-hosted public-`MarkdownView` Mermaid-fence smoke using
-  real WebKit after its 647 XCTest tests.
+  real WebKit after its 656 XCTest tests.
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`,
   `BenchmarkCacheTests`, `MarkdownRenderCoordinatorBenchmarkTests`, with
   13 canonical isolated Release workloads and the prepared-content relational

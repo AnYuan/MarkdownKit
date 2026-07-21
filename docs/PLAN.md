@@ -41,7 +41,7 @@ package/build checks, macOS and iOS public API checks, provenance, fast and iOS 
 documentation freshness, visual and determinism snapshots, and benchmarks; `verify_all.sh --full`
 alone is not release validation.
 
-The iOS release gate is deliberately two-part: 647 app-less XCTest tests exercise Mermaid's
+The iOS release gate is deliberately two-part: 656 app-less XCTest tests exercise Mermaid's
 queue/cache/cancellation state machine through a deterministic image driver, then a separately
 assembled SwiftUI Simulator app proves that a Mermaid fence can traverse public `MarkdownView`
 and its registry-backed real-WebKit adapter.
@@ -192,9 +192,17 @@ The review predated the Evidence-Driven Performance Wave; several of its finding
 - Unchanged-content width relayout/highlight/arithmetic reuse → P07.
 - Lazy accessibility metadata → P14.1 closed without code: corrected profiling
   measured it at about 0.9%, and laziness would move mounted-row scans to main.
+- Per-byte async image response accumulation → P14.2 now uses a reusable
+  delegate transport with early validation and bounded `Data` chunks.
+
+P14.2 improved the isolated 4 MiB injected-response median from 75.65ms to
+0.245ms (99.7%) while preserving redirect, response-validation, byte-cap, and
+cancellation contracts. Twenty-one focused loader tests, 596 fast tests, 615
+discoverable tests, 656 iOS tests, both platform API baselines, snapshots,
+provenance, and all 13 canonical Release workloads pass.
 
 The remaining findings fall into four groups:
 1. **Streaming structure**: the growing block still changes `StableNodeIdentity` every tick (Diffable delete+insert instead of reconfigure); the whole document is still re-parsed on every text change; when the relevant syntax *is* present, Details/Diagram/Math still walk the AST separately (Math three times); Mermaid re-runs `mermaid.initialize` per render and caches intermediate streamed sources; the MathJax engine is cold per solver instance.
 2. **Cold layout taxes**: PreparedText cache keys that copy and hash the full string on every lookup plus always-on stats locks; one global TextKit lock with per-call stack allocation, and arithmetic routing limited to paragraph/header. P14.7 keeps the residual direct PreparedText key/stats/structured-measurer-key cleanup pending.
-3. **UI**: a per-byte async image download loop; macOS main-thread `ensureLayout` per item configure; per-body-evaluation theme fingerprint resolution in `MarkdownView`.
+3. **UI**: macOS main-thread `ensureLayout` per item configure; per-body-evaluation theme fingerprint resolution in `MarkdownView`.
 4. **Hygiene**: `LayoutCache` lacks a `totalCostLimit`; O(n) LRU eviction in `FontTraitResolver`; the cache-reuse requirement for one-shot `MarkdownKitEngine.layout` hosts is undocumented.

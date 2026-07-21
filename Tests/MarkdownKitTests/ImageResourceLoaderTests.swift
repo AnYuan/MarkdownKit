@@ -4,7 +4,72 @@ import XCTest
 
 private struct StubbedURLResponse {
     let response: URLResponse
-    let data: Data
+    let chunks: [Data]
+    let completion: StubbedURLCompletion
+    let bodyGate: StubbedURLGate?
+    let responseTriggerData: Data?
+    let finishesBeforeBody: Bool
+    let deliversAfterStop: Bool
+
+    init(
+        response: URLResponse,
+        chunks: [Data],
+        completion: StubbedURLCompletion = .finish,
+        bodyGate: StubbedURLGate? = nil,
+        responseTriggerData: Data? = nil,
+        finishesBeforeBody: Bool = false,
+        deliversAfterStop: Bool = false
+    ) {
+        self.response = response
+        self.chunks = chunks
+        self.completion = completion
+        self.bodyGate = bodyGate
+        self.responseTriggerData = responseTriggerData
+        self.finishesBeforeBody = finishesBeforeBody
+        self.deliversAfterStop = deliversAfterStop
+    }
+}
+
+private enum StubbedURLCompletion {
+    case finish
+    case failure(URLError)
+    case none
+}
+
+private final class StubbedURLGate: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var isOpen = false
+    private var isWaiting = false
+
+    func wait() {
+        condition.lock()
+        isWaiting = true
+        condition.broadcast()
+        while !isOpen {
+            condition.wait()
+        }
+        condition.unlock()
+    }
+
+    func open() {
+        condition.lock()
+        isOpen = true
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func waitForWaiter(timeout: TimeInterval = 2) -> Bool {
+        condition.lock()
+        defer { condition.unlock() }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while !isWaiting {
+            guard condition.wait(until: deadline) else {
+                return isWaiting
+            }
+        }
+        return true
+    }
 }
 
 private enum StubbedURLAction {
@@ -12,33 +77,51 @@ private enum StubbedURLAction {
     case redirect(response: HTTPURLResponse, request: URLRequest)
 }
 
+private struct SendableURLProtocolReference: @unchecked Sendable {
+    let value: ImageLoaderURLProtocol
+}
+
 private final class ImageLoaderURLProtocolState: @unchecked Sendable {
     typealias Handler = (URLRequest) throws -> StubbedURLAction
 
-    private let lock = NSLock()
+    private let condition = NSCondition()
     private var handler: Handler?
     private var requestCount = 0
+    private var responseCounts: [URL: Int] = [:]
+    private var stopCounts: [URL: Int] = [:]
+    private var deliveredByteCounts: [URL: Int] = [:]
+    private var workerCompletionCounts: [URL: Int] = [:]
 
     func configure(handler: @escaping Handler) {
-        lock.lock()
+        condition.lock()
         self.handler = handler
         requestCount = 0
-        lock.unlock()
+        responseCounts.removeAll()
+        stopCounts.removeAll()
+        deliveredByteCounts.removeAll()
+        workerCompletionCounts.removeAll()
+        condition.unlock()
     }
 
     func reset() {
-        lock.lock()
+        condition.lock()
         handler = nil
         requestCount = 0
-        lock.unlock()
+        responseCounts.removeAll()
+        stopCounts.removeAll()
+        deliveredByteCounts.removeAll()
+        workerCompletionCounts.removeAll()
+        condition.broadcast()
+        condition.unlock()
     }
 
     func action(for request: URLRequest) throws -> StubbedURLAction {
         let handler: Handler?
-        lock.lock()
+        condition.lock()
         requestCount += 1
         handler = self.handler
-        lock.unlock()
+        condition.broadcast()
+        condition.unlock()
 
         guard let handler else {
             throw URLError(.resourceUnavailable)
@@ -47,14 +130,86 @@ private final class ImageLoaderURLProtocolState: @unchecked Sendable {
     }
 
     func count() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
+        condition.lock()
+        defer { condition.unlock() }
         return requestCount
+    }
+
+    func recordResponse(for url: URL) {
+        condition.lock()
+        responseCounts[url, default: 0] += 1
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func recordStop(for url: URL) {
+        condition.lock()
+        stopCounts[url, default: 0] += 1
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func recordDeliveredChunk(_ chunk: Data, for url: URL) {
+        condition.lock()
+        deliveredByteCounts[url, default: 0] += chunk.count
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func recordWorkerCompletion(for url: URL) {
+        condition.lock()
+        workerCompletionCounts[url, default: 0] += 1
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func deliveredByteCount(for url: URL) -> Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return deliveredByteCounts[url, default: 0]
+    }
+
+    func waitForDeliveredByteCount(
+        _ minimumCount: Int,
+        for url: URL
+    ) -> Bool {
+        waitUntil { deliveredByteCounts[url, default: 0] >= minimumCount }
+    }
+
+    func waitForResponse(for url: URL) -> Bool {
+        waitUntil { responseCounts[url, default: 0] > 0 }
+    }
+
+    func waitForStop(for url: URL) -> Bool {
+        waitUntil { stopCounts[url, default: 0] > 0 }
+    }
+
+    func waitForWorkerCompletion(for url: URL) -> Bool {
+        waitUntil { workerCompletionCounts[url, default: 0] > 0 }
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 2,
+        _ predicate: () -> Bool
+    ) -> Bool {
+        condition.lock()
+        defer { condition.unlock() }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while !predicate() {
+            guard condition.wait(until: deadline) else {
+                return predicate()
+            }
+        }
+        return true
     }
 }
 
 private final class ImageLoaderURLProtocol: URLProtocol {
     static let state = ImageLoaderURLProtocolState()
+
+    private let stopLock = NSLock()
+    private var isStopped = false
 
     override class func canInit(with request: URLRequest) -> Bool {
         true
@@ -68,9 +223,28 @@ private final class ImageLoaderURLProtocol: URLProtocol {
         do {
             switch try Self.state.action(for: request) {
             case let .response(stub):
+                guard let url = request.url else {
+                    client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+                    return
+                }
+                Self.state.recordResponse(for: url)
                 client?.urlProtocol(self, didReceive: stub.response, cacheStoragePolicy: .notAllowed)
-                client?.urlProtocol(self, didLoad: stub.data)
-                client?.urlProtocolDidFinishLoading(self)
+                if let bodyGate = stub.bodyGate {
+                    if let responseTriggerData = stub.responseTriggerData {
+                        Self.state.recordDeliveredChunk(responseTriggerData, for: url)
+                        client?.urlProtocol(self, didLoad: responseTriggerData)
+                    }
+                    if stub.finishesBeforeBody {
+                        client?.urlProtocolDidFinishLoading(self)
+                    }
+                    let reference = SendableURLProtocolReference(value: self)
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        bodyGate.wait()
+                        reference.value.deliver(stub, for: url)
+                    }
+                } else {
+                    deliver(stub, for: url)
+                }
             case let .redirect(response, request):
                 client?.urlProtocol(self, wasRedirectedTo: request, redirectResponse: response)
                 client?.urlProtocolDidFinishLoading(self)
@@ -80,7 +254,40 @@ private final class ImageLoaderURLProtocol: URLProtocol {
         }
     }
 
-    override func stopLoading() {}
+    override func stopLoading() {
+        stopLock.lock()
+        isStopped = true
+        stopLock.unlock()
+        if let url = request.url {
+            Self.state.recordStop(for: url)
+        }
+    }
+
+    private func deliver(_ stub: StubbedURLResponse, for url: URL) {
+        defer { Self.state.recordWorkerCompletion(for: url) }
+
+        for chunk in stub.chunks {
+            guard stub.deliversAfterStop || !stopped else { return }
+            Self.state.recordDeliveredChunk(chunk, for: url)
+            client?.urlProtocol(self, didLoad: chunk)
+        }
+
+        guard stub.deliversAfterStop || !stopped else { return }
+        switch stub.completion {
+        case .finish:
+            client?.urlProtocolDidFinishLoading(self)
+        case let .failure(error):
+            client?.urlProtocol(self, didFailWithError: error)
+        case .none:
+            break
+        }
+    }
+
+    private var stopped: Bool {
+        stopLock.lock()
+        defer { stopLock.unlock() }
+        return isStopped
+    }
 }
 
 final class ImageResourceLoaderTests: XCTestCase {
@@ -192,7 +399,7 @@ final class ImageResourceLoaderTests: XCTestCase {
                     )
                 )
                 return .response(
-                    StubbedURLResponse(response: response, data: redirectedData)
+                    StubbedURLResponse(response: response, chunks: [redirectedData])
                 )
             default:
                 throw URLError(.badURL)
@@ -207,6 +414,335 @@ final class ImageResourceLoaderTests: XCTestCase {
         XCTAssertEqual(resource.url, redirectedURL)
         XCTAssertEqual(resource.data, redirectedData)
         XCTAssertEqual(ImageLoaderURLProtocol.state.count(), 2)
+    }
+
+    func testMultiChunkResponseAssemblesInOrder() async throws {
+        let (loader, session) = makeLoader()
+        defer { session.invalidateAndCancel() }
+        let sourceURL = try XCTUnwrap(URL(string: "https://example.com/chunked.png"))
+        let chunks = [Data([1, 2]), Data([3]), Data([4, 5, 6])]
+
+        ImageLoaderURLProtocol.state.configure { request in
+            XCTAssertEqual(request.url, sourceURL)
+            XCTAssertEqual(request.cachePolicy, .returnCacheDataElseLoad)
+            XCTAssertEqual(request.timeoutInterval, 12)
+            return .response(
+                StubbedURLResponse(
+                    response: try Self.makeResponse(url: sourceURL),
+                    chunks: chunks
+                )
+            )
+        }
+
+        let resource = try await loader.load(
+            source: sourceURL.absoluteString,
+            policy: .remoteHTTPS
+        )
+
+        XCTAssertEqual(resource.url, sourceURL)
+        XCTAssertEqual(resource.data, Data([1, 2, 3, 4, 5, 6]))
+    }
+
+    func testExactMaximumByteBoundarySucceeds() async throws {
+        let (loader, session) = makeLoader()
+        defer { session.invalidateAndCancel() }
+        let sourceURL = try XCTUnwrap(URL(string: "https://example.com/exact-cap.png"))
+        let policy = ImageLoadingPolicy(
+            allowedRemoteSchemes: ["https"],
+            maximumResponseBytes: 4
+        )
+
+        ImageLoaderURLProtocol.state.configure { _ in
+            .response(
+                StubbedURLResponse(
+                    response: try Self.makeResponse(
+                        url: sourceURL,
+                        headers: ["Content-Length": "4"]
+                    ),
+                    chunks: [Data([1, 2]), Data([3, 4])]
+                )
+            )
+        }
+
+        let resource = try await loader.load(
+            source: sourceURL.absoluteString,
+            policy: policy
+        )
+        XCTAssertEqual(resource.data, Data([1, 2, 3, 4]))
+    }
+
+    func testUnknownContentLengthOverflowReturnsFirstInvalidCount() async throws {
+        let (loader, session) = makeLoader()
+        defer { session.invalidateAndCancel() }
+        let sourceURL = try XCTUnwrap(URL(string: "https://example.com/unknown-length.png"))
+        let policy = ImageLoadingPolicy(
+            allowedRemoteSchemes: ["https"],
+            maximumResponseBytes: 3
+        )
+
+        ImageLoaderURLProtocol.state.configure { _ in
+            .response(
+                StubbedURLResponse(
+                    response: try Self.makeResponse(url: sourceURL),
+                    chunks: [Data([1, 2]), Data([3, 4])]
+                )
+            )
+        }
+
+        await assertLoadingError(.dataTooLarge(4)) {
+            try await loader.load(source: sourceURL.absoluteString, policy: policy)
+        }
+    }
+
+    func testDishonestSmallerContentLengthCannotBypassFinalCap() async throws {
+        let (loader, session) = makeLoader()
+        defer { session.invalidateAndCancel() }
+        let sourceURL = try XCTUnwrap(URL(string: "https://example.com/dishonest-length.png"))
+        let policy = ImageLoadingPolicy(
+            allowedRemoteSchemes: ["https"],
+            maximumResponseBytes: 3
+        )
+
+        ImageLoaderURLProtocol.state.configure { _ in
+            .response(
+                StubbedURLResponse(
+                    response: try Self.makeResponse(
+                        url: sourceURL,
+                        headers: ["Content-Length": "2"]
+                    ),
+                    chunks: [Data([1, 2]), Data([3, 4])]
+                )
+            )
+        }
+
+        await assertLoadingError(.dataTooLarge(4)) {
+            try await loader.load(source: sourceURL.absoluteString, policy: policy)
+        }
+    }
+
+    func testInvalidResponsesCancelBeforeDelayedBodyDelivery() async throws {
+        let (loader, session) = makeLoader()
+        defer { session.invalidateAndCancel() }
+        let policy = ImageLoadingPolicy(
+            allowedRemoteSchemes: ["https"],
+            maximumResponseBytes: 3
+        )
+        let cases: [(String, HTTPURLResponse, ImageResourceLoadingError)] = [
+            (
+                "oversized",
+                try Self.makeResponse(
+                    url: XCTUnwrap(URL(string: "https://example.com/oversized.png")),
+                    headers: ["Content-Length": "4"]
+                ),
+                .responseTooLarge(4)
+            ),
+            (
+                "status",
+                try Self.makeResponse(
+                    url: XCTUnwrap(URL(string: "https://example.com/status.png")),
+                    statusCode: 404
+                ),
+                .unacceptableStatusCode(404)
+            ),
+            (
+                "mime",
+                try Self.makeResponse(
+                    url: XCTUnwrap(URL(string: "https://example.com/mime.png")),
+                    mimeType: "text/plain"
+                ),
+                .unsupportedMIMEType("text/plain")
+            ),
+        ]
+
+        for (name, response, expectedError) in cases {
+            let sourceURL = try XCTUnwrap(response.url)
+            let gate = StubbedURLGate()
+            ImageLoaderURLProtocol.state.configure { _ in
+                .response(
+                    StubbedURLResponse(
+                        response: response,
+                        chunks: [Data([1, 2, 3])],
+                        completion: .none,
+                        bodyGate: gate,
+                        finishesBeforeBody: true
+                    )
+                )
+            }
+
+            await assertLoadingError(expectedError) {
+                try await loader.load(source: sourceURL.absoluteString, policy: policy)
+            }
+            XCTAssertTrue(
+                ImageLoaderURLProtocol.state.waitForStop(for: sourceURL),
+                "Expected \(name) response to stop loading"
+            )
+            XCTAssertEqual(
+                ImageLoaderURLProtocol.state.deliveredByteCount(for: sourceURL),
+                0
+            )
+            gate.open()
+            XCTAssertTrue(
+                ImageLoaderURLProtocol.state.waitForWorkerCompletion(for: sourceURL),
+                "Expected \(name) body worker to exit"
+            )
+            XCTAssertEqual(
+                ImageLoaderURLProtocol.state.deliveredByteCount(for: sourceURL),
+                0
+            )
+        }
+    }
+
+    func testCancellationStopsNeverFinishingResponseAndIgnoresLateCallbacks() async throws {
+        let (loader, session) = makeLoader()
+        defer { session.invalidateAndCancel() }
+        let sourceURL = try XCTUnwrap(URL(string: "https://example.com/never-finishes.png"))
+        let gate = StubbedURLGate()
+
+        ImageLoaderURLProtocol.state.configure { _ in
+            .response(
+                StubbedURLResponse(
+                    response: try Self.makeResponse(url: sourceURL),
+                    chunks: [Data([9, 8, 7])],
+                    bodyGate: gate,
+                    responseTriggerData: Data([0]),
+                    deliversAfterStop: true
+                )
+            )
+        }
+
+        let task = Task {
+            try await loader.load(source: sourceURL.absoluteString, policy: .remoteHTTPS)
+        }
+        XCTAssertTrue(
+            ImageLoaderURLProtocol.state.waitForDeliveredByteCount(1, for: sourceURL)
+        )
+
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
+
+        XCTAssertTrue(ImageLoaderURLProtocol.state.waitForStop(for: sourceURL))
+        gate.open()
+        XCTAssertTrue(
+            ImageLoaderURLProtocol.state.waitForWorkerCompletion(for: sourceURL)
+        )
+        XCTAssertEqual(ImageLoaderURLProtocol.state.deliveredByteCount(for: sourceURL), 4)
+    }
+
+    func testCancellationBeforeTaskRegistrationThrowsCancellationError() async throws {
+        let (loader, session) = makeLoader()
+        defer { session.invalidateAndCancel() }
+        let sourceURL = try XCTUnwrap(URL(string: "https://example.com/pre-cancelled.png"))
+        let startGate = StubbedURLGate()
+        ImageLoaderURLProtocol.state.configure { _ in
+            throw URLError(.cannotLoadFromNetwork)
+        }
+
+        let task = Task {
+            startGate.wait()
+            return try await loader.load(
+                source: sourceURL.absoluteString,
+                policy: .remoteHTTPS
+            )
+        }
+        XCTAssertTrue(startGate.waitForWaiter())
+        task.cancel()
+        startGate.open()
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
+        XCTAssertEqual(ImageLoaderURLProtocol.state.count(), 0)
+    }
+
+    func testPartialTransportFailurePropagatesOriginalError() async throws {
+        let (loader, session) = makeLoader()
+        defer { session.invalidateAndCancel() }
+        let sourceURL = try XCTUnwrap(URL(string: "https://example.com/partial.png"))
+        let transportError = URLError(.networkConnectionLost)
+
+        ImageLoaderURLProtocol.state.configure { _ in
+            .response(
+                StubbedURLResponse(
+                    response: try Self.makeResponse(url: sourceURL),
+                    chunks: [Data([1, 2]), Data([3])],
+                    completion: .failure(transportError)
+                )
+            )
+        }
+
+        do {
+            _ = try await loader.load(
+                source: sourceURL.absoluteString,
+                policy: .remoteHTTPS
+            )
+            XCTFail("Expected transport failure")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, transportError.code)
+        } catch {
+            XCTFail("Expected URLError, got \(error)")
+        }
+    }
+
+    func testConcurrentLoadsThroughOneLoaderRemainIsolated() async throws {
+        let (loader, session) = makeLoader()
+        defer { session.invalidateAndCancel() }
+        let firstURL = try XCTUnwrap(URL(string: "https://example.com/first.png"))
+        let secondURL = try XCTUnwrap(URL(string: "https://example.com/second.png"))
+        let firstGate = StubbedURLGate()
+        let secondGate = StubbedURLGate()
+
+        ImageLoaderURLProtocol.state.configure { request in
+            switch request.url {
+            case firstURL:
+                return .response(
+                    StubbedURLResponse(
+                        response: try Self.makeResponse(url: firstURL),
+                        chunks: [Data([1]), Data([2])],
+                        bodyGate: firstGate
+                    )
+                )
+            case secondURL:
+                return .response(
+                    StubbedURLResponse(
+                        response: try Self.makeResponse(url: secondURL),
+                        chunks: [Data([8]), Data([9])],
+                        bodyGate: secondGate
+                    )
+                )
+            default:
+                throw URLError(.badURL)
+            }
+        }
+
+        async let first = loader.load(
+            source: firstURL.absoluteString,
+            policy: .remoteHTTPS
+        )
+        async let second = loader.load(
+            source: secondURL.absoluteString,
+            policy: .remoteHTTPS
+        )
+
+        XCTAssertTrue(ImageLoaderURLProtocol.state.waitForResponse(for: firstURL))
+        XCTAssertTrue(ImageLoaderURLProtocol.state.waitForResponse(for: secondURL))
+        secondGate.open()
+        firstGate.open()
+
+        let (firstResource, secondResource) = try await (first, second)
+        XCTAssertEqual(firstResource.url, firstURL)
+        XCTAssertEqual(firstResource.data, Data([1, 2]))
+        XCTAssertEqual(secondResource.url, secondURL)
+        XCTAssertEqual(secondResource.data, Data([8, 9]))
     }
 
     func testTrustedPolicyLoadsRelativeFileAndHTTP() async throws {
@@ -356,8 +892,26 @@ final class ImageResourceLoaderTests: XCTestCase {
                     headerFields: responseHeaders
                 )
             )
-            return .response(StubbedURLResponse(response: response, data: data))
+            return .response(StubbedURLResponse(response: response, chunks: [data]))
         }
+    }
+
+    private static func makeResponse(
+        url: URL,
+        statusCode: Int = 200,
+        mimeType: String = "image/png",
+        headers: [String: String] = [:]
+    ) throws -> HTTPURLResponse {
+        var responseHeaders = headers
+        responseHeaders["Content-Type"] = mimeType
+        return try XCTUnwrap(
+            HTTPURLResponse(
+                url: url,
+                statusCode: statusCode,
+                httpVersion: nil,
+                headerFields: responseHeaders
+            )
+        )
     }
 
     private func assertLoadingError(
