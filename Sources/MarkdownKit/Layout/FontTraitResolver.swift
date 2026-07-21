@@ -17,37 +17,69 @@ enum FontTraitResolver {
         case italic
     }
 
-    private struct CacheKey: Hashable {
-        let familyName: String?
-        let fontName: String
-        let pointSizeBits: UInt64
-        let existingTraits: UInt
-        let addedTrait: Trait
+    struct CacheKey: Hashable {
+        private let familyName: String?
+        private let fontName: String
+        private let pointSizeBits: UInt64
+        private let existingTraits: UInt
+        private let addedTrait: Trait
+
+        init(
+            familyName: String?,
+            fontName: String,
+            pointSizeBits: UInt64,
+            existingTraits: UInt,
+            addedTrait: Trait
+        ) {
+            self.familyName = familyName
+            self.fontName = fontName
+            self.pointSizeBits = pointSizeBits
+            self.existingTraits = existingTraits
+            self.addedTrait = addedTrait
+        }
     }
 
-    private final class DerivedFontCache: @unchecked Sendable {
+    /// `@unchecked Sendable`: `lock` guards cache, LRU-list, and statistics state.
+    final class DerivedFontCache: @unchecked Sendable {
         struct Stats {
             let hits: Int
             let misses: Int
         }
 
+        private final class Entry {
+            let key: CacheKey
+            let font: Font
+            weak var previous: Entry?
+            var next: Entry?
+
+            init(key: CacheKey, font: Font) {
+                self.key = key
+                self.font = font
+            }
+        }
+
         private let capacity: Int
         private let lock = NSLock()
-        private var fonts: [CacheKey: Font] = [:]
-        private var insertionOrder: [CacheKey] = []
+        private var entries: [CacheKey: Entry] = [:]
+        private var mostRecentEntry: Entry?
+        private var leastRecentEntry: Entry?
         private var hits = 0
         private var misses = 0
 
         init(capacity: Int) {
-            self.capacity = capacity
+            self.capacity = max(0, capacity)
+            if self.capacity > 0 {
+                entries.reserveCapacity(self.capacity)
+            }
         }
 
         func font(for key: CacheKey, derive: () -> Font) -> Font {
             lock.lock()
-            if let cachedFont = fonts[key] {
+            if let entry = entries[key] {
                 hits += 1
+                moveToMostRecent(entry)
                 lock.unlock()
-                return cachedFont
+                return entry.font
             }
             lock.unlock()
 
@@ -55,18 +87,20 @@ enum FontTraitResolver {
 
             lock.lock()
             defer { lock.unlock() }
-            if let cachedFont = fonts[key] {
+            if let entry = entries[key] {
                 hits += 1
-                return cachedFont
+                moveToMostRecent(entry)
+                return entry.font
             }
 
             misses += 1
-            if fonts.count >= capacity, let oldestKey = insertionOrder.first {
-                fonts.removeValue(forKey: oldestKey)
-                insertionOrder.removeFirst()
+            guard capacity > 0 else { return derivedFont }
+            if entries.count >= capacity, let entry = leastRecentEntry {
+                remove(entry)
             }
-            fonts[key] = derivedFont
-            insertionOrder.append(key)
+            let entry = Entry(key: key, font: derivedFont)
+            entries[key] = entry
+            attachAsMostRecent(entry)
             return derivedFont
         }
 
@@ -78,11 +112,50 @@ enum FontTraitResolver {
 
         func reset() {
             lock.lock()
-            fonts.removeAll(keepingCapacity: true)
-            insertionOrder.removeAll(keepingCapacity: true)
+            entries.removeAll(keepingCapacity: true)
+            mostRecentEntry = nil
+            leastRecentEntry = nil
             hits = 0
             misses = 0
             lock.unlock()
+        }
+
+        private func moveToMostRecent(_ entry: Entry) {
+            guard mostRecentEntry !== entry else { return }
+            detach(entry)
+            attachAsMostRecent(entry)
+        }
+
+        private func attachAsMostRecent(_ entry: Entry) {
+            entry.previous = nil
+            entry.next = mostRecentEntry
+            mostRecentEntry?.previous = entry
+            mostRecentEntry = entry
+            if leastRecentEntry == nil {
+                leastRecentEntry = entry
+            }
+        }
+
+        private func remove(_ entry: Entry) {
+            entries.removeValue(forKey: entry.key)
+            detach(entry)
+        }
+
+        private func detach(_ entry: Entry) {
+            let previous = entry.previous
+            let next = entry.next
+            previous?.next = next
+            next?.previous = previous
+
+            if mostRecentEntry === entry {
+                mostRecentEntry = next
+            }
+            if leastRecentEntry === entry {
+                leastRecentEntry = previous
+            }
+
+            entry.previous = nil
+            entry.next = nil
         }
     }
 

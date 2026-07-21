@@ -349,6 +349,86 @@ final class InlineFormattingLayoutTests: XCTestCase {
         XCTAssertEqual(stats.hits, 1)
     }
 
+    func testDerivedFontCacheEvictsLeastRecentlyUsedEntry() {
+        let cache = FontTraitResolver.DerivedFontCache(capacity: 2)
+        let firstKey = syntheticFontCacheKey("first")
+        let secondKey = syntheticFontCacheKey("second")
+        let thirdKey = syntheticFontCacheKey("third")
+        var firstDerivations = 0
+        var secondDerivations = 0
+        var thirdDerivations = 0
+
+        resolveFont(firstKey, in: cache, pointSize: 11, derivations: &firstDerivations)
+        resolveFont(secondKey, in: cache, pointSize: 12, derivations: &secondDerivations)
+        resolveFont(thirdKey, in: cache, pointSize: 13, derivations: &thirdDerivations)
+        resolveFont(secondKey, in: cache, pointSize: 12, derivations: &secondDerivations)
+        resolveFont(firstKey, in: cache, pointSize: 11, derivations: &firstDerivations)
+
+        XCTAssertEqual(firstDerivations, 2)
+        XCTAssertEqual(secondDerivations, 1)
+        XCTAssertEqual(thirdDerivations, 1)
+    }
+
+    func testDerivedFontCacheHitPromotesEntryToMostRecentlyUsed() {
+        let cache = FontTraitResolver.DerivedFontCache(capacity: 2)
+        let firstKey = syntheticFontCacheKey("first")
+        let secondKey = syntheticFontCacheKey("second")
+        let thirdKey = syntheticFontCacheKey("third")
+        var firstDerivations = 0
+        var secondDerivations = 0
+        var thirdDerivations = 0
+
+        resolveFont(firstKey, in: cache, pointSize: 11, derivations: &firstDerivations)
+        resolveFont(secondKey, in: cache, pointSize: 12, derivations: &secondDerivations)
+        resolveFont(firstKey, in: cache, pointSize: 11, derivations: &firstDerivations)
+        resolveFont(thirdKey, in: cache, pointSize: 13, derivations: &thirdDerivations)
+        resolveFont(firstKey, in: cache, pointSize: 11, derivations: &firstDerivations)
+        resolveFont(secondKey, in: cache, pointSize: 12, derivations: &secondDerivations)
+
+        XCTAssertEqual(firstDerivations, 1)
+        XCTAssertEqual(secondDerivations, 2)
+        XCTAssertEqual(thirdDerivations, 1)
+    }
+
+    func testDerivedFontCacheHitReturnsSameFontWithoutDerivingAgain() {
+        let cache = FontTraitResolver.DerivedFontCache(capacity: 2)
+        let key = syntheticFontCacheKey("identity")
+        let cachedFont = Font.systemFont(ofSize: 17.5)
+        var derivations = 0
+
+        let firstFont = cache.font(for: key) {
+            derivations += 1
+            return cachedFont
+        }
+        let secondFont = resolveFont(
+            key,
+            in: cache,
+            pointSize: 99,
+            derivations: &derivations
+        )
+
+        XCTAssertTrue(firstFont === cachedFont)
+        XCTAssertTrue(secondFont === cachedFont)
+        XCTAssertEqual(derivations, 1)
+    }
+
+    func testDerivedFontCacheNonPositiveCapacityDoesNotRetainEntries() {
+        for capacity in [0, -1] {
+            let cache = FontTraitResolver.DerivedFontCache(capacity: capacity)
+            let key = syntheticFontCacheKey("uncached-\(capacity)")
+            var derivations = 0
+
+            for _ in 0..<2 {
+                resolveFont(key, in: cache, pointSize: 15, derivations: &derivations)
+            }
+
+            let stats = cache.stats()
+            XCTAssertEqual(derivations, 2)
+            XCTAssertEqual(stats.hits, 0)
+            XCTAssertEqual(stats.misses, 2)
+        }
+    }
+
     func testTableHeaderBoldPreservesNamedMonospacedFontSemantics() throws {
         guard let baseFont = Font(name: "Menlo-Regular", size: 18) else {
             throw XCTSkip("Menlo is unavailable on this platform")
@@ -631,6 +711,29 @@ final class InlineFormattingLayoutTests: XCTestCase {
 
         let relativePath = imageURL.path.replacingOccurrences(of: cwdURL.path + "/", with: "")
         return (relativePath, imageURL)
+    }
+
+    private func syntheticFontCacheKey(_ fontName: String) -> FontTraitResolver.CacheKey {
+        FontTraitResolver.CacheKey(
+            familyName: "Synthetic",
+            fontName: fontName,
+            pointSizeBits: Double(12).bitPattern,
+            existingTraits: 0,
+            addedTrait: .bold
+        )
+    }
+
+    @discardableResult
+    private func resolveFont(
+        _ key: FontTraitResolver.CacheKey,
+        in cache: FontTraitResolver.DerivedFontCache,
+        pointSize: CGFloat,
+        derivations: inout Int
+    ) -> Font {
+        cache.font(for: key) {
+            derivations += 1
+            return Font.systemFont(ofSize: pointSize)
+        }
     }
 
     private func firstFont(in attributedString: NSAttributedString) -> Font? {

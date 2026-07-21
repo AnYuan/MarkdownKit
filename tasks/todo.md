@@ -1164,10 +1164,25 @@ earlier items).
     workloads pass. Final review found no material issue.
   Files: `Layout/LayoutCache.swift`, `Layout/LayoutResult.swift`,
   `LayoutCacheEdgeCaseTests.swift`, and temporary `BenchmarkCacheTests.swift`.
-- [ ] P14.13 `perf: O(1) LRU eviction in FontTraitResolver`
-  Eviction uses `Array.removeFirst()` (O(n) shift). Fine at capacity 256;
-  cheap to fix while touching the file. File:
-  `Layout/FontTraitResolver.swift` (~66).
+- [x] P14.13 `perf: O(1) LRU eviction in FontTraitResolver`
+  Replace insertion-order storage and `Array.removeFirst()` with a strict
+  dictionary-backed doubly linked LRU. Hits promote to MRU and full-cache
+  insertion removes the tail in O(1), while preserving the five-field cache
+  key, derive-outside-lock double check, cached `Font` object identity,
+  hit/miss accounting, 256-entry production capacity, and platform output.
+  Four direct contracts cover eviction order, hit promotion, no repeat
+  derivation, and non-positive injected capacities. Review found and fixed the
+  latter edge case, which initially retained one entry. Final validation:
+  31 focused tests, 618 fast tests, 637-test documentation freshness, package
+  build/describe, 10 public API smoke tests, provenance, unchanged macOS API
+  (453 symbols / 599 relationships), unchanged iOS APIs on both Simulator
+  architectures (454 / 610), both four-test snapshot contracts, exactly 678
+  iOS XCTest tests plus one app-hosted real-WebKit Mermaid smoke, and all 13
+  isolated Release workloads pass. Final review found no production issue and
+  corrected documentation to describe the actual five-field key rather than
+  claiming complete font-descriptor identity.
+  Files: `Layout/FontTraitResolver.swift`,
+  `InlineFormattingLayoutTests.swift`.
 - [ ] P14.14 `docs: document persisted-cache pattern for one-shot hosts`
   `MarkdownKitEngine.layout` convenience creates a fresh parser/solver/cache
   per call with zero cross-call reuse. Document that streaming hosts must

@@ -17,10 +17,10 @@ This document is a practical snapshot of the current repository, with emphasis o
   - Source files (`Sources/MarkdownKit/**/*.swift`): **91**
   - Test files (`Tests/MarkdownKitTests/*.swift`): **81**
   - Test-bearing files: **73**
-  - Static test methods: **733**
-  - macOS-discoverable tests: **633**
-  - Fast correctness tests: **614**
-  - iOS XCTest tests: **674**
+  - Static test methods: **737**
+  - macOS-discoverable tests: **637**
+  - Fast correctness tests: **618**
+  - iOS XCTest tests: **678**
 
 ## 2. Build / Run / Test Commands
 
@@ -71,10 +71,10 @@ bash scripts/verify_benchmarks.sh
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **633** discoverable tests
+- `swift test list`: **637** discoverable tests
 - Last full `swift test`: **516 tests passed** on 2026-07-18
-- `verify_fast.sh`: **614** correctness tests
-- `verify_ios.sh`: **674** XCTest tests plus one app-hosted Mermaid PASS marker
+- `verify_fast.sh`: **618** correctness tests
+- `verify_ios.sh`: **678** XCTest tests plus one app-hosted Mermaid PASS marker
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -161,6 +161,11 @@ Key facts:
   and regex-based keyword highlighting for the supported non-Swift language
   families. Generic highlighting reuses bounded, theme-independent compiled
   regex bundles while constructing attributed output per source and theme.
+- `FontTraitResolver` caches derived bold/italic platform fonts in a strict
+  256-entry O(1) LRU keyed by family name, font name, exact point-size bits,
+  existing symbolic traits, and the added trait. Derivation stays outside the
+  lock; hits promote entries while all cache/list/statistics mutation remains
+  lock-isolated.
 - Inline code remains style-focused (no token-level inline lexing).
 
 ### 4.4 Diagram/math backends
@@ -202,7 +207,7 @@ High-value suites:
 - Mermaid backend contracts: `MermaidDiagramAdapterTests` uses real WebKit on
   macOS and a deterministic image driver on iOS; the iOS verification script
   adds a separate app-hosted public-`MarkdownView` Mermaid-fence smoke using
-  real WebKit after its 674 XCTest tests.
+  real WebKit after its 678 XCTest tests.
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`,
   `BenchmarkCacheTests`, `MarkdownRenderCoordinatorBenchmarkTests`, with
   13 canonical isolated Release workloads and the prepared-content relational
