@@ -425,7 +425,7 @@ final class MacOSUIComponentsTests: XCTestCase {
         XCTAssertNotEqual(latestB.node.id, initial[1].node.id)
     }
 
-    func testCollectionViewAppliesStructuralUpdatesOnceWithoutReloading() throws {
+    func testCollectionViewAppliesStructuralUpdatesOnce() throws {
         let view = makeCollectionView()
         let collectionView = try collectionView(in: view)
 
@@ -438,11 +438,11 @@ final class MacOSUIComponentsTests: XCTestCase {
 
         view.layouts = [makeLayout("C"), makeLayout("A"), makeLayout("B")]
         XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 3)
-        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 0)
+        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 3)
 
         view.layouts = [makeLayout("C"), makeLayout("D"), makeLayout("B")]
         XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 4)
-        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 0)
+        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 1)
         XCTAssertEqual(collectionView.numberOfItems(inSection: 0), 3)
         XCTAssertEqual(
             try (0..<3).map {
@@ -453,6 +453,49 @@ final class MacOSUIComponentsTests: XCTestCase {
             },
             ["C", "D", "B"]
         )
+    }
+
+    func testCollectionViewAppliesSameTypeGrowingRowAsRetainedChange() throws {
+        let view = makeCollectionView()
+        let collectionView = try collectionView(in: view)
+        let initial = makeLayout("Streaming")
+
+        view.layouts = [initial]
+        let initialSnapshotApplicationCount = view.layoutSnapshotApplicationCountForTesting
+        view.layoutSubtreeIfNeeded()
+        collectionView.layoutSubtreeIfNeeded()
+        let initialItem = try XCTUnwrap(
+            collectionView.item(at: IndexPath(item: 0, section: 0)) as? MarkdownItemView
+        )
+        let initialTextView = try XCTUnwrap(initialItem.view.subviews.first as? NSTextView)
+        XCTAssertEqual(initialTextView.textStorage?.string, "Streaming")
+
+        let updatedText = "Streaming response grows token by token."
+        let updated = makeLayout(
+            updatedText,
+            size: CGSize(width: 320, height: 80)
+        )
+
+        view.layouts = [updated]
+
+        XCTAssertEqual(
+            view.layoutSnapshotApplicationCountForTesting,
+            initialSnapshotApplicationCount + 1
+        )
+        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 1)
+        let latest = try XCTUnwrap(
+            view.layoutResult(forIndexPath: IndexPath(item: 0, section: 0))
+        )
+        XCTAssertEqual(latest.attributedString?.string, updatedText)
+
+        view.layoutSubtreeIfNeeded()
+        collectionView.layoutSubtreeIfNeeded()
+        let item = try XCTUnwrap(
+            collectionView.item(at: IndexPath(item: 0, section: 0)) as? MarkdownItemView
+        )
+        let textView = try XCTUnwrap(item.view.subviews.first as? NSTextView)
+        XCTAssertEqual(textView.textStorage?.string, updatedText)
+        XCTAssertEqual(item.view.frame.height, updated.size.height)
     }
 
     func testCollectionViewAppliesEachRetainedVariantOnce() {
@@ -515,11 +558,14 @@ final class MacOSUIComponentsTests: XCTestCase {
         return try XCTUnwrap(scrollView.documentView as? NSCollectionView)
     }
 
-    private func makeLayout(_ text: String) -> LayoutResult {
+    private func makeLayout(
+        _ text: String,
+        size: CGSize = CGSize(width: 320, height: 40)
+    ) -> LayoutResult {
         let node = ParagraphNode(range: nil, children: [TextNode(range: nil, text: text)])
         return LayoutResult(
             node: node,
-            size: CGSize(width: 320, height: 40),
+            size: size,
             attributedString: NSAttributedString(string: text)
         )
     }

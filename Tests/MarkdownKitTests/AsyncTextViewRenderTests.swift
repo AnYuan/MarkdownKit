@@ -65,25 +65,41 @@ final class AsyncTextViewRenderTests: XCTestCase {
     }
 
     func testConfigureWithNilStringClearsContents() async throws {
+        let populated = LayoutResult(
+            node: TextNode(range: nil, text: "Visible"),
+            size: CGSize(width: 200, height: 50),
+            attributedString: NSAttributedString(string: "Visible")
+        )
         let node = TextNode(range: nil, text: "")
         let layout = LayoutResult(node: node, size: CGSize(width: 200, height: 50), attributedString: nil)
 
         let view = AsyncTextView(frame: .zero)
+        view.displaysAsynchronously = false
+        view.configure(with: populated)
+        XCTAssertNotNil(view.layer.contents)
+
         view.configure(with: layout)
 
-        // Nil path is synchronous — contents should be nil immediately
         XCTAssertNil(view.layer.contents)
     }
 
     func testConfigureWithEmptyStringClearsContents() async throws {
+        let populated = LayoutResult(
+            node: TextNode(range: nil, text: "Visible"),
+            size: CGSize(width: 200, height: 50),
+            attributedString: NSAttributedString(string: "Visible")
+        )
         let node = TextNode(range: nil, text: "")
         let emptyStr = NSAttributedString(string: "")
         let layout = LayoutResult(node: node, size: CGSize(width: 200, height: 50), attributedString: emptyStr)
 
         let view = AsyncTextView(frame: .zero)
+        view.displaysAsynchronously = false
+        view.configure(with: populated)
+        XCTAssertNotNil(view.layer.contents)
+
         view.configure(with: layout)
 
-        // Empty string (length == 0) path is synchronous
         XCTAssertNil(view.layer.contents)
     }
 

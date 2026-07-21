@@ -1,4 +1,4 @@
-# MarkdownKit Codebase Knowledge (2026-07-21)
+# MarkdownKit Codebase Knowledge (2026-07-22)
 
 This document is a practical snapshot of the current repository, with emphasis on commands, architecture, and known risks that are still actionable.
 
@@ -17,10 +17,10 @@ This document is a practical snapshot of the current repository, with emphasis o
   - Source files (`Sources/MarkdownKit/**/*.swift`): **91**
   - Test files (`Tests/MarkdownKitTests/*.swift`): **81**
   - Test-bearing files: **73**
-  - Static test methods: **737**
-  - macOS-discoverable tests: **637**
-  - Fast correctness tests: **618**
-  - iOS XCTest tests: **678**
+  - Static test methods: **746**
+  - macOS-discoverable tests: **642**
+  - Fast correctness tests: **623**
+  - iOS XCTest tests: **686**
 
 ## 2. Build / Run / Test Commands
 
@@ -71,10 +71,10 @@ bash scripts/verify_benchmarks.sh
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **637** discoverable tests
+- `swift test list`: **642** discoverable tests
 - Last full `swift test`: **516 tests passed** on 2026-07-18
-- `verify_fast.sh`: **618** correctness tests
-- `verify_ios.sh`: **678** XCTest tests plus one app-hosted Mermaid PASS marker
+- `verify_fast.sh`: **623** correctness tests
+- `verify_ios.sh`: **686** XCTest tests plus one app-hosted Mermaid PASS marker
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -189,6 +189,8 @@ Primary files:
 
 Key facts:
 - The internal `MarkdownCollectionViewCell` (iOS) and `MarkdownItemView` (macOS) implement Texture-style view layer recycling, maintaining hosted-view allocations and CALayers across high-speed lists.
+- Top-level diffable identity is exact `(index, dynamic MarkdownNode type)`, while unpositioned/cache results remain content-discriminated. Same-type content growth therefore reconfigures or reloads the retained row; a concrete node-type replacement still uses delete/insert semantics.
+- During an iOS retained-content redraw, the previous bitmap remains pinned as a noninteractive placeholder until the matching render key mounts. Empty/failed output clears stale pixels, code copy tracks the visible generation, and direct cell reconfiguration overwrites optional accessibility metadata with `nil` when needed.
 - Image-policy changes trigger relayout and inline attachment rebuilding; cells do not independently load images when they become visible.
 - macOS resize updates are coalesced through effective-content-width reporting plus the SwiftUI coordinator's 200ms debounce/latest-request replacement path.
 
@@ -207,7 +209,7 @@ High-value suites:
 - Mermaid backend contracts: `MermaidDiagramAdapterTests` uses real WebKit on
   macOS and a deterministic image driver on iOS; the iOS verification script
   adds a separate app-hosted public-`MarkdownView` Mermaid-fence smoke using
-  real WebKit after its 678 XCTest tests.
+  real WebKit after its 686 XCTest tests.
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`,
   `BenchmarkCacheTests`, `MarkdownRenderCoordinatorBenchmarkTests`, with
   13 canonical isolated Release workloads and the prepared-content relational

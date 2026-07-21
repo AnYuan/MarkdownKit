@@ -373,7 +373,7 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
         )
 
         let restamped = result.withStableIdentity(
-            StableNodeIdentity(contentFingerprint: 123, pathHash: 456)
+            .topLevel(node: result.node, index: 456)
         )
         let positioned = result.positionedAtTopLevel(index: 3)
 
@@ -612,10 +612,7 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
 
         XCTAssertEqual(
             result.children[1].stableIdentity,
-            StableNodeIdentity(
-                contentFingerprint: cachedParagraph.contentFingerprint,
-                pathHash: StableNodeIdentity.pathHash(for: [1])
-            )
+            .topLevel(node: cachedParagraph, index: 1)
         )
     }
 
@@ -633,10 +630,7 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
 
         XCTAssertEqual(
             result.children[1].stableIdentity,
-            StableNodeIdentity(
-                contentFingerprint: cachedParagraph.contentFingerprint,
-                pathHash: StableNodeIdentity.pathHash(for: [1])
-            )
+            .topLevel(node: cachedParagraph, index: 1)
         )
     }
 

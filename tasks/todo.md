@@ -1005,16 +1005,34 @@ earlier items).
   found no remaining material issue.
 
 ### Streaming structure
-- [ ] P14.3 `perf: key diffable items by path, reconfigure on fingerprint`
-  `StableNodeIdentity` embeds `contentFingerprint`, so the growing block gets
-  a new identity every stream tick → Diffable delete+insert →
-  `prepareForReuse` clears `layer.contents` → full re-raster and visible
-  flash. P05's shared update plan suppresses identical snapshots but cannot
-  reconfigure across an identity change. Key items by path (+ node type);
-  drive redraws through the existing render/interaction variant diff via
-  `reconfigureItems`. Files: `Layout/StableNodeIdentity.swift`, the shared
-  collection update plan from P05, `UI/iOS/MarkdownCollectionView_iOS.swift`,
-  `UI/macOS/MarkdownCollectionView_macOS.swift`.
+- [x] P14.3 `perf: key diffable items by path, reconfigure on fingerprint`
+  Replace positioned `contentFingerprint + pathHash` identity with exact
+  top-level index plus exact dynamic node type. Preserve content-discriminated
+  unpositioned/cache identities, use the existing render/appearance/size/
+  interaction variant diff for retained-row updates, and keep concrete
+  node-type replacement structural.
+
+  Implementation checkpoint:
+  - Same-type streaming growth, descendant edits, prepend/reorder, and middle
+    replacement now retain positional identities and reconfigure/reload only
+    the changed rows; tail append inserts only the new tail.
+  - iOS preserves the visible cell and hosted `AsyncTextView` without
+    `prepareForReuse`. Review hardened that retained path so empty output clears
+    stale pixels, old pixels are noninteractive until the matching raster
+    mounts, code copy matches the visible generation, and accessibility
+    optionals clear on direct reconfiguration.
+  - macOS consumes the same identity through its existing `reloadItems` path;
+    no production collection-view branch was added.
+  - The deterministic pre-change packet failed 8 assertions across 29 tests;
+    the production identity packet passes 109 focused macOS tests and 65
+    focused iOS tests.
+  - Final validation passes package describe/build, 10 normal-import API
+    smokes, provenance, 623 fast correctness tests, 642-test documentation
+    freshness, unchanged macOS/iOS public APIs (453/599 and 454/610 on both
+    simulator architectures), both four-test snapshot contracts, exactly 686
+    iOS XCTest tests plus one app-hosted real-WebKit Mermaid PASS marker, and
+    all 13 isolated Release workloads. Two review rounds plus the final
+    adversarial whole-diff review found no remaining material issue.
 - [ ] P14.4 `perf: reuse stable-prefix AST across streaming appends`
   Every text change re-parses the whole document
   (`MarkdownRenderCoordinator.renderOffMain` → `MarkdownParser.parse`),

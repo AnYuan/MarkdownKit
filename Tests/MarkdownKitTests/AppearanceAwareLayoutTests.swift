@@ -314,7 +314,7 @@ final class AppearanceAwareLayoutTests: XCTestCase {
             appearance: .dark,
             renderFingerprint: sentinel
         )
-        let newIdentity = StableNodeIdentity(contentFingerprint: 12345, pathHash: 99)
+        let newIdentity = StableNodeIdentity.topLevel(node: node, index: 99)
         let stamped = result.withStableIdentity(newIdentity)
 
         XCTAssertEqual(stamped.appearance, .dark)

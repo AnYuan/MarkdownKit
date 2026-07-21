@@ -461,7 +461,7 @@ final class iOSRasterPrefetchContractTests: XCTestCase {
         let startB = await renderer.nextStart()
         let recordB = try XCTUnwrap(collection.rasterPrefetchRecordsForTesting[indexPath])
 
-        XCTAssertNotEqual(recordA.stableIdentity, recordB.stableIdentity)
+        XCTAssertEqual(recordA.stableIdentity, recordB.stableIdentity)
         XCTAssertNotEqual(recordA.key, recordB.key)
         XCTAssertNotEqual(recordA.token, recordB.token)
         XCTAssertNotEqual(recordA.leaseGeneration, recordB.leaseGeneration)
@@ -498,6 +498,116 @@ final class iOSRasterPrefetchContractTests: XCTestCase {
         )
         await pipeline.drainForTesting()
         XCTAssertNil(pipeline.cachedImageForTesting(for: recordC.key))
+    }
+
+    func testRetainedTextRasterDisablesLinkInteractionUntilReplacementMounts() async throws {
+        let renderer = ControlledRasterRenderer()
+        let pipeline = makePipeline(renderer: renderer)
+        let oldURL = try XCTUnwrap(URL(string: "https://example.com/old"))
+        let newURL = try XCTUnwrap(URL(string: "https://example.com/new"))
+        let initial = makeLinkLayout(url: oldURL, renderFingerprint: 711)
+        let updated = makeLinkLayout(url: newURL, renderFingerprint: 712)
+        let view = AsyncTextView(frame: CGRect(origin: .zero, size: initial.size))
+        view.rasterPipeline = pipeline
+        var tappedURLs: [URL] = []
+        view.onLinkTap = { tappedURLs.append($0) }
+
+        view.configure(with: initial)
+        let initialStart = await renderer.nextStart()
+        renderer.complete(
+            initialStart,
+            with: makeImage(pixelWidth: 2, pixelHeight: 2, color: .red)
+        )
+        await view.drainRasterMountForTesting()
+        let linkPoint = try linkPoint(in: initial)
+
+        XCTAssertTrue(view.isDisplayingCurrentContent)
+        XCTAssertTrue(view.handleInteraction(at: linkPoint))
+        XCTAssertEqual(tappedURLs, [oldURL])
+
+        view.configure(with: updated)
+        let updatedStart = await renderer.nextStart()
+
+        XCTAssertFalse(view.isDisplayingCurrentContent)
+        XCTAssertFalse(view.handleInteraction(at: linkPoint))
+        XCTAssertEqual(tappedURLs, [oldURL])
+
+        renderer.complete(
+            updatedStart,
+            with: makeImage(pixelWidth: 2, pixelHeight: 2, color: .blue)
+        )
+        await view.drainRasterMountForTesting()
+
+        XCTAssertTrue(view.isDisplayingCurrentContent)
+        XCTAssertTrue(view.handleInteraction(at: linkPoint))
+        XCTAssertEqual(tappedURLs, [oldURL, newURL])
+    }
+
+    func testRetainedCodeRasterCopiesContentMatchingMountedPixels() async throws {
+        let renderer = ControlledRasterRenderer()
+        let pipeline = makePipeline(renderer: renderer)
+        let initial = makeCodeLayout(
+            "let value = 1",
+            size: CGSize(width: 320, height: 80),
+            appearance: .light,
+            renderFingerprint: 721
+        )
+        let updated = makeCodeLayout(
+            "let value = 2",
+            size: CGSize(width: 320, height: 80),
+            appearance: .light,
+            renderFingerprint: 722
+        )
+        let view = AsyncCodeView(frame: CGRect(origin: .zero, size: initial.size))
+        view.rasterPipeline = pipeline
+        view.displayScaleOverride = 2
+        var copiedCode: [String] = []
+        view.copySink = { copiedCode.append($0) }
+
+        view.configure(with: initial)
+        let initialStart = await renderer.nextStart()
+        renderer.complete(
+            initialStart,
+            with: makeImage(pixelWidth: 2, pixelHeight: 2, color: .red)
+        )
+        let textView = try XCTUnwrap(
+            view.subviews.compactMap { $0 as? AsyncTextView }.first
+        )
+        let copyButton = try XCTUnwrap(
+            view.subviews.compactMap { $0 as? UIButton }.first
+        )
+        await textView.drainRasterMountForTesting()
+
+        view.configure(with: updated)
+        let updatedStart = await renderer.nextStart()
+        copyButton.sendActions(for: .touchUpInside)
+        XCTAssertEqual(copiedCode, ["let value = 1"])
+
+        renderer.complete(
+            updatedStart,
+            with: makeImage(pixelWidth: 2, pixelHeight: 2, color: .blue)
+        )
+        await textView.drainRasterMountForTesting()
+        copyButton.sendActions(for: .touchUpInside)
+
+        XCTAssertEqual(copiedCode, ["let value = 1", "let value = 2"])
+
+        view.displayScaleOverride = 3
+        let scaleStart = await renderer.nextStart()
+        copyButton.sendActions(for: .touchUpInside)
+        XCTAssertEqual(copiedCode, ["let value = 1", "let value = 2", "let value = 2"])
+
+        renderer.complete(
+            scaleStart,
+            with: makeImage(pixelWidth: 2, pixelHeight: 2, color: .green)
+        )
+        await textView.drainRasterMountForTesting()
+        copyButton.sendActions(for: .touchUpInside)
+
+        XCTAssertEqual(
+            copiedCode,
+            ["let value = 1", "let value = 2", "let value = 2", "let value = 2"]
+        )
     }
 
     func testCellHostedViewReplacementReleasesVisibleRasterLeasesAndRejectsLateMounts() async throws {
@@ -733,6 +843,44 @@ final class iOSRasterPrefetchContractTests: XCTestCase {
             appearance: .light,
             renderFingerprint: renderFingerprint
         )
+    }
+
+    private func makeLinkLayout(
+        url: URL,
+        renderFingerprint: Int
+    ) -> LayoutResult {
+        let text = "Open link"
+        let attributedString = NSMutableAttributedString(
+            string: text,
+            attributes: [.font: UIFont.systemFont(ofSize: 17)]
+        )
+        attributedString.addAttribute(
+            .link,
+            value: url,
+            range: NSRange(location: 0, length: attributedString.length)
+        )
+        return LayoutResult(
+            node: ParagraphNode(
+                range: nil,
+                children: [TextNode(range: nil, text: text)]
+            ),
+            size: CGSize(width: 320, height: 48),
+            attributedString: attributedString,
+            appearance: .light,
+            renderFingerprint: renderFingerprint
+        )
+    }
+
+    private func linkPoint(in layout: LayoutResult) throws -> CGPoint {
+        let attributedString = try XCTUnwrap(layout.attributedString)
+        let hitTester = TextKitHitTester(
+            attributedString: attributedString,
+            containerSize: layout.size
+        )
+        let range = NSRange(location: 0, length: attributedString.length)
+        let rect = hitTester.boundingRect(for: range)
+        XCTAssertFalse(rect.isEmpty)
+        return CGPoint(x: rect.midX, y: rect.midY)
     }
 
     private func makeCodeLayout(

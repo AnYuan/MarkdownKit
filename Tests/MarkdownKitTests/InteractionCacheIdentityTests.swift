@@ -270,7 +270,7 @@ final class InteractionCacheIdentityTests: XCTestCase {
             ),
             size: .zero
         )
-        let identity = StableNodeIdentity(contentFingerprint: 123, pathHash: 456)
+        let identity = StableNodeIdentity.topLevel(node: result.node, index: 456)
 
         let stamped = result.withStableIdentity(identity)
 

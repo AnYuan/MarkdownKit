@@ -87,6 +87,15 @@ class AsyncTextView: UIView {
         currentRasterKey
     }
 
+    var isDisplayingCurrentContent: Bool {
+        guard let currentRasterKey else { return false }
+        return layer.contents != nil && mountedRasterKey == currentRasterKey
+    }
+
+    var onCurrentContentMounted: (() -> Void)?
+
+    private(set) var prepareForReuseCountForTesting = 0
+
     func drainRasterMountForTesting() async {
         await currentDrawTask?.value
     }
@@ -195,19 +204,13 @@ class AsyncTextView: UIView {
     /// Does **not** remove the view from its superview — the caller keeps the
     /// instance alive across cell recycles to amortize allocation cost.
     func prepareForReuse() {
+        prepareForReuseCountForTesting += 1
         cancelRendering()
         currentAttributedString = nil
         currentSize = .zero
         currentContentLayout = nil
         currentRasterKey = nil
-        mountedRasterKey = nil
-        hitTester = nil
-        // Clear the rasterized contents so stale text doesn't briefly flash before the
-        // next async draw lands.
-        layer.contents = nil
-        // Detach the highlight overlay if it was previously laid over a different node.
-        highlightLayer.isHidden = true
-        highlightLayer.opacity = 0
+        replaceMountedRaster(with: nil, key: nil)
     }
 
     func cancelRendering() {
@@ -247,6 +250,7 @@ class AsyncTextView: UIView {
         ) else {
             cancelRendering()
             currentRasterKey = nil
+            replaceMountedRaster(with: nil, key: nil)
             return
         }
         let key = request.key
@@ -267,8 +271,7 @@ class AsyncTextView: UIView {
 
         guard displaysAsynchronously else {
             if let image = rasterPipeline.cachedImageIfAvailable(for: key) {
-                layer.contents = image
-                mountedRasterKey = key
+                replaceMountedRaster(with: image, key: key)
                 return
             }
 
@@ -276,15 +279,13 @@ class AsyncTextView: UIView {
             if let image {
                 rasterPipeline.storeDirectlyRenderedImage(image, for: key)
             }
-            layer.contents = image
-            mountedRasterKey = image.map { _ in key }
+            replaceMountedRaster(with: image, key: key)
             return
         }
 
         switch rasterPipeline.acquire(request) {
         case let .cacheHit(image):
-            layer.contents = image
-            mountedRasterKey = key
+            replaceMountedRaster(with: image, key: key)
 
         case let .pending(lease):
             currentRasterLease = lease
@@ -302,16 +303,32 @@ class AsyncTextView: UIView {
                 lease.release()
                 self.currentRasterLease = nil
                 self.currentDrawTask = nil
-                self.layer.contents = image
-                self.mountedRasterKey = image.map { _ in key }
+                self.replaceMountedRaster(with: image, key: key)
             }
+        }
+    }
+
+    private func replaceMountedRaster(
+        with image: CGImage?,
+        key: RasterRenderKey?
+    ) {
+        layer.contents = image
+        mountedRasterKey = image == nil ? nil : key
+        hitTester = nil
+        highlightLayer.isHidden = true
+        highlightLayer.opacity = 0
+        if image != nil, key == currentRasterKey {
+            onCurrentContentMounted?()
         }
     }
 
     // MARK: - Tap Handling
 
     private func interactionHitTester() -> TextKitHitTester? {
-        guard let attrString = currentAttributedString else { return nil }
+        guard isDisplayingCurrentContent,
+              let attrString = currentAttributedString else {
+            return nil
+        }
 
         if hitTester == nil {
             hitTester = TextKitHitTester(attributedString: attrString, containerSize: currentSize)

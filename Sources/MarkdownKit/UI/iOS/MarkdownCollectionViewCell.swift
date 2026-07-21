@@ -153,15 +153,9 @@ class MarkdownCollectionViewCell: UICollectionViewCell {
         // VoiceOver to read sequentially over the virtualized UI list.
         self.isAccessibilityElement = true
         self.accessibilityTraits = PlatformAccessibility.accessibilityTraits(for: layout)
-        if let label = PlatformAccessibility.accessibilityLabel(for: layout) {
-            self.accessibilityLabel = label
-        }
-        if let value = PlatformAccessibility.accessibilityValue(for: layout) {
-            self.accessibilityValue = value
-        }
-        if let hint = PlatformAccessibility.accessibilityHint(for: layout) {
-            self.accessibilityHint = hint
-        }
+        self.accessibilityLabel = PlatformAccessibility.accessibilityLabel(for: layout)
+        self.accessibilityValue = PlatformAccessibility.accessibilityValue(for: layout)
+        self.accessibilityHint = PlatformAccessibility.accessibilityHint(for: layout)
     }
 
     private func shouldUseSelectableTextView(for layout: LayoutResult) -> Bool {

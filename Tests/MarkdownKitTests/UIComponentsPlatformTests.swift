@@ -136,7 +136,7 @@ final class UIComponentsPlatformTests: XCTestCase {
         XCTAssertNotEqual(latestB.node.id, initial[1].node.id)
     }
 
-    func testCollectionViewAppliesStructuralUpdatesOnceWithoutReconfiguration() async throws {
+    func testCollectionViewAppliesStructuralUpdatesOnce() async throws {
         let view = makeCollectionView()
         let collectionView = try collectionView(in: view)
 
@@ -152,12 +152,12 @@ final class UIComponentsPlatformTests: XCTestCase {
         view.layouts = [makeLayout("C"), makeLayout("A"), makeLayout("B")]
         await Task.yield()
         XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 3)
-        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 0)
+        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 3)
 
         view.layouts = [makeLayout("C"), makeLayout("D"), makeLayout("B")]
         await Task.yield()
         XCTAssertEqual(view.layoutSnapshotApplicationCountForTesting, 4)
-        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 0)
+        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 1)
         XCTAssertEqual(collectionView.numberOfItems(inSection: 0), 3)
         XCTAssertEqual(
             try (0..<3).map {
@@ -167,6 +167,59 @@ final class UIComponentsPlatformTests: XCTestCase {
                 return try XCTUnwrap(layout.attributedString?.string)
             },
             ["C", "D", "B"]
+        )
+    }
+
+    func testCollectionViewReconfiguresVisibleSameTypeGrowingRowWithoutReuse() async throws {
+        let view = makeCollectionView()
+        let collectionView = try collectionView(in: view)
+        let initial = makeLayout("Streaming")
+
+        await applyLayoutsAndWait([initial], to: view)
+        view.layoutIfNeeded()
+        collectionView.layoutIfNeeded()
+
+        let indexPath = IndexPath(item: 0, section: 0)
+        let initialCell = try XCTUnwrap(
+            collectionView.cellForItem(at: indexPath) as? MarkdownCollectionViewCell
+        )
+        let initialHostedView = try XCTUnwrap(
+            initialCell.contentView.subviews.first as? AsyncTextView
+        )
+        let initialReuseCount = initialHostedView.prepareForReuseCountForTesting
+        let initialSnapshotApplicationCount = view.layoutSnapshotApplicationCountForTesting
+        let updatedText = "Streaming response grows token by token."
+        let updated = makeLayout(
+            updatedText,
+            size: CGSize(width: 320, height: 80)
+        )
+
+        await applyLayoutsAndWait([updated], to: view)
+        view.layoutIfNeeded()
+        collectionView.layoutIfNeeded()
+
+        XCTAssertEqual(
+            view.layoutSnapshotApplicationCountForTesting,
+            initialSnapshotApplicationCount + 1
+        )
+        XCTAssertEqual(view.lastLayoutChangedIdentityCountForTesting, 1)
+        XCTAssertEqual(
+            view.layoutResult(forIndexPath: indexPath)?.attributedString?.string,
+            updatedText
+        )
+
+        let currentCell = try XCTUnwrap(
+            collectionView.cellForItem(at: indexPath) as? MarkdownCollectionViewCell
+        )
+        let currentHostedView = try XCTUnwrap(
+            currentCell.contentView.subviews.first as? AsyncTextView
+        )
+        XCTAssertIdentical(currentCell, initialCell)
+        XCTAssertIdentical(currentHostedView, initialHostedView)
+        XCTAssertEqual(currentHostedView.currentAttributedString?.string, updatedText)
+        XCTAssertEqual(
+            currentHostedView.prepareForReuseCountForTesting,
+            initialReuseCount
         )
     }
 
@@ -359,11 +412,14 @@ final class UIComponentsPlatformTests: XCTestCase {
         try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
     }
 
-    private func makeLayout(_ text: String) -> LayoutResult {
+    private func makeLayout(
+        _ text: String,
+        size: CGSize = CGSize(width: 320, height: 40)
+    ) -> LayoutResult {
         let node = ParagraphNode(range: nil, children: [TextNode(range: nil, text: text)])
         return LayoutResult(
             node: node,
-            size: CGSize(width: 320, height: 40),
+            size: size,
             attributedString: NSAttributedString(string: text)
         )
     }

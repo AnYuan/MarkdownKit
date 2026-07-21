@@ -41,7 +41,7 @@ package/build checks, macOS and iOS public API checks, provenance, fast and iOS 
 documentation freshness, visual and determinism snapshots, and benchmarks; `verify_all.sh --full`
 alone is not release validation.
 
-The iOS release gate is deliberately two-part: 678 app-less XCTest tests exercise Mermaid's
+The iOS release gate is deliberately two-part: 686 app-less XCTest tests exercise Mermaid's
 queue/cache/cancellation state machine through a deterministic image driver, then a separately
 assembled SwiftUI Simulator app proves that a Mermaid fence can traverse public `MarkdownView`
 and its registry-backed real-WebKit adapter.
@@ -230,8 +230,21 @@ capacities. Final validation passes 31 focused tests, 618 fast tests, 637
 discoverable tests, unchanged macOS/iOS APIs, both snapshot contracts, 678 iOS
 tests plus the app-hosted WebKit smoke, and all 13 isolated Release workloads.
 
+P14.3 replaces content-derived positioned diffable identity with exact top-level
+index plus exact dynamic `MarkdownNode` type. Unpositioned/cache results remain
+type-and-content-discriminated, same-type content growth is detected through the
+existing render/appearance/size/interaction variant diff, and concrete type
+replacement remains structural. Review also closed retained-cell lifecycle gaps:
+empty output clears stale rasters, link/checkbox interaction is disabled until
+the matching replacement raster mounts, code copy stays aligned with the visible
+generation, and optional iOS accessibility metadata is overwritten with `nil`.
+Final validation passes 109 focused macOS tests, 65 focused iOS tests, 623 fast
+tests, 642 discoverable tests, unchanged macOS/iOS public APIs, both snapshot
+contracts, 686 iOS tests plus the app-hosted WebKit smoke, and all 13 isolated
+Release workloads. Final whole-diff review found no material issue.
+
 The remaining findings fall into four groups:
-1. **Streaming structure**: the growing block still changes `StableNodeIdentity` every tick (Diffable delete+insert instead of reconfigure); the whole document is still re-parsed on every text change; when the relevant syntax *is* present, Details/Diagram/Math still walk the AST separately (Math three times); Mermaid re-runs `mermaid.initialize` per render and caches intermediate streamed sources; the MathJax engine is cold per solver instance.
+1. **Streaming structure**: the whole document is still re-parsed on every text change; when the relevant syntax *is* present, Details/Diagram/Math still walk the AST separately (Math three times); Mermaid re-runs `mermaid.initialize` per render and caches intermediate streamed sources; the MathJax engine is cold per solver instance.
 2. **Cold layout taxes**: PreparedText cache keys that copy and hash the full string on every lookup plus always-on stats locks; one global TextKit lock with per-call stack allocation, and arithmetic routing limited to paragraph/header. P14.7 keeps the residual direct PreparedText key/stats/structured-measurer-key cleanup pending.
 3. **UI**: macOS main-thread `ensureLayout` per item configure.
 4. **Hygiene**: the cache-reuse requirement for one-shot

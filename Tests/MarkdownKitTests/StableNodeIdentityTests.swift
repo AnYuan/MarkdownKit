@@ -4,7 +4,8 @@ import Foundation
 
 /// Verifies `LayoutResult.stableIdentity` is correctly assigned by
 /// `LayoutSolver` and behaves as a diffable data source needs:
-/// stable under re-parse, distinct between positions, distinct between content.
+/// stable under re-parse and same-type content changes, distinct between
+/// positions and concrete node types.
 final class StableNodeIdentityTests: XCTestCase {
 
     func testIdentitySurvivesReparseOfIdenticalDocument() async {
@@ -32,7 +33,7 @@ final class StableNodeIdentityTests: XCTestCase {
         }
     }
 
-    func testIdentityChangesWhenContentChanges() async {
+    func testSameTopLevelPathAndConcreteTypeRetainsIdentityWhenContentChanges() async {
         let parser = MarkdownParser()
         let solver = LayoutSolver()
 
@@ -45,10 +46,52 @@ final class StableNodeIdentityTests: XCTestCase {
             constrainedToWidth: 320
         )
 
-        // The heading is unchanged → same identity. The paragraph changed →
-        // different identity.
         XCTAssertEqual(original.children[0].stableIdentity, edited.children[0].stableIdentity)
-        XCTAssertNotEqual(original.children[1].stableIdentity, edited.children[1].stableIdentity)
+        XCTAssertTrue(original.children[1].node is ParagraphNode)
+        XCTAssertTrue(edited.children[1].node is ParagraphNode)
+        XCTAssertEqual(original.children[1].stableIdentity, edited.children[1].stableIdentity)
+        XCTAssertNotEqual(original.children[1].renderFingerprint, edited.children[1].renderFingerprint)
+    }
+
+    func testSameTopLevelPathWithDifferentConcreteNodeTypeHasDifferentIdentity() async {
+        let parser = MarkdownParser()
+        let solver = LayoutSolver()
+
+        let paragraph = await solver.solve(
+            node: parser.parse("Same text."),
+            constrainedToWidth: 320
+        )
+        let heading = await solver.solve(
+            node: parser.parse("# Same text."),
+            constrainedToWidth: 320
+        )
+
+        XCTAssertEqual(paragraph.children.count, 1)
+        XCTAssertEqual(heading.children.count, 1)
+        XCTAssertTrue(paragraph.children[0].node is ParagraphNode)
+        XCTAssertTrue(heading.children[0].node is HeaderNode)
+        XCTAssertNotEqual(paragraph.children[0].stableIdentity, heading.children[0].stableIdentity)
+    }
+
+    func testStreamingGrowthOfLastBlockRetainsRowIdentity() async {
+        let parser = MarkdownParser()
+        let solver = LayoutSolver()
+
+        let before = await solver.solve(
+            node: parser.parse("# Heading\n\nStreaming response"),
+            constrainedToWidth: 320
+        )
+        let after = await solver.solve(
+            node: parser.parse("# Heading\n\nStreaming response grows token by token."),
+            constrainedToWidth: 320
+        )
+
+        XCTAssertEqual(before.children.count, 2)
+        XCTAssertEqual(after.children.count, 2)
+        XCTAssertTrue(before.children[1].node is ParagraphNode)
+        XCTAssertTrue(after.children[1].node is ParagraphNode)
+        XCTAssertEqual(before.children[1].stableIdentity, after.children[1].stableIdentity)
+        XCTAssertNotEqual(before.children[1].renderFingerprint, after.children[1].renderFingerprint)
     }
 
     func testAppendingContentLeavesLeadingBlockIdentitiesIntact() async {
@@ -102,6 +145,78 @@ final class StableNodeIdentityTests: XCTestCase {
         )
     }
 
+    func testUpdatePlanRetainsPositionedContainerIdentityForDescendantContentChange() {
+        let initialParagraph = ParagraphNode(
+            range: nil,
+            children: [TextNode(range: nil, text: "Nested")]
+        )
+        let updatedParagraph = ParagraphNode(
+            range: nil,
+            children: [TextNode(range: nil, text: "Nested content grows")]
+        )
+        let initial = LayoutResult(
+            node: BlockQuoteNode(range: nil, children: [initialParagraph]),
+            size: CGSize(width: 320, height: 40),
+            children: [
+                LayoutResult(
+                    node: initialParagraph,
+                    size: CGSize(width: 300, height: 20),
+                    attributedString: NSAttributedString(string: "Nested")
+                )
+            ]
+        )
+        let updated = LayoutResult(
+            node: BlockQuoteNode(range: nil, children: [updatedParagraph]),
+            size: CGSize(width: 320, height: 80),
+            children: [
+                LayoutResult(
+                    node: updatedParagraph,
+                    size: CGSize(width: 300, height: 60),
+                    attributedString: NSAttributedString(string: "Nested content grows")
+                )
+            ]
+        )
+        let positionedInitial = LayoutResult.positionedTopLevelLayouts([initial])
+        let currentOrderedIdentities = positionedInitial.map(\.stableIdentity)
+        let previousLayoutsByIdentity = Dictionary(
+            uniqueKeysWithValues: positionedInitial.map { ($0.stableIdentity, $0) }
+        )
+
+        XCTAssertNotEqual(initial.renderFingerprint, updated.renderFingerprint)
+        XCTAssertEqual(currentOrderedIdentities.count, 1)
+
+        let plan = LayoutCollectionUpdatePlan(
+            layouts: [updated],
+            previousLayoutsByIdentity: previousLayoutsByIdentity,
+            currentOrderedIdentities: currentOrderedIdentities,
+            hasMainSection: true
+        )
+
+        XCTAssertEqual(plan.orderedIdentities, currentOrderedIdentities)
+        XCTAssertEqual(plan.changedRetainedIdentities, currentOrderedIdentities)
+        XCTAssertTrue(plan.requiresSnapshotApplication)
+        XCTAssertTrue(plan.hasRetainedSizeChange)
+    }
+
+    func testUnpositionedIdentityUsesContentUntilTopLevelNormalization() {
+        let firstNode = ParagraphNode(
+            range: nil,
+            children: [TextNode(range: nil, text: "First")]
+        )
+        let secondNode = ParagraphNode(
+            range: nil,
+            children: [TextNode(range: nil, text: "Second")]
+        )
+        let first = LayoutResult(node: firstNode, size: .zero)
+        let second = LayoutResult(node: secondNode, size: .zero)
+
+        XCTAssertNotEqual(first.stableIdentity, second.stableIdentity)
+        XCTAssertEqual(
+            first.positionedAtTopLevel(index: 2).stableIdentity,
+            second.positionedAtTopLevel(index: 2).stableIdentity
+        )
+    }
+
     func testManualTopLevelNormalizationDisambiguatesIdenticalSiblingRows() {
         let node = ParagraphNode(range: nil, children: [TextNode(range: nil, text: "manual row")])
         let first = LayoutResult(
@@ -122,17 +237,11 @@ final class StableNodeIdentityTests: XCTestCase {
         XCTAssertNotEqual(normalized[0].stableIdentity, normalized[1].stableIdentity)
         XCTAssertEqual(
             normalized[0].stableIdentity,
-            StableNodeIdentity(
-                contentFingerprint: node.contentFingerprint,
-                pathHash: StableNodeIdentity.pathHash(for: [0])
-            )
+            .topLevel(node: node, index: 0)
         )
         XCTAssertEqual(
             normalized[1].stableIdentity,
-            StableNodeIdentity(
-                contentFingerprint: node.contentFingerprint,
-                pathHash: StableNodeIdentity.pathHash(for: [1])
-            )
+            .topLevel(node: node, index: 1)
         )
     }
 

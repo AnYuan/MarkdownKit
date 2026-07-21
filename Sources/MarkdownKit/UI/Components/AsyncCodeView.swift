@@ -31,7 +31,8 @@ class AsyncCodeView: UIView {
     }
 
     private var theme: Theme
-    private var rawCode: String = ""
+    private var configuredRawCode = ""
+    private var displayedRawCode = ""
     private var currentContentSize: CGSize = .zero
     private var copyButtonDefaultImage: UIImage?
     private var copyFeedbackResetWorkItem: DispatchWorkItem?
@@ -61,6 +62,10 @@ class AsyncCodeView: UIView {
     private func setup() {
         self.clipsToBounds = true
         addSubview(textView)
+        textView.onCurrentContentMounted = { [weak self] in
+            guard let self else { return }
+            displayedRawCode = configuredRawCode
+        }
         setupCopyButton()
         addSubview(copyButton)
         applyTheme(theme)
@@ -89,6 +94,9 @@ class AsyncCodeView: UIView {
     }
     
     private func executeCopy() {
+        let rawCode = textView.layer.contents == nil || textView.isDisplayingCurrentContent
+            ? configuredRawCode
+            : displayedRawCode
         guard !rawCode.isEmpty else { return }
         copySink(rawCode)
         resetCopyFeedback()
@@ -148,7 +156,8 @@ class AsyncCodeView: UIView {
     /// Resets internal state so the view can be reused by a recycling cell.
     func prepareForReuse() {
         resetCopyFeedback()
-        rawCode = ""
+        configuredRawCode = ""
+        displayedRawCode = ""
         currentContentSize = .zero
         textView.prepareForReuse()
     }
@@ -175,14 +184,17 @@ class AsyncCodeView: UIView {
         currentContentSize = contentLayout.size
         
         if let codeNode = layout.node as? CodeBlockNode {
-            self.rawCode = codeNode.code
+            configuredRawCode = codeNode.code
         } else if let diagramNode = layout.node as? DiagramNode {
-            self.rawCode = diagramNode.source
+            configuredRawCode = diagramNode.source
         } else {
-            self.rawCode = ""
+            configuredRawCode = ""
         }
         
         textView.configure(with: contentLayout)
+        if textView.isDisplayingCurrentContent {
+            displayedRawCode = configuredRawCode
+        }
         setNeedsLayout()
     }
 }

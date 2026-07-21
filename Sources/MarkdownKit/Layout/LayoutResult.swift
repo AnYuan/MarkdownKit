@@ -38,8 +38,8 @@ public struct LayoutResult {
     public let customDraw: (@Sendable (CGContext, CGSize) -> Void)?
 
     /// Internal diffable identity used by render hosts to detect insert /
-    /// delete / reuse across re-parses. MarkdownKit stamps the content and
-    /// top-level position before a result enters a collection-view snapshot.
+    /// delete / reuse across re-parses. MarkdownKit preserves content
+    /// discrimination until stamping the top-level position for collection use.
     let stableIdentity: StableNodeIdentity
 
     /// Internal accessibility metadata cached for platform hosts. Built once on
@@ -114,10 +114,10 @@ public struct LayoutResult {
         self.attributedString = frozenAttributedString
         self.children = children
         self.customDraw = customDraw
-        // Default to a top-level (empty-path) identity. `LayoutSolver` overrides
-        // this with the actual index path when recursing the document tree.
+        // Standalone and cached results remain content-discriminated until a
+        // collection boundary stamps their top-level position.
         self.stableIdentity = stableIdentity
-            ?? StableNodeIdentity(contentFingerprint: node.contentFingerprint, pathHash: 0)
+            ?? StableNodeIdentity(unpositioned: node)
         self.accessibility = accessibility
             ?? AccessibilityMetadata.make(for: node, attributedString: frozenAttributedString)
         self.appearance = appearance
@@ -152,7 +152,7 @@ public struct LayoutResult {
     }
 
     func positionedAtTopLevel(index: Int) -> LayoutResult {
-        withStableIdentity(Self.topLevelStableIdentity(for: node.contentFingerprint, index: index))
+        withStableIdentity(.topLevel(node: node, index: index))
     }
 
     static func positionedTopLevelLayouts(_ layouts: [LayoutResult]) -> [LayoutResult] {
@@ -172,13 +172,6 @@ public struct LayoutResult {
         }
 
         return positionedLayouts ?? layouts
-    }
-
-    private static func topLevelStableIdentity(for contentFingerprint: Int, index: Int) -> StableNodeIdentity {
-        StableNodeIdentity(
-            contentFingerprint: contentFingerprint,
-            pathHash: StableNodeIdentity.pathHash(for: [index])
-        )
     }
 
     private static func makePublicRenderFingerprint(

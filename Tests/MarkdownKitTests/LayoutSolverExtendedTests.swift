@@ -433,7 +433,7 @@ final class LayoutSolverExtendedTests: XCTestCase {
             XCTAssertNotNil(result.attributedString)
             XCTAssertEqual(
                 result.stableIdentity,
-                StableNodeIdentity(contentFingerprint: code.contentFingerprint, pathHash: 0)
+                StableNodeIdentity(unpositioned: code)
             )
         }
         XCTAssertNotEqual(async.renderFingerprint, sync.renderFingerprint)

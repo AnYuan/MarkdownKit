@@ -83,11 +83,11 @@ results and make a silent partial run a failure.
 | Consumer import smoke | `swift test --filter PublicAPISmokeTests` | 10 tests. |
 | Provenance | `bash scripts/verify_provenance.sh` | Succeeds without refreshing provenance. |
 | macOS public API | `bash scripts/verify_public_api.sh --platform macos --check` | 453 symbols / 599 relationships. |
-| Fast correctness | `bash scripts/verify_fast.sh` | 618 tests; 637 discoverable tests. |
-| Documentation freshness | `bash scripts/check_doc_freshness.sh` | 637 discoverable tests. |
+| Fast correctness | `bash scripts/verify_fast.sh` | 623 tests; 642 discoverable tests. |
+| Documentation freshness | `bash scripts/check_doc_freshness.sh` | 642 discoverable tests. |
 | Snapshot visual contract | `bash scripts/verify_snapshots.sh --visual` | 4 tests and 4 committed PNG baselines. |
 | Snapshot determinism | `bash scripts/verify_snapshots.sh --determinism` | Record 4 expected missing-reference failures, then verify 4 tests. |
-| iOS Simulator correctness | `bash scripts/verify_ios.sh` | Exactly 678 XCTest tests, then exactly one PASS marker from an app-hosted `MarkdownView` Mermaid fence using real WebKit. |
+| iOS Simulator correctness | `bash scripts/verify_ios.sh` | Exactly 686 XCTest tests, then exactly one PASS marker from an app-hosted `MarkdownView` Mermaid fence using real WebKit. |
 | iOS Simulator public API | `bash scripts/verify_public_api.sh --platform ios-simulator --check` | arm64 and x86_64 each match 454 symbols / 610 relationships. |
 | Benchmarks (last) | `bash scripts/verify_benchmarks.sh` | Baseline freshness and 13 canonical isolated Release workloads succeed; the prepared-content guard passes. |
 
@@ -100,7 +100,7 @@ update.
 The iOS gate intentionally does not create `WKWebView` in the app-less XCTest process. Its 10
 Mermaid adapter tests inject deterministic image generation before the lazy snapshotter is
 constructed while retaining production FIFO/cache/cancellation/timeout ownership. After the exact
-678-test contract passes, the script reuses the package build to assemble, sign, install, and
+686-test contract passes, the script reuses the package build to assemble, sign, install, and
 launch the SwiftPM demo product as a real Simulator app. That additional smoke must emit exactly
 one PASS marker and no FAIL marker after a Mermaid fence enters public `MarkdownView`, is extracted
 by the default plugin chain, and reaches a registry-backed real-WebKit adapter. It is not part of

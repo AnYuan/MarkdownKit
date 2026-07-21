@@ -132,5 +132,39 @@ final class iOSAccessibilityTests: XCTestCase {
         XCTAssertNil(cell.accessibilityValue)
         XCTAssertEqual(cell.accessibilityTraits, .none)
     }
+
+    func testDirectReconfigurationClearsOptionalAccessibilityMetadata() {
+        let node = ParagraphNode(range: nil, children: [])
+        let initial = LayoutResult(
+            node: node,
+            size: CGSize(width: 300, height: 40),
+            attributedString: NSAttributedString(string: "Initial"),
+            accessibility: AccessibilityMetadata(
+                label: "Initial label",
+                value: "Initial value",
+                hint: "Initial hint",
+                nodeRoleHint: .staticText
+            )
+        )
+        let updated = LayoutResult(
+            node: node,
+            size: CGSize(width: 300, height: 40),
+            attributedString: NSAttributedString(string: "Updated"),
+            accessibility: AccessibilityMetadata(
+                label: nil,
+                value: nil,
+                hint: nil,
+                nodeRoleHint: .staticText
+            )
+        )
+        let cell = MarkdownCollectionViewCell(frame: .zero)
+
+        cell.configure(with: initial)
+        cell.configure(with: updated)
+
+        XCTAssertNil(cell.accessibilityLabel)
+        XCTAssertNil(cell.accessibilityValue)
+        XCTAssertNil(cell.accessibilityHint)
+    }
 }
 #endif

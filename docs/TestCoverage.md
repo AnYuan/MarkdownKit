@@ -1,8 +1,8 @@
 # MarkdownKit 测试覆盖与执行快照
 
-> 最近更新: 2026-07-21
+> 最近更新: 2026-07-22
 > 生成方式: `python3 scripts/generate_test_coverage_report.py [--run-tests|--from-log <path>]`
-> 生成时间: 2026-07-21 23:14:09
+> 生成时间: 2026-07-22 02:53:42
 
 ## 1. 总览
 
@@ -11,8 +11,8 @@
 | 源码文件数 (`Sources/MarkdownKit/*.swift`) | 91 | 不含 Demo target |
 | 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 81 | 含基准/夹具/辅助文件 |
 | 含 `test*` 方法的测试文件 | 73 | 静态扫描结果 |
-| 静态扫描 `test*` 方法总数 | 737 | 受编译条件影响，可能高于可执行测试数 |
-| 可发现测试数 (`swift test list`) | 637 | 当前平台可执行测试 |
+| 静态扫描 `test*` 方法总数 | 746 | 受编译条件影响，可能高于可执行测试数 |
+| 可发现测试数 (`swift test list`) | 642 | 当前平台可执行测试 |
 | 全量执行结果 (`swift test`) | 未提供 | 未执行或未提供日志 |
 
 ## 2. 本次执行状态
@@ -61,7 +61,7 @@
 | `LayoutCacheEdgeCaseTests.swift` | 27 |
 | `LayoutSolverExtendedTests.swift` | 17 |
 | `LayoutTests.swift` | 5 |
-| `MacOSUIComponentsTests.swift` | 19 |
+| `MacOSUIComponentsTests.swift` | 20 |
 | `MarkdownKitBenchmarkTests.swift` | 4 |
 | `MarkdownKitTests.swift` | 7 |
 | `MarkdownRenderCoordinatorBenchmarkTests.swift` | 1 |
@@ -85,7 +85,7 @@
 | `SendableTests.swift` | 3 |
 | `SnapshotTestHelper.swift` | 0 |
 | `SnapshotTests.swift` | 4 |
-| `StableNodeIdentityTests.swift` | 6 |
+| `StableNodeIdentityTests.swift` | 10 |
 | `SyntaxMatrixTests.swift` | 1 |
 | `TableAttributedStringBuilderTests.swift` | 8 |
 | `TableLayoutSharedTests.swift` | 12 |
@@ -95,12 +95,12 @@
 | `TextKitHitTesterTests.swift` | 6 |
 | `ThemeAndTokenTests.swift` | 10 |
 | `ThemeCustomizationTests.swift` | 15 |
-| `UIComponentsPlatformTests.swift` | 14 |
+| `UIComponentsPlatformTests.swift` | 15 |
 | `UIComponentsTests.swift` | 2 |
 | `URLSanitizerTests.swift` | 8 |
 | `VirtualizationTests.swift` | 1 |
-| `iOSAccessibilityTests.swift` | 8 |
-| `iOSRasterPrefetchContractTests.swift` | 8 |
+| `iOSAccessibilityTests.swift` | 9 |
+| `iOSRasterPrefetchContractTests.swift` | 10 |
 | `iOSSnapshotTests.swift` | 6 |
 | `iOSTableLayoutTests.swift` | 22 |
 | `iOSThemeDelegateTests.swift` | 4 |
