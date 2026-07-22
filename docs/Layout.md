@@ -29,6 +29,11 @@ Width-independent preparation is split into internal value types:
 rules, and `ArithmeticTextMeasurer` resolves platform fonts, line metrics, cached segment widths,
 and the aligned `PreparedText` payload.
 
+Segment widths are cached by an exact-UTF-8 structured key containing font name, point size rounded
+to 1/1000 point, and segment text. The cache stores `CGFloat` directly in a strict 50,000-entry
+FIFO, grows its ring lazily, and clears on UIKit memory warnings or AppKit warning/critical memory
+pressure. Test-only arithmetic and full-layout cache counters are absent from Release lookup paths.
+
 `ArithmeticTextLineBreaker` consumes that width-independent payload for each viewport width, preserving separate fit and paint advances, paragraph indents, hard breaks, discretionary soft hyphens, and CoreText grapheme fallback for oversized tokens. Unsupported scripts and attachment-bearing strings continue to route through `TextKitCalculator`.
 
 ### `LayoutSolver`

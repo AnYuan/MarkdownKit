@@ -154,8 +154,11 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
         let docA = parser.parse(markdown)
         _ = await solverA.solve(node: docA, constrainedToWidth: 320)
 
-        let missesAfterFirst = cache.missCountForTesting
-        XCTAssertGreaterThan(missesAfterFirst, 0, "First solve should populate the cache")
+        TestHelper.assertDebugCounter(
+            cache.missCountForTesting,
+            greaterThan: 0,
+            "First solve should populate the cache"
+        )
 
         // Build a *different* solver instance — the same cache must survive.
         let solverB = LayoutSolver(theme: .default, cache: cache)
@@ -164,9 +167,9 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
         cache.resetStatsForTesting()
         _ = await solverB.solve(node: docB, constrainedToWidth: 320)
 
-        XCTAssertGreaterThan(
+        TestHelper.assertDebugCounter(
             cache.hitCountForTesting,
-            0,
+            greaterThan: 0,
             "Second solve via a fresh solver should hit the persistent cache"
         )
     }
@@ -576,8 +579,8 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
 
         cache.resetStatsForTesting()
         let async = await solver.solve(node: node, constrainedToWidth: width)
-        XCTAssertEqual(cache.hitCountForTesting, 0)
-        XCTAssertEqual(cache.missCountForTesting, 1)
+        TestHelper.assertDebugCounter(cache.hitCountForTesting, equals: 0)
+        TestHelper.assertDebugCounter(cache.missCountForTesting, equals: 1)
         XCTAssertNotEqual(sync.renderFingerprint, async.renderFingerprint)
 
         cache.resetStatsForTesting()
@@ -585,8 +588,8 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
             solver.solveSync(node: node, constrainedToWidth: width).renderFingerprint,
             sync.renderFingerprint
         )
-        XCTAssertEqual(cache.hitCountForTesting, 1)
-        XCTAssertEqual(cache.missCountForTesting, 0)
+        TestHelper.assertDebugCounter(cache.hitCountForTesting, equals: 1)
+        TestHelper.assertDebugCounter(cache.missCountForTesting, equals: 0)
 
         cache.resetStatsForTesting()
         let asyncCached = await solver.solve(node: node, constrainedToWidth: width)
@@ -594,8 +597,8 @@ final class LayoutCacheEdgeCaseTests: XCTestCase {
             asyncCached.renderFingerprint,
             async.renderFingerprint
         )
-        XCTAssertEqual(cache.hitCountForTesting, 1)
-        XCTAssertEqual(cache.missCountForTesting, 0)
+        TestHelper.assertDebugCounter(cache.hitCountForTesting, equals: 1)
+        TestHelper.assertDebugCounter(cache.missCountForTesting, equals: 0)
     }
 
     func testAsyncCachedChildIsRestampedAtItsCurrentDocumentPosition() async {

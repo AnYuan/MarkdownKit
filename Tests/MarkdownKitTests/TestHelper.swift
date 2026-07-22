@@ -43,6 +43,50 @@ enum TestHelper {
         return data
     }
 
+    /// Asserts a diagnostic counter's real value in Debug and its compiled-out
+    /// zero value in Release.
+    static func assertDebugCounter(
+        _ actual: @autoclosure () -> Int,
+        equals debugExpected: Int,
+        _ message: @autoclosure () -> String = "",
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        #if DEBUG
+        XCTAssertEqual(actual(), debugExpected, message(), file: file, line: line)
+        #else
+        XCTAssertEqual(actual(), 0, message(), file: file, line: line)
+        #endif
+    }
+
+    static func assertDebugCounter(
+        _ actual: @autoclosure () -> Int,
+        greaterThan debugMinimum: Int,
+        _ message: @autoclosure () -> String = "",
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        #if DEBUG
+        XCTAssertGreaterThan(actual(), debugMinimum, message(), file: file, line: line)
+        #else
+        XCTAssertEqual(actual(), 0, message(), file: file, line: line)
+        #endif
+    }
+
+    static func assertDebugCounter(
+        _ actual: @autoclosure () -> Int,
+        greaterThanOrEqual debugMinimum: Int,
+        _ message: @autoclosure () -> String = "",
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        #if DEBUG
+        XCTAssertGreaterThanOrEqual(actual(), debugMinimum, message(), file: file, line: line)
+        #else
+        XCTAssertEqual(actual(), 0, message(), file: file, line: line)
+        #endif
+    }
+
     static func flattenedLayoutText(from layouts: [LayoutResult]) -> String {
         var pieces: [String] = []
         for layout in layouts {

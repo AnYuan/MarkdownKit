@@ -505,9 +505,9 @@ final class PreparedContentReuseTests: XCTestCase {
                        "Duplicate prepared-cache keys must not produce more than one cache entry")
         XCTAssertEqual(preparedCache.missCountForTesting, 1)
         XCTAssertEqual(preparedCache.hitCountForTesting, 0)
-        XCTAssertGreaterThanOrEqual(
+        TestHelper.assertDebugCounter(
             layoutCache.hitCountForTesting,
-            1,
+            greaterThanOrEqual: 1,
             "Second duplicate should reuse the staged full layout before prepared lookup"
         )
     }

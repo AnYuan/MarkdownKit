@@ -81,10 +81,17 @@ final class ArithmeticTextCalculator {
     }()
 
     // MARK: - Test diagnostics (do not use in production paths)
-
+    //
+    // The lock and its backing counters exist purely so tests can assert on
+    // cache hit/miss routing. They are compiled out entirely in Release so
+    // Release builds never pay for lock acquisition on the hot lookup path;
+    // the accessors below still compile (returning 0) so Release test targets
+    // that reference them keep building.
+    #if DEBUG
     private static let testCounterLock = NSLock()
     private static nonisolated(unsafe) var preparedTextCacheHits: Int = 0
     private static nonisolated(unsafe) var preparedTextCacheMisses: Int = 0
+    #endif
 
     enum SegmentKind {
         case text
@@ -176,23 +183,36 @@ final class ArithmeticTextCalculator {
     init() {}
 
     static func preparedTextCacheHitsForTesting() -> Int {
+        #if DEBUG
         testCounterLock.lock()
         defer { testCounterLock.unlock() }
         return preparedTextCacheHits
+        #else
+        return 0
+        #endif
     }
 
     static func preparedTextCacheMissesForTesting() -> Int {
+        #if DEBUG
         testCounterLock.lock()
         defer { testCounterLock.unlock() }
         return preparedTextCacheMisses
+        #else
+        return 0
+        #endif
     }
 
+    /// Clears the prepared-text cache. Must keep clearing the real production
+    /// cache in Release (benchmarks rely on this), even though the diagnostic
+    /// counters themselves only exist in DEBUG.
     static func resetPreparedTextCacheForTesting() {
         cachedPreparedTexts.removeAllObjects()
+        #if DEBUG
         testCounterLock.lock()
         preparedTextCacheHits = 0
         preparedTextCacheMisses = 0
         testCounterLock.unlock()
+        #endif
     }
 
     func profile(for attributedString: NSAttributedString) -> PreparedTextProfile {
@@ -254,14 +274,18 @@ final class ArithmeticTextCalculator {
     private static func cachedPreparedText(for key: PreparedTextCacheKey) -> PreparedText? {
         let keyObject = PreparedTextCacheKeyObject(key)
         if let wrapper = cachedPreparedTexts.object(forKey: keyObject) {
+            #if DEBUG
             testCounterLock.lock()
             preparedTextCacheHits += 1
             testCounterLock.unlock()
+            #endif
             return wrapper.value
         }
+        #if DEBUG
         testCounterLock.lock()
         preparedTextCacheMisses += 1
         testCounterLock.unlock()
+        #endif
         return nil
     }
 

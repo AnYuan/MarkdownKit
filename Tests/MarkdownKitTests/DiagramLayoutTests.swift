@@ -66,7 +66,7 @@ final class DiagramLayoutTests: XCTestCase {
         let renderCount = await adapter.renderCount()
 
         XCTAssertEqual(renderCount, 1)
-        XCTAssertEqual(cache.hitCountForTesting, 1)
+        TestHelper.assertDebugCounter(cache.hitCountForTesting, equals: 1)
         XCTAssertEqual(cache.missCountForTesting, 0)
         XCTAssertEqual(second.renderFingerprint, first.renderFingerprint)
     }
@@ -107,7 +107,7 @@ final class DiagramLayoutTests: XCTestCase {
 
         XCTAssertEqual(renderCount, 2)
         XCTAssertEqual(cache.hitCountForTesting, 0)
-        XCTAssertEqual(cache.missCountForTesting, 1)
+        TestHelper.assertDebugCounter(cache.missCountForTesting, equals: 1)
         XCTAssertEqual(canceledResult, "rendered")
         XCTAssertEqual(retry.attributedString?.string, "rendered")
     }
@@ -154,7 +154,7 @@ final class DiagramLayoutTests: XCTestCase {
 
         XCTAssertEqual(retry.children.count, 5)
         XCTAssertEqual(cache.hitCountForTesting, 0)
-        XCTAssertEqual(cache.missCountForTesting, 6)
+        TestHelper.assertDebugCounter(cache.missCountForTesting, equals: 6)
         XCTAssertEqual(totalRenderCount, 10)
     }
 
@@ -230,7 +230,7 @@ final class DiagramLayoutTests: XCTestCase {
         let renderedSources = await adapter.renderedSources()
 
         XCTAssertEqual(cache.hitCountForTesting, 0)
-        XCTAssertEqual(cache.missCountForTesting, 6)
+        TestHelper.assertDebugCounter(cache.missCountForTesting, equals: 6)
         XCTAssertEqual(retry.children.count, 5)
         XCTAssertEqual(Array(renderedSources.suffix(5)), sources)
         XCTAssertEqual(renderedSources.count, 9)
@@ -277,7 +277,7 @@ final class DiagramLayoutTests: XCTestCase {
         cache.resetStatsForTesting()
         let childRetry = await solver.solve(node: firstDiagram, constrainedToWidth: 320)
         XCTAssertEqual(childRetry.attributedString?.string, "rendered")
-        XCTAssertEqual(cache.hitCountForTesting, 1)
+        TestHelper.assertDebugCounter(cache.hitCountForTesting, equals: 1)
         XCTAssertEqual(cache.missCountForTesting, 0)
 
         cache.resetStatsForTesting()
@@ -285,7 +285,7 @@ final class DiagramLayoutTests: XCTestCase {
         let retryRenderCount = await adapter.renderCount()
 
         XCTAssertEqual(retry.children.count, 2)
-        XCTAssertEqual(cache.hitCountForTesting, 1)
+        TestHelper.assertDebugCounter(cache.hitCountForTesting, equals: 1)
         XCTAssertEqual(cache.missCountForTesting, 0)
         XCTAssertEqual(retryRenderCount, 1)
     }

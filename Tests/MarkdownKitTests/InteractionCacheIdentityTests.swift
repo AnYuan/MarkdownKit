@@ -23,7 +23,7 @@ final class InteractionCacheIdentityTests: XCTestCase {
 
         XCTAssertEqual(try checkboxData(in: second).range, secondRange)
         XCTAssertEqual(cache.hitCountForTesting, 0)
-        XCTAssertEqual(cache.missCountForTesting, 1)
+        TestHelper.assertDebugCounter(cache.missCountForTesting, equals: 1)
     }
 
     func testSyncCacheReturnsCurrentTaskRange() throws {
@@ -44,7 +44,7 @@ final class InteractionCacheIdentityTests: XCTestCase {
 
         XCTAssertEqual(try checkboxData(in: second).range, secondRange)
         XCTAssertEqual(cache.hitCountForTesting, 0)
-        XCTAssertEqual(cache.missCountForTesting, 1)
+        TestHelper.assertDebugCounter(cache.missCountForTesting, equals: 1)
     }
 
     func testSourceURLParticipatesInInteractionCacheIdentity() throws {
@@ -65,7 +65,7 @@ final class InteractionCacheIdentityTests: XCTestCase {
 
         XCTAssertEqual(try checkboxData(in: second).range, secondRange)
         XCTAssertEqual(cache.hitCountForTesting, 0)
-        XCTAssertEqual(cache.missCountForTesting, 1)
+        TestHelper.assertDebugCounter(cache.missCountForTesting, equals: 1)
     }
 
     func testSameTaskContentAndRangeHitsCache() throws {
@@ -85,7 +85,7 @@ final class InteractionCacheIdentityTests: XCTestCase {
         )
 
         XCTAssertEqual(try checkboxData(in: second).range, itemRange)
-        XCTAssertEqual(cache.hitCountForTesting, 1)
+        TestHelper.assertDebugCounter(cache.hitCountForTesting, equals: 1)
         XCTAssertEqual(cache.missCountForTesting, 0)
     }
 
@@ -108,7 +108,7 @@ final class InteractionCacheIdentityTests: XCTestCase {
         _ = solver.solveSync(node: firstList, constrainedToWidth: width)
         cache.resetStatsForTesting()
         _ = solver.solveSync(node: secondList, constrainedToWidth: width)
-        XCTAssertEqual(cache.hitCountForTesting, 1)
+        TestHelper.assertDebugCounter(cache.hitCountForTesting, equals: 1)
         XCTAssertEqual(cache.missCountForTesting, 0)
 
         let firstParagraph = paragraph(text: "ordinary paragraph", range: sourceRange(line: 30))
@@ -116,7 +116,7 @@ final class InteractionCacheIdentityTests: XCTestCase {
         _ = solver.solveSync(node: firstParagraph, constrainedToWidth: width)
         cache.resetStatsForTesting()
         _ = solver.solveSync(node: secondParagraph, constrainedToWidth: width)
-        XCTAssertEqual(cache.hitCountForTesting, 1)
+        TestHelper.assertDebugCounter(cache.hitCountForTesting, equals: 1)
         XCTAssertEqual(cache.missCountForTesting, 0)
     }
 
@@ -234,7 +234,7 @@ final class InteractionCacheIdentityTests: XCTestCase {
 
         XCTAssertEqual((second.node as? DetailsNode)?.range, secondRange)
         XCTAssertEqual(cache.hitCountForTesting, 0)
-        XCTAssertEqual(cache.missCountForTesting, 1)
+        TestHelper.assertDebugCounter(cache.missCountForTesting, equals: 1)
     }
 
     func testRangeOnlyChangeAffectsInteractionDiffButNotRenderingIdentity() {

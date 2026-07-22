@@ -198,13 +198,25 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         )
 
         _ = calculator.calculateSize(for: attributedString, constrainedToWidth: 160)
-        XCTAssertEqual(ArithmeticTextCalculator.preparedTextCacheMissesForTesting(), 1)
-        XCTAssertEqual(ArithmeticTextCalculator.preparedTextCacheHitsForTesting(), 0)
+        TestHelper.assertDebugCounter(
+            ArithmeticTextCalculator.preparedTextCacheMissesForTesting(),
+            equals: 1
+        )
+        TestHelper.assertDebugCounter(
+            ArithmeticTextCalculator.preparedTextCacheHitsForTesting(),
+            equals: 0
+        )
 
         _ = calculator.calculateSize(for: attributedString, constrainedToWidth: 240)
         // Same content + same style → second width relayout should hit the prepared cache.
-        XCTAssertEqual(ArithmeticTextCalculator.preparedTextCacheMissesForTesting(), 1)
-        XCTAssertEqual(ArithmeticTextCalculator.preparedTextCacheHitsForTesting(), 1)
+        TestHelper.assertDebugCounter(
+            ArithmeticTextCalculator.preparedTextCacheMissesForTesting(),
+            equals: 1
+        )
+        TestHelper.assertDebugCounter(
+            ArithmeticTextCalculator.preparedTextCacheHitsForTesting(),
+            equals: 1
+        )
     }
 
     func testPreparedTextCacheSeparatesParagraphStyleFingerprints() {
@@ -221,8 +233,14 @@ final class ArithmeticTextCalculatorTests: XCTestCase {
         _ = calculator.calculateSize(for: indented, constrainedToWidth: 220)
 
         // Different paragraph styles → two distinct cache keys → two misses, no hits.
-        XCTAssertEqual(ArithmeticTextCalculator.preparedTextCacheMissesForTesting(), 2)
-        XCTAssertEqual(ArithmeticTextCalculator.preparedTextCacheHitsForTesting(), 0)
+        TestHelper.assertDebugCounter(
+            ArithmeticTextCalculator.preparedTextCacheMissesForTesting(),
+            equals: 2
+        )
+        TestHelper.assertDebugCounter(
+            ArithmeticTextCalculator.preparedTextCacheHitsForTesting(),
+            equals: 0
+        )
     }
 
     func testPrepareCapturesSegmentKinds() {

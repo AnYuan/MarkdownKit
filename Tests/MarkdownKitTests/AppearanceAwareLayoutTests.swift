@@ -226,8 +226,9 @@ final class AppearanceAwareLayoutTests: XCTestCase {
         let lightSolver2 = LayoutSolver(theme: .default, cache: cache, appearance: .light)
         _ = await lightSolver2.solve(node: doc2, constrainedToWidth: 400)
 
-        XCTAssertGreaterThan(
-            cache.hitCountForTesting, 0,
+        TestHelper.assertDebugCounter(
+            cache.hitCountForTesting,
+            greaterThan: 0,
             "Second light-appearance solve of identical content must hit the shared cache"
         )
     }
@@ -249,7 +250,7 @@ final class AppearanceAwareLayoutTests: XCTestCase {
             cache.hitCountForTesting, 0,
             "Dark-appearance solver must not reuse any cache entries produced by the light-appearance solver"
         )
-        XCTAssertGreaterThan(cache.missCountForTesting, 0)
+        TestHelper.assertDebugCounter(cache.missCountForTesting, greaterThan: 0)
     }
 
     // MARK: - 5. renderFingerprint differs between appearances

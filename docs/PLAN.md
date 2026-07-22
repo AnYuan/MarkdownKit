@@ -41,7 +41,7 @@ package/build checks, macOS and iOS public API checks, provenance, fast and iOS 
 documentation freshness, visual and determinism snapshots, and benchmarks; `verify_all.sh --full`
 alone is not release validation.
 
-The iOS release gate is deliberately two-part: 686 app-less XCTest tests exercise Mermaid's
+The iOS release gate is deliberately two-part: 703 app-less XCTest tests exercise Mermaid's
 queue/cache/cancellation state machine through a deterministic image driver, then a separately
 assembled SwiftUI Simulator app proves that a Mermaid fence can traverse public `MarkdownView`
 and its registry-backed real-WebKit adapter.
@@ -243,9 +243,29 @@ tests, 642 discoverable tests, unchanged macOS/iOS public APIs, both snapshot
 contracts, 686 iOS tests plus the app-hosted WebKit smoke, and all 13 isolated
 Release workloads. Final whole-diff review found no material issue.
 
+P14.7 tested, then rejected, a proposed second fingerprint-keyed `PreparedText`
+namespace: the exact all-miss Release workload improved only 2.7%, below its
+frozen 10% gate, while duplicating P07's identity and retained payload. The
+merged scope instead removes test-only calculator/LayoutCache diagnostics from
+Release hot paths and replaces interpolated `NSString`/boxed `NSNumber` segment
+width caching with an exact-UTF-8 typed key, direct `CGFloat` values, a lazy
+strict 50,000-entry FIFO, and UIKit/AppKit pressure purging. Five-process
+medians improved 12.2% for 10,000 prepared-cache hits and 6.1% for 2,560
+width-cache preparations. Debug and Release diagnostic contracts share one test
+helper; the temporary benchmarks are not part of the permanent 13-workload
+matrix. Final validation passes package describe/build, 10 public API smokes,
+provenance, 639 fast tests / 658 discoverable tests, unchanged macOS/iOS API
+graphs, both four-test snapshot contracts, exactly 703 iOS tests plus the
+app-hosted WebKit smoke, and all 13 isolated Release workloads. Four final
+read-only review roles found no material issue.
+
 The remaining findings fall into four groups:
 1. **Streaming structure**: the whole document is still re-parsed on every text change; when the relevant syntax *is* present, Details/Diagram/Math still walk the AST separately (Math three times); Mermaid re-runs `mermaid.initialize` per render and caches intermediate streamed sources; the MathJax engine is cold per solver instance.
-2. **Cold layout taxes**: PreparedText cache keys that copy and hash the full string on every lookup plus always-on stats locks; one global TextKit lock with per-call stack allocation, and arithmetic routing limited to paragraph/header. P14.7 keeps the residual direct PreparedText key/stats/structured-measurer-key cleanup pending.
+2. **Cold layout taxes**: Direct `ArithmeticTextCalculator` callers still build
+   the complete attributed-run cache key, but the attempted solver fingerprint
+   namespace was not worth its duplicate cache complexity. The larger remaining
+   costs are one global TextKit lock with per-call stack allocation and
+   arithmetic routing limited to paragraph/header.
 3. **UI**: macOS main-thread `ensureLayout` per item configure.
 4. **Hygiene**: the cache-reuse requirement for one-shot
    `MarkdownKitEngine.layout` hosts is undocumented.

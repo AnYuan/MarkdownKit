@@ -1064,18 +1064,34 @@ earlier items).
     policy remains in this item.
 
 ### Cold layout throughput
-- [ ] P14.7 `perf: fingerprint-based PreparedText cache keys`
-  Direct `ArithmeticTextCalculator` preparation and prepared-content misses
-  still build `preparedTextCacheKey` through a full attribute enumeration,
-  `attributedString.string` copy, and full-string hash — often comparable to
-  the measurement it saves. P07 bypasses this work for eligible solver width
-  hits but does not change the direct cache contract.
-  Key on the node's `contentFingerprint` + variant hash instead (the solver
-  has both). Also make the per-hit `testCounterLock`
-  (`ArithmeticTextCalculator`) and `LayoutCache.statsLock` hit/miss counters
-  `#if DEBUG`-only, and replace `ArithmeticTextMeasurer`'s per-segment
-  string-interpolation width-cache key with a structured key (no `NSString`
-  bridge, no `NSNumber` boxing). Complements P07's prepared-content reuse.
+- [x] P14.7 `perf: remove Release cache diagnostics and boxed width keys`
+  - [x] P14.7-A tested the proposed solver fingerprint namespace before
+    accepting its complexity. Five exact `2a113b7` cache-reset preparation
+    averages had median 290.7ms; the fingerprint implementation reached only
+    282.8ms (2.7%, below the frozen 10% threshold). It duplicated P07's
+    fingerprint/variant/locale identity and retained payload, so review removed
+    the entire experiment. `LayoutSolver` and the direct 1,024-entry
+    attributed-run `PreparedText` cache remain unchanged.
+  - [x] P14.7-B compiles `ArithmeticTextCalculator.testCounterLock` and
+    `LayoutCache.statsLock` state/mutations out of Release while retaining real
+    cache clearing and zero-valued Release test accessors. A five-process
+    10,000-hit microbenchmark improved from 11.62ms to 10.20ms median (12.2%).
+  - [x] P14.7-C replaces the per-segment interpolated `NSString` key and boxed
+    `NSNumber` value with an exact-UTF-8 typed key, direct `CGFloat` value, and
+    strict 50,000-entry O(1) FIFO. The ring grows lazily; UIKit memory warnings
+    and AppKit warning/critical pressure clear all entries. A five-process
+    2,560-preparation microbenchmark improved from 186.1ms to 174.8ms median
+    (6.1%).
+  - [x] P14.7-D adds deterministic collision, Unicode, rounding, capacity,
+    eviction, concurrency, purge/refill, UIKit pressure-wiring, and
+    Debug/Release diagnostic contracts. Temporary benchmarks were removed.
+  - [x] P14.7-E passes package describe/build, 10 public API smokes,
+    provenance, 639 fast tests / 658 discoverable tests, unchanged macOS/iOS
+    API graphs, both four-test snapshot contracts, exactly 703 iOS tests plus
+    the app-hosted WebKit smoke, and all 13 isolated Release workloads. The
+    first benchmark attempt ran under severe unrelated host contention; the
+    complete quiet-window rerun passed. Four final read-only review roles found
+    no material issue.
 - [ ] P14.8 `perf: pool TextKit measurement stacks, widen arithmetic routing`
   All non-arithmetic measurement serializes behind one global
   `os_unfair_lock` and allocates a fresh

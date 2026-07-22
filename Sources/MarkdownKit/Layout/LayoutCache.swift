@@ -19,6 +19,8 @@ import AppKit
 ///
 /// `@unchecked Sendable` because the internal storage (`NSCache`) is thread-safe and
 /// the only mutable state (`hitCountStorage` / `missCountStorage`) is guarded by `statsLock`.
+/// That diagnostics state (and its lock) only exists in DEBUG builds; Release builds
+/// carry no additional mutable state beyond the thread-safe `NSCache`.
 public final class LayoutCache: @unchecked Sendable {
 
     // MARK: - Cache Key
@@ -81,7 +83,9 @@ public final class LayoutCache: @unchecked Sendable {
         ) -> LayoutResult? {
             let key = Key(node: node, width: width, variantHash: variantHash)
             if let index = entryIndexByKey[key] {
+#if DEBUG
                 sharedCache.recordLookup(hit: true)
+#endif
                 return entries[index].result
             }
             return sharedCache.getLayout(for: key)
@@ -136,21 +140,36 @@ public final class LayoutCache: @unchecked Sendable {
     private let configuredTotalCostLimit: Int
 
     // MARK: - Test diagnostics (do not use in production paths)
+    //
+    // The hit/miss counters (and their lock) exist only in DEBUG builds. Release
+    // builds compile out this state entirely and every lookup call site along
+    // with it, so the accessors below simply report zero and `resetStatsForTesting()`
+    // is a no-op — they still exist so Release-compiled test sources link and run.
 
+#if DEBUG
     private let statsLock = NSLock()
     private var hitCountStorage: Int = 0
     private var missCountStorage: Int = 0
+#endif
 
     var hitCountForTesting: Int {
+#if DEBUG
         statsLock.lock()
         defer { statsLock.unlock() }
         return hitCountStorage
+#else
+        return 0
+#endif
     }
 
     var missCountForTesting: Int {
+#if DEBUG
         statsLock.lock()
         defer { statsLock.unlock() }
         return missCountStorage
+#else
+        return 0
+#endif
     }
 
     var countLimitForTesting: Int {
@@ -162,10 +181,12 @@ public final class LayoutCache: @unchecked Sendable {
     }
 
     func resetStatsForTesting() {
+#if DEBUG
         statsLock.lock()
         hitCountStorage = 0
         missCountStorage = 0
         statsLock.unlock()
+#endif
     }
 
     // NSCache requires class objects, so we wrap the struct LayoutResult
@@ -222,7 +243,9 @@ public final class LayoutCache: @unchecked Sendable {
 
     private func getLayout(for key: Key) -> LayoutResult? {
         let result = cache.object(forKey: CacheKey(key))?.result
+#if DEBUG
         recordLookup(hit: result != nil)
+#endif
         return result
     }
 
@@ -246,6 +269,7 @@ public final class LayoutCache: @unchecked Sendable {
         return cache
     }
 
+#if DEBUG
     private func recordLookup(hit: Bool) {
         statsLock.lock()
         if hit {
@@ -255,6 +279,7 @@ public final class LayoutCache: @unchecked Sendable {
         }
         statsLock.unlock()
     }
+#endif
 
     /// Clears all stored layouts (e.g. upon memory warning).
     public func clear() {

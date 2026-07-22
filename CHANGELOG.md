@@ -4,6 +4,11 @@ All notable changes to MarkdownKit are documented in this file.
 
 ## [Unreleased]
 
+### Performance
+
+- Release cache lookups no longer update test-only calculator/LayoutCache diagnostics, and
+  arithmetic segment widths use a bounded typed FIFO without interpolated keys or boxed values.
+
 ### Release engineering
 
 - The app-hosted iOS Mermaid smoke now sends a Mermaid fence through the public `MarkdownView`
