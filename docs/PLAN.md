@@ -259,13 +259,26 @@ graphs, both four-test snapshot contracts, exactly 703 iOS tests plus the
 app-hosted WebKit smoke, and all 13 isolated Release workloads. Four final
 read-only review roles found no material issue.
 
+P14.8 tested reusable TextKit 1 state and shipped no production change. The
+exact `2374d7c` baseline measured 13.90ms median for 1,000 short measurements
+and 43.78ms for 256 paragraph measurements, with frozen 20% and 10%
+improvement gates. A fully reusable stack with post-call clearing regressed the
+medians to 17.63ms and 51.65ms. The best narrower design retained only the
+layout manager/container and attached fresh storage per call; it reached
+12.98ms (6.6% faster, below threshold) and 47.78ms (9.1% slower). Allocation
+deltas fell, but TextKit mutation/detachment cost outweighed one-shot stack
+construction. Review corrected a non-independent experimental oracle, then all
+source, test, and temporary benchmark changes were removed.
+
 The remaining findings fall into four groups:
 1. **Streaming structure**: the whole document is still re-parsed on every text change; when the relevant syntax *is* present, Details/Diagram/Math still walk the AST separately (Math three times); Mermaid re-runs `mermaid.initialize` per render and caches intermediate streamed sources; the MathJax engine is cold per solver instance.
 2. **Cold layout taxes**: Direct `ArithmeticTextCalculator` callers still build
    the complete attributed-run cache key, but the attempted solver fingerprint
    namespace was not worth its duplicate cache complexity. The larger remaining
-   costs are one global TextKit lock with per-call stack allocation and
-   arithmetic routing limited to paragraph/header.
+   costs are one global TextKit lock with fresh per-call stack construction
+   (P14.8 disproved the tested reuse designs), an arithmetic model that cannot
+   yet represent per-paragraph list/quote indents and spacing, and repeated
+   cold list-prefix measurement.
 3. **UI**: macOS main-thread `ensureLayout` per item configure.
 4. **Hygiene**: the cache-reuse requirement for one-shot
    `MarkdownKitEngine.layout` hosts is undocumented.

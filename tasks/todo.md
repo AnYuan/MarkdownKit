@@ -924,9 +924,9 @@ Each item is one atomic commit validated with the P01 isolated Release
 harness plus `bash scripts/verify_fast.sh`. Quoted timings from the review
 were measured on the pre-P01 Debug harness; re-measure against the current
 Release baseline before and after each item. Suggested order: quick wins
-(P14.1, P14.2, P14.11–P14.13) → P14.3 → P14.7 → P14.8 → P14.5 → P14.6 →
-P14.10 → P14.14 → P14.4 last (largest scope, benefits already reduced by
-earlier items).
+(P14.1, P14.2, P14.11–P14.13) → P14.3 → P14.7 → P14.8 → P14.15 → P14.16 →
+P14.5 → P14.6 → P14.10 → P14.14 → P14.4 last (largest scope, benefits already
+reduced by earlier items).
 
 ### Cold layout quick wins
 - [x] P14.1 `perf: make accessibility metadata lazy` → closed as disproven;
@@ -1092,17 +1092,36 @@ earlier items).
     first benchmark attempt ran under severe unrelated host contention; the
     complete quiet-window rerun passed. Four final read-only review roles found
     no material issue.
-- [ ] P14.8 `perf: pool TextKit measurement stacks, widen arithmetic routing`
+- [x] P14.8 `perf: reuse the serialized TextKit measurement stack` → closed as
+  disproven; no production or test change.
   All non-arithmetic measurement serializes behind one global
-  `os_unfair_lock` and allocates a fresh
+  `os_unfair_lock` but allocates a fresh
   `NSTextStorage`/`NSLayoutManager`/`NSTextContainer` per call
-  (`Layout/TextKitCalculator.swift` ~25–42). Pool the stacks (thread-local).
-  Guarded by the existing oracle parity tests, extend arithmetic routing
-  beyond paragraph/header to text-only list items and blockquotes
-  (`LayoutSolver.isPureTextBlock`) — task-list-heavy layout remains ~3× the
-  medium fixture largely due to TextKit fallback. Small adjacent win: cache
-  `AttributedStringBuilder.listItemPrefixWidth` (an `NSString.size` call per
-  list item, ~907) by `(prefix, fontName, pointSize)`.
+  (`Layout/TextKitCalculator.swift`). Exact Release evidence showed that
+  replacing cheap one-shot construction with TextKit mutation/detachment work
+  reduced allocation deltas but did not improve latency enough to justify
+  shared mutable state.
+  - [x] P14.8-A add one temporary isolated Release batch benchmark, record five
+    exact `2374d7c` processes in a quiet window, and freeze acceptance thresholds
+    before production changes. The 1,000-call short-batch averages were 14.21,
+    13.90, 13.84, 13.96, and 13.89ms (median 13.90ms); final median must be
+    <=11.12ms (at least 20% faster). The 256-call paragraph-batch averages were
+    43.75, 74.99, 43.70, 45.22, and 43.78ms (median 43.78ms); final median must
+    be <=39.40ms (at least 10% faster). The outlying second paragraph process
+    does not affect the five-process median.
+  - [x] P14.8-B test one fully reusable stack with mandatory post-call clearing.
+    Five-process medians were 17.63ms for short text (26.8% slower) and 51.65ms
+    for paragraphs (18.0% slower), despite materially lower allocation deltas.
+  - [x] P14.8-C test the best narrower alternative: retain only the
+    `NSLayoutManager`/`NSTextContainer` and attach a fresh `NSTextStorage` per
+    call. Five-process medians were 12.98ms for short text (6.6% faster, below
+    the frozen 20% gate) and 47.78ms for paragraphs (9.1% slower). A no-clear
+    full-stack calibration was also slower than baseline.
+  - [x] P14.8-D review caught that new “fresh” test oracles initially shared the
+    static experimental stack; an independent one-shot oracle corrected the
+    experiment before rejection. All production, test, and temporary benchmark
+    changes were removed; final production/tests are byte-identical to
+    `2374d7c`.
 
 ### UI & scroll
 - [x] P14.9 `fix: prefetch bitmaps at the real display scale` → folded into P06
@@ -1222,3 +1241,16 @@ earlier items).
   per call with zero cross-call reuse. Document that streaming hosts must
   reuse parser/solver/cache, or expose the coordinator's persisted-cache
   pattern as a supported API.
+- [ ] P14.15 `perf: model paragraph boundaries before wider arithmetic routing`
+  A router-only ListNode/BlockQuoteNode expansion is unsafe: `PreparedText`
+  currently stores one global indent pair, captures only the first paragraph
+  style, does not reset first-line indentation after a paragraph break, and
+  does not model paragraph spacing. Add exact TextKit oracle matrices first,
+  then represent per-paragraph indents/spacing and enable pure-text list/quote
+  arithmetic only if isolated cold/width-sweep evidence meets frozen thresholds.
+- [ ] P14.16 `perf: cache list-item prefix widths if cold evidence justifies it`
+  `AttributedStringBuilder.listItemPrefixWidth` calls
+  `NSString.size(withAttributes:)` once per list item. Benchmark cold ordered,
+  unordered, and task-list construction independently from prepared-cache hits;
+  if material, add a small builder-owned bounded exact-prefix/font cache while
+  preserving platform measurement behavior and list indentation.
