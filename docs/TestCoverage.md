@@ -1,18 +1,18 @@
 # MarkdownKit 测试覆盖与执行快照
 
-> 最近更新: 2026-07-22
+> 最近更新: 2026-07-23
 > 生成方式: `python3 scripts/generate_test_coverage_report.py [--run-tests|--from-log <path>]`
-> 生成时间: 2026-07-22 16:11:03
+> 生成时间: 2026-07-23 16:00:48
 
 ## 1. 总览
 
 | 指标 | 当前值 | 说明 |
 | --- | ---: | --- |
 | 源码文件数 (`Sources/MarkdownKit/*.swift`) | 91 | 不含 Demo target |
-| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 83 | 含基准/夹具/辅助文件 |
-| 含 `test*` 方法的测试文件 | 75 | 静态扫描结果 |
-| 静态扫描 `test*` 方法总数 | 785 | 受编译条件影响，可能高于可执行测试数 |
-| 可发现测试数 (`swift test list`) | 680 | 当前平台可执行测试 |
+| 测试文件数 (`Tests/MarkdownKitTests/*.swift`) | 84 | 含基准/夹具/辅助文件 |
+| 含 `test*` 方法的测试文件 | 76 | 静态扫描结果 |
+| 静态扫描 `test*` 方法总数 | 806 | 受编译条件影响，可能高于可执行测试数 |
+| 可发现测试数 (`swift test list`) | 701 | 当前平台可执行测试 |
 | 全量执行结果 (`swift test`) | 未提供 | 未执行或未提供日志 |
 
 ## 2. 本次执行状态
@@ -26,8 +26,9 @@
 | `ASTPluginTests.swift` | 13 |
 | `ASTTransformTests.swift` | 6 |
 | `AppearanceAwareLayoutTests.swift` | 21 |
+| `ArithmeticListQuoteRoutingTests.swift` | 13 |
 | `ArithmeticParagraphModelTests.swift` | 21 |
-| `ArithmeticTextCalculatorTests.swift` | 29 |
+| `ArithmeticTextCalculatorTests.swift` | 36 |
 | `ArithmeticTextMeasurerTests.swift` | 17 |
 | `AsyncCodeViewCopyTests.swift` | 7 |
 | `AsyncTextViewInteractionTests.swift` | 5 |
@@ -44,7 +45,7 @@
 | `BenchmarkTieredFixtures.swift` | 0 |
 | `BuiltInPluginSourcePreflightTests.swift` | 13 |
 | `CommonMarkSpecTests.swift` | 2 |
-| `ConcurrencyStressTests.swift` | 4 |
+| `ConcurrencyStressTests.swift` | 5 |
 | `CrossPlatformLayoutTests.swift` | 11 |
 | `DepthLimitTests.swift` | 3 |
 | `DetailsExtractionPluginTests.swift` | 4 |

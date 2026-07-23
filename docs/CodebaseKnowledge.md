@@ -1,4 +1,4 @@
-# MarkdownKit Codebase Knowledge (2026-07-22)
+# MarkdownKit Codebase Knowledge (2026-07-23)
 
 This document is a practical snapshot of the current repository, with emphasis on commands, architecture, and known risks that are still actionable.
 
@@ -15,12 +15,12 @@ This document is a practical snapshot of the current repository, with emphasis o
   - `pointfreeco/swift-snapshot-testing` (`>= 1.17.0`)
 - Current inventory from `docs/TestCoverage.md`:
   - Source files (`Sources/MarkdownKit/**/*.swift`): **91**
-  - Test files (`Tests/MarkdownKitTests/*.swift`): **83**
-  - Test-bearing files: **75**
-  - Static test methods: **785**
-  - macOS-discoverable tests: **680**
-  - Fast correctness tests: **661**
-  - iOS XCTest tests: **725**
+  - Test files (`Tests/MarkdownKitTests/*.swift`): **84**
+  - Test-bearing files: **76**
+  - Static test methods: **806**
+  - macOS-discoverable tests: **701**
+  - Fast correctness tests: **682**
+  - iOS XCTest tests: **746**
 
 ## 2. Build / Run / Test Commands
 
@@ -71,10 +71,10 @@ bash scripts/verify_benchmarks.sh
 
 ### 2.3 Latest observed results
 
-- `swift test list`: **680** discoverable tests
+- `swift test list`: **701** discoverable tests
 - Last full `swift test`: **516 tests passed** on 2026-07-18
-- `verify_fast.sh`: **661** correctness tests
-- `verify_ios.sh`: **725** XCTest tests plus one app-hosted Mermaid PASS marker
+- `verify_fast.sh`: **682** correctness tests
+- `verify_ios.sh`: **746** XCTest tests plus one app-hosted Mermaid PASS marker
 - Known noise: deduplicated MathJax warning for `\\binom` may still appear once in benchmark/full runs
 
 ## 3. End-to-End Architecture
@@ -151,12 +151,12 @@ Key facts:
 - Public async `LayoutSolver.solve` remains total under cancellation and yields once initially plus periodically across recursive solver work. The SwiftUI coordinator alone uses internal `solveCancellable`, whose one-child/one-operation checkpoints stop stale planning, materialization, and top-level layout after any in-flight host resource await returns.
 - Coordinator-cancellable cache writes stay in an invocation-local `LayoutCache.WriteBatch`; staged prepared entries satisfy same-solve duplicate lookups, are discarded on cancellation, and publish child-before-parent only after successful root completion. Synchronous commit is the point of no return, while the coordinator generation check still rejects stale UI output; tables/images/math/diagrams/documents/custom draw stay excluded from preparation.
 - `Theme.resolved(for:)` concretizes theme/highlighter/table/default-math colors once per solver. `AttributedStringBuilder` separately resolves the appearance-specific secondary-label color once for code labels and image fallback, and runs the generic five-key attributed-color resolver only when opaque custom math/diagram adapter output enters the builder; ordinary attributed output is not rescanned after measurement.
-- The internal `ArithmeticTextCalculator` is the pure-text routing/cache facade. Width-independent preparation streams UTF-16 spans through dedicated scanner, localized classifier/merger, and CoreText measurer value types; `PreparedText` records per-paragraph chunk ranges, first/subsequent-line indents, spacing-before/after, and empty-line height. CRLF is one separator, U+2028 remains an intra-paragraph hard break, U+2029/newline reset paragraph state, and terminal empty-line style/font semantics match TextKit. `ArithmeticTextLineBreaker` separately owns fit-versus-paint widths, hard breaks, soft hyphens, used-rect bounds, and oversized-token fallback. Routing remains paragraph/header-only; list/blockquote expansion is deferred to P14.17. Segment widths use an exact-UTF-8 structured `(font name, point size rounded to 1/1000, text)` key with direct `CGFloat` values in a strict 50,000-entry FIFO; UIKit/AppKit pressure clears it. Test-only calculator/LayoutCache hit/miss state is compiled out of Release.
+- The internal `ArithmeticTextCalculator` is the pure-text routing/cache facade. Width-independent preparation streams UTF-16 spans through dedicated scanner, localized classifier/merger, and CoreText measurer value types; `PreparedText` records per-paragraph chunk ranges, first/subsequent-line indents, spacing-before/after, and empty-line height. CRLF is one separator, U+2028 remains an intra-paragraph hard break, U+2029/newline reset paragraph state, and terminal empty-line style/font semantics match TextKit. `ArithmeticTextLineBreaker` separately owns fit-versus-paint widths, hard breaks, soft hyphens, used-rect bounds, and oversized-token fallback. Paragraphs, headers, and strict builder-backed pure-text list/blockquote shapes share arithmetic routing across cached and uncached solver paths; unsupported descendants, attributed profiles, non-cacheable font point sizes, and any concrete width whose visible line is supplied only by fallback fonts fail closed to TextKit. Every effective attributed-run boundary is checked on every platform before any platform-specific glyph shortcut and fails closed if it splits an extended grapheme; U+0009 also fails closed because tab advance depends on the current position. Attributed-run boundary and fallback-font evidence are evaluated by extended grapheme cluster so spaces/default-ignorables cannot mask fallback-only lines; a discretionary soft hyphen affects routing only when painted, and a painted fallback-provided hyphen forces TextKit even when requested-font glyphs share its line. Segment measurements retain the existing exact-UTF-8 `(font name, point size rounded to 1/1000, text)` key, FIFO behavior, and width-only API while one 50,000-entry dictionary also stores optional line metrics and requested-font evidence; UIKit/AppKit pressure clears it. Test-only calculator/LayoutCache hit/miss state is compiled out of Release. Cancellable arithmetic layout checks between prepared chunks and oversized-token slices, but a cold unique oversized token is synchronously shaped as a complete token under the global CoreText safety gate; `solveCancellable` cannot observe cancellation until the enclosing `prepare(...)` returns.
 - `TableLayoutShared` owns the immutable canonical rectangular table grid (cell text/display text, alignment, row role/body index) and sanitized uniform column geometry. Three thin adapters intentionally preserve platform-specific visuals: AppKit native `NSTextTableBlock`, UIKit nested attributed tab/narrow fallback, and UIKit top-level `TableCardRenderer` cards drawn through `CGContext`.
 - `ImageResourceLoader` is the sole production owner of image source resolution, policy gating, file/`URLSession` loading, pre-follow redirect policy, HTTP status, MIME, expected-byte-count, streamed final-byte limits, and typed rejection.
 - `ImageAttachmentBuilder` uses ImageIO to create an oriented, width-constrained thumbnail. Its decoded cache is keyed by policy/source/rounded target width, bounded by count and total cost, and rejects any decoded image above 64 MiB.
 - Parser-produced Markdown images are inline attachments only. There is no top-level/block-image layout or visible-cell image loader.
-- The internal `TextKitCalculator` safely isolates layout passes to avoid concurrent `NSLayoutManager` data dictionary deadlocks via tight locks.
+- The internal `TextKitCalculator` safely isolates layout passes to avoid concurrent `NSLayoutManager` data dictionary deadlocks via recursive locks that also permit attachment-driven synchronous re-entry.
 - Code blocks support optional language badges, Splash tokenization for Swift,
   and regex-based keyword highlighting for the supported non-Swift language
   families. Generic highlighting reuses bounded, theme-independent compiled
@@ -199,7 +199,7 @@ Key facts:
 High-value suites:
 - Parser/plugin correctness: `Parser*Tests`, `ASTPluginTests`, `*ExtractionPluginTests`, `GitHubAutolinkPluginTests`
 - Layout invariants: `LayoutSolverExtendedTests`, `InlineFormattingLayoutTests`, `InteractionCacheIdentityTests`, `CrossPlatformLayoutTests`
-- Arithmetic preparation/layout contracts: `ArithmeticTextCalculatorTests`, `ArithmeticTextMeasurerTests`
+- Arithmetic preparation/layout contracts: `ArithmeticListQuoteRoutingTests`, `ArithmeticTextCalculatorTests`, `ArithmeticTextMeasurerTests`
 - Table canonicalization/adapters: `TableLayoutSharedTests`, `TableAttributedStringBuilderTests`, `iOSTableLayoutTests`
 - Unified image pipeline: `ImageResourceLoaderTests` (21 injected-`URLProtocol`/local policy, redirect, chunk-limit, cancellation, concurrency, and validation tests), `ImageAttachmentBuilderTests` (5 decode/cache tests)
 - Safety and Utils: `URLSanitizerTests`, `DepthLimitTests`, `FuzzTests`, `TableOfContentsBuilderTests`, `PlatformAccessibilityTests`, `PerformanceProfilerTests`
@@ -209,7 +209,7 @@ High-value suites:
 - Mermaid backend contracts: `MermaidDiagramAdapterTests` uses real WebKit on
   macOS and a deterministic image driver on iOS; the iOS verification script
   adds a separate app-hosted public-`MarkdownView` Mermaid-fence smoke using
-  real WebKit after its 725 XCTest tests.
+  real WebKit after its 746 XCTest tests.
 - Benchmarks: `MarkdownKitBenchmarkTests`, `BenchmarkNodeTypeTests`,
   `BenchmarkCacheTests`, `MarkdownRenderCoordinatorBenchmarkTests`, with
   13 canonical isolated Release workloads and the prepared-content relational

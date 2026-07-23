@@ -19,7 +19,9 @@ By keeping `LayoutResult` completely detached from UI layers (like `UIView` or `
 The internal `TextKitCalculator` uses the platform's TextKit 1
 `NSLayoutManager`/`NSTextContainer` pipeline so measurement matches the hosted text renderers.
 It applies the styled string and width boundary (for example, 400 points) and reports the used
-layout bounds.
+layout bounds. TextKit and cold CoreText shaping share one process-wide recursive safety gate so
+fallback-font dictionaries cannot be mutated concurrently while attachment-driven nested layout
+can still re-enter on the same thread.
 
 ### Arithmetic text pipeline
 The internal `ArithmeticTextCalculator` remains the pure-text routing and prepared-cache facade.
@@ -34,7 +36,17 @@ to 1/1000 point, and segment text. The cache stores `CGFloat` directly in a stri
 FIFO, grows its ring lazily, and clears on UIKit memory warnings or AppKit warning/critical memory
 pressure. Test-only arithmetic and full-layout cache counters are absent from Release lookup paths.
 
-`ArithmeticTextLineBreaker` consumes that width-independent payload for each viewport width, preserving separate fit and paint advances, paragraph indents, hard breaks, discretionary soft hyphens, and CoreText grapheme fallback for oversized tokens. Unsupported scripts and attachment-bearing strings continue to route through `TextKitCalculator`.
+`ArithmeticTextLineBreaker` consumes that width-independent payload for each viewport width,
+preserving separate fit and paint advances, paragraph indents, hard breaks, discretionary soft
+hyphens, and CoreText grapheme fallback for oversized tokens. Paragraphs, headers, and strict
+builder-backed pure-text lists and blockquotes can use this route. Unsupported scripts,
+attachment-bearing strings, attributed-run boundaries that split an extended grapheme on either
+platform, non-cacheable font point sizes, and U+0009 tabs with position-dependent advance fail
+closed to `TextKitCalculator`. A fallback-provided discretionary hyphen also fails closed when it
+is actually painted, even if requested-font glyphs share that line.
+Cancellable layout checks between prepared chunks and oversized-token slices. A cold unique token
+is nevertheless synchronously shaped as a complete token under the shared CoreText safety gate;
+`solveCancellable` cannot observe cancellation until the enclosing `prepare(...)` returns.
 
 ### `LayoutSolver`
 A recursive tree solver. After cache lookup, it classifies each node into a shallow recipe, applies the central `Theme`, measures the output, and packages it into `LayoutResult` trees. Public async solving remains total when its task is canceled and replaces per-node yielding with one initial yield plus bounded periodic solver yields. The SwiftUI coordinator uses a separate internal cancellable envelope that returns no partial tree and stops between children, planning work, materialization operations, and resource boundaries. The sync envelope remains fully synchronous.

@@ -27,9 +27,18 @@ final class ArithmeticTextCalculator {
     struct PreparedTextProfile {
         var containsUnsupportedScript = false
         var containsAttachment = false
+        var containsAllGlyphFallbackParagraph = false
+        var containsAttributeSplitGrapheme = false
+        var containsPositionDependentTab = false
+        var containsInvalidFontPointSize = false
 
         var supportsArithmeticLayout: Bool {
-            !containsUnsupportedScript && !containsAttachment
+            !containsUnsupportedScript
+                && !containsAttachment
+                && !containsAllGlyphFallbackParagraph
+                && !containsAttributeSplitGrapheme
+                && !containsPositionDependentTab
+                && !containsInvalidFontPointSize
         }
     }
 
@@ -169,10 +178,39 @@ final class ArithmeticTextCalculator {
         // `CTFontCreateWithName` cannot resolve, silently substituting Times.
         var ctFonts: [CTFont?] = []
         var heights: [CGFloat] = []
+        /// Distance from the top of a line fragment to the baseline for each
+        /// segment. `height - baselineOffset` is the segment's below-baseline
+        /// extent. Keeping both sides lets a line combine a tall ascender from
+        /// one font with a deeper fallback-font descender from another, matching
+        /// TextKit's mixed-font line-box construction.
+        var baselineOffsets: [CGFloat] = []
+        /// Whether CoreText retained the requested font for at least one glyph
+        /// belonging to a visible character in each shaped segment.
+        var containsRequestedFontRuns: [Bool] = []
+        /// Whether each segment contains any non-whitespace,
+        /// non-default-ignorable character. Keeping visibility separate from
+        /// requested-font evidence prevents control-only runs from masking a
+        /// fallback-only visible segment on the same line.
+        var containsVisibleCharacters: [Bool] = []
         var chunks: [Chunk] = []
         var headIndent: CGFloat = 0
         var firstLineHeadIndent: CGFloat = 0
         var paragraphs: [Paragraph] = []
+
+        mutating func reserveCapacity(segments: Int, paragraphs paragraphCount: Int) {
+            widths.reserveCapacity(segments)
+            kinds.reserveCapacity(segments)
+            lineEndFitAdvances.reserveCapacity(segments)
+            lineEndPaintAdvances.reserveCapacity(segments)
+            segmentTexts.reserveCapacity(segments)
+            ctFonts.reserveCapacity(segments)
+            heights.reserveCapacity(segments)
+            baselineOffsets.reserveCapacity(segments)
+            containsRequestedFontRuns.reserveCapacity(segments)
+            containsVisibleCharacters.reserveCapacity(segments)
+            chunks.reserveCapacity(segments)
+            paragraphs.reserveCapacity(paragraphCount)
+        }
 
         mutating func append(
             width: CGFloat,
@@ -180,6 +218,9 @@ final class ArithmeticTextCalculator {
             height: CGFloat,
             text: String = "",
             ctFont: CTFont? = nil,
+            baselineOffset: CGFloat? = nil,
+            containsRequestedFontRun: Bool = true,
+            containsVisibleCharacter: Bool? = nil,
             lineEndFitAdvance: CGFloat? = nil,
             lineEndPaintAdvance: CGFloat? = nil
         ) {
@@ -190,6 +231,9 @@ final class ArithmeticTextCalculator {
             segmentTexts.append(text)
             ctFonts.append(ctFont)
             heights.append(height)
+            baselineOffsets.append(baselineOffset ?? height)
+            containsRequestedFontRuns.append(containsRequestedFontRun)
+            containsVisibleCharacters.append(containsVisibleCharacter ?? (kind == .text))
             chunks.append(
                 Chunk(
                     kind: kind.isHardBreak ? .hardBreak : .content,
@@ -238,23 +282,41 @@ final class ArithmeticTextCalculator {
         guard attributedString.length > 0 else { return PreparedTextProfile() }
 
         var profile = PreparedTextProfile()
-        let fullRange = NSRange(location: 0, length: attributedString.length)
-
-        attributedString.enumerateAttribute(.attachment, in: fullRange, options: []) { value, _, stop in
-            if value != nil {
-                profile.containsAttachment = true
-                stop.pointee = true
-            }
-        }
-
-        if profile.containsAttachment {
+        let attributedRunProfile = Self.attributedRunProfile(
+            in: attributedString
+        )
+        profile.containsAttachment = attributedRunProfile.containsAttachment
+        profile.containsAttributeSplitGrapheme =
+            attributedRunProfile.containsAttributeSplitGrapheme
+        profile.containsInvalidFontPointSize =
+            attributedRunProfile.containsInvalidFontPointSize
+        if profile.containsAttachment
+            || profile.containsAttributeSplitGrapheme
+            || profile.containsInvalidFontPointSize {
             return profile
         }
 
-        for scalar in attributedString.string.unicodeScalars where Self.requiresTextKitFallback(for: scalar) {
-            profile.containsUnsupportedScript = true
-            break
+        for scalar in attributedString.string.unicodeScalars {
+            if scalar.value == 0x0009 {
+                profile.containsPositionDependentTab = true
+            }
+            if Self.requiresTextKitFallback(for: scalar) {
+                profile.containsUnsupportedScript = true
+            }
+            if profile.containsPositionDependentTab,
+               profile.containsUnsupportedScript {
+                break
+            }
         }
+
+        #if canImport(AppKit)
+        if !profile.containsUnsupportedScript,
+           !profile.containsPositionDependentTab {
+            let glyphCoverage = Self.appKitGlyphCoverage(in: attributedString)
+            profile.containsAllGlyphFallbackParagraph =
+                glyphCoverage.containsAllGlyphFallbackParagraph
+        }
+        #endif
 
         return profile
     }
@@ -290,6 +352,22 @@ final class ArithmeticTextCalculator {
         ArithmeticTextLineBreaker.layout(prepared: preparedText, constrainedToWidth: maxWidth)
     }
 
+    func layoutOutcome(
+        prepared preparedText: PreparedText,
+        constrainedToWidth maxWidth: CGFloat,
+        stopWhenTextKitFallbackIsRequired: Bool = false,
+        shouldCancel: (() -> Bool)? = nil,
+        onOversizedLine: (() -> Void)? = nil
+    ) -> ArithmeticTextLineBreaker.LayoutOutcome {
+        ArithmeticTextLineBreaker.layoutOutcome(
+            prepared: preparedText,
+            constrainedToWidth: maxWidth,
+            stopWhenTextKitFallbackIsRequired: stopWhenTextKitFallbackIsRequired,
+            shouldCancel: shouldCancel,
+            onOversizedLine: onOversizedLine
+        )
+    }
+
     private static func cachedPreparedText(for key: PreparedTextCacheKeyObject) -> PreparedText? {
         if let wrapper = cachedPreparedTexts.object(forKey: key) {
             #if DEBUG
@@ -323,11 +401,188 @@ final class ArithmeticTextCalculator {
         }
     }
 
+    private struct AttributedRunProfile {
+        var containsAttachment = false
+        var containsAttributeSplitGrapheme = false
+        var containsInvalidFontPointSize = false
+    }
+
+    /// Arithmetic preparation shapes attributed runs independently and keys
+    /// their platform fonts by millipoints. An extended grapheme that crosses a
+    /// run boundary therefore needs TextKit, even when only a non-font attribute
+    /// changes, while a non-cacheable point size must fail closed before integer
+    /// key conversion. Validate both on every platform before any AppKit-only
+    /// glyph coverage shortcut can return early.
+    private static func attributedRunProfile(
+        in attributedString: NSAttributedString
+    ) -> AttributedRunProfile {
+        let length = attributedString.length
+        guard length > 0 else { return AttributedRunProfile() }
+
+        let string = attributedString.string as NSString
+        let fullRange = NSRange(location: 0, length: length)
+        var profile = AttributedRunProfile()
+        attributedString.enumerateAttributes(in: fullRange, options: []) { attributes, range, stop in
+            if attributes[.attachment] != nil {
+                profile.containsAttachment = true
+                stop.pointee = true
+                return
+            }
+            if let font = attributes[.font] as? Font,
+               !ArithmeticTextMeasurer.supportsArithmeticPointSize(font.pointSize) {
+                profile.containsInvalidFontPointSize = true
+                stop.pointee = true
+                return
+            }
+
+            let boundary = NSMaxRange(range)
+            guard boundary > 0, boundary < length else { return }
+
+            let composedRange = string.rangeOfComposedCharacterSequence(at: boundary)
+            if composedRange.location < boundary {
+                profile.containsAttributeSplitGrapheme = true
+                stop.pointee = true
+            }
+        }
+        return profile
+    }
+
+    #if canImport(AppKit)
+    private struct AppKitGlyphCoverage {
+        var containsAllGlyphFallbackParagraph = false
+    }
+
+    private struct VisibleGlyphCoverage {
+        var sawVisibleCharacter = false
+        var requestedFontSuppliesGlyph = false
+    }
+
+    /// AppKit's line box for a paragraph whose requested font supplies no glyphs
+    /// changes with process-global fallback state. Such paragraphs cannot have a
+    /// deterministic arithmetic height, so routing must fail closed to TextKit.
+    /// Nominal glyph lookup avoids populating CoreText's fallback dictionaries and
+    /// normally returns after the first visible grapheme for supported fonts.
+    private static func appKitGlyphCoverage(
+        in attributedString: NSAttributedString
+    ) -> AppKitGlyphCoverage {
+        let string = attributedString.string as NSString
+        var nextParagraphLocation = 0
+        var result = AppKitGlyphCoverage()
+
+        while nextParagraphLocation < string.length {
+            var paragraphStart = 0
+            var paragraphEnd = 0
+            var contentsEnd = 0
+            string.getParagraphStart(
+                &paragraphStart,
+                end: &paragraphEnd,
+                contentsEnd: &contentsEnd,
+                for: NSRange(location: nextParagraphLocation, length: 0)
+            )
+
+            let contentRange = NSRange(
+                location: paragraphStart,
+                length: contentsEnd - paragraphStart
+            )
+            let paragraphCoverage = visibleGlyphCoverage(
+                in: attributedString,
+                string: string,
+                range: contentRange
+            )
+
+            if paragraphCoverage.sawVisibleCharacter,
+               !paragraphCoverage.requestedFontSuppliesGlyph {
+                result.containsAllGlyphFallbackParagraph = true
+                return result
+            }
+            nextParagraphLocation = paragraphEnd
+        }
+
+        return result
+    }
+
+    private static func visibleGlyphCoverage(
+        in attributedString: NSAttributedString,
+        string: NSString,
+        range: NSRange
+    ) -> VisibleGlyphCoverage {
+        var coverage = VisibleGlyphCoverage()
+        let rangeEnd = NSMaxRange(range)
+        var location = range.location
+
+        while location < rangeEnd {
+            let composedRange = NSIntersectionRange(
+                string.rangeOfComposedCharacterSequence(at: location),
+                range
+            )
+            guard composedRange.length > 0 else {
+                location += 1
+                continue
+            }
+            location = NSMaxRange(composedRange)
+
+            guard ArithmeticTextMeasurer.containsVisibleCharacter(
+                in: string,
+                range: composedRange
+            ) else { continue }
+            coverage.sawVisibleCharacter = true
+
+            let attributes = attributedString.attributes(
+                at: composedRange.location,
+                effectiveRange: nil
+            )
+            let requestedFont = (attributes[.font] as? Font)
+                ?? ArithmeticTextMeasurer.defaultTextKitFont
+
+            if requestedFontSuppliesEntireCluster(
+                in: string,
+                range: composedRange,
+                ctFont: requestedFont as CTFont
+            ) {
+                coverage.requestedFontSuppliesGlyph = true
+                return coverage
+            }
+        }
+
+        return coverage
+    }
+
+    private static func requestedFontSuppliesEntireCluster(
+        in string: NSString,
+        range: NSRange,
+        ctFont: CTFont
+    ) -> Bool {
+        if range.length == 1 {
+            var character = string.character(at: range.location)
+            var glyph: CGGlyph = 0
+            return CTFontGetGlyphsForCharacters(ctFont, &character, &glyph, 1)
+                && glyph != 0
+        }
+
+        let cluster = string.substring(with: range)
+        let characters = Array(cluster.utf16)
+        guard !characters.isEmpty else { return false }
+        var glyphs = [CGGlyph](repeating: 0, count: characters.count)
+        let mapsEveryCharacter = characters.withUnsafeBufferPointer { charactersBuffer in
+            glyphs.withUnsafeMutableBufferPointer { glyphsBuffer in
+                CTFontGetGlyphsForCharacters(
+                    ctFont,
+                    charactersBuffer.baseAddress!,
+                    glyphsBuffer.baseAddress!,
+                    charactersBuffer.count
+                )
+            }
+        }
+        return mapsEveryCharacter && glyphs.contains(where: { $0 != 0 })
+    }
+    #endif
+
     private func preparedTextCacheKey(for attributedString: NSAttributedString) -> PreparedTextCacheKey {
         var paragraphStyles: [PreparedTextParagraphStyleKey] = []
         var runs: [PreparedTextRunKey] = []
-        paragraphStyles.reserveCapacity(1)
-        runs.reserveCapacity(min(attributedString.length, 8))
+        let estimatedRunCount = min(max(attributedString.length / 40, 8), 512)
+        paragraphStyles.reserveCapacity(min(estimatedRunCount, 256))
+        runs.reserveCapacity(estimatedRunCount)
         var hasLastParagraphStyle = false
         var lastParagraphStyle: NSParagraphStyle?
         var lastParagraphStyleIndex = 0

@@ -8,6 +8,12 @@ import CoreText
 
 struct ArithmeticTextLineBreaker {
 
+    struct LayoutOutcome {
+        let size: CGSize
+        let requiresTextKitFallback: Bool
+        let wasCancelled: Bool
+    }
+
     /// Keeps arithmetic geometry inside a finite Core Graphics coordinate range.
     /// Values above this point are not meaningful display dimensions and can
     /// otherwise overflow while paragraph spacing and line heights accumulate.
@@ -19,22 +25,72 @@ struct ArithmeticTextLineBreaker {
         var maxComputedX: CGFloat?
         var minComputedY: CGFloat?
         var maxComputedY: CGFloat?
+        var requiresTextKitFallback = false
     }
 
     private struct LineState {
         var currentLineAdvance: CGFloat = 0
         var currentLineFitWidth: CGFloat = 0
         var currentLinePaintWidth: CGFloat = 0
-        var currentLineHeight: CGFloat = 0
+        var currentLineBaselineOffset: CGFloat = 0
+        var currentLineBelowBaseline: CGFloat = 0
         var pendingDiscretionaryHyphenWidth: CGFloat?
+        var pendingDiscretionaryHyphenContainsRequestedFontRun = false
+        var containsVisibleShapedContent = false
+        var containsRequestedVisibleGlyph = false
         var lineCount = 0
+
+        var currentLineHeight: CGFloat {
+            currentLineBaselineOffset + currentLineBelowBaseline
+        }
+
+        mutating func include(
+            height: CGFloat,
+            baselineOffset: CGFloat,
+            containsVisibleShapedContent: Bool = false,
+            containsRequestedVisibleGlyph: Bool = false
+        ) {
+            let boundedBaseline = min(max(baselineOffset, 0), max(height, 0))
+            currentLineBaselineOffset = max(currentLineBaselineOffset, boundedBaseline)
+            currentLineBelowBaseline = max(
+                currentLineBelowBaseline,
+                max(height - boundedBaseline, 0)
+            )
+            self.containsVisibleShapedContent = self.containsVisibleShapedContent
+                || containsVisibleShapedContent
+            self.containsRequestedVisibleGlyph = self.containsRequestedVisibleGlyph
+                || containsRequestedVisibleGlyph
+        }
+
+        mutating func resetLineMetrics() {
+            currentLineBaselineOffset = 0
+            currentLineBelowBaseline = 0
+            containsVisibleShapedContent = false
+            containsRequestedVisibleGlyph = false
+        }
     }
 
     static func layout(
         prepared preparedText: ArithmeticTextCalculator.PreparedText,
         constrainedToWidth maxWidth: CGFloat
     ) -> CGSize {
-        guard !preparedText.chunks.isEmpty || !preparedText.paragraphs.isEmpty else { return .zero }
+        layoutOutcome(prepared: preparedText, constrainedToWidth: maxWidth).size
+    }
+
+    static func layoutOutcome(
+        prepared preparedText: ArithmeticTextCalculator.PreparedText,
+        constrainedToWidth maxWidth: CGFloat,
+        stopWhenTextKitFallbackIsRequired: Bool = false,
+        shouldCancel: (() -> Bool)? = nil,
+        onOversizedLine: (() -> Void)? = nil
+    ) -> LayoutOutcome {
+        guard !preparedText.chunks.isEmpty || !preparedText.paragraphs.isEmpty else {
+            return LayoutOutcome(
+                size: .zero,
+                requiresTextKitFallback: false,
+                wasCancelled: false
+            )
+        }
 
         let constrainedWidth = boundedLayoutDimension(maxWidth)
 
@@ -54,15 +110,32 @@ struct ArithmeticTextLineBreaker {
         var layoutState = LayoutState()
 
         for (paragraphIndex, paragraph) in paragraphs.enumerated() {
-            layoutParagraph(
+            guard layoutParagraph(
                 paragraph,
                 isFirstParagraph: paragraphIndex == 0,
                 addsTerminalLine: paragraphIndex == paragraphs.count - 1
                     && paragraphEndsInHardBreak(paragraph, preparedText: preparedText),
                 preparedText: preparedText,
                 constrainedToWidth: constrainedWidth,
-                layoutState: &layoutState
-            )
+                layoutState: &layoutState,
+                stopWhenTextKitFallbackIsRequired: stopWhenTextKitFallbackIsRequired,
+                shouldCancel: shouldCancel,
+                onOversizedLine: onOversizedLine
+            ) else {
+                return LayoutOutcome(
+                    size: .zero,
+                    requiresTextKitFallback: false,
+                    wasCancelled: true
+                )
+            }
+            if stopWhenTextKitFallbackIsRequired,
+               layoutState.requiresTextKitFallback {
+                return LayoutOutcome(
+                    size: .zero,
+                    requiresTextKitFallback: true,
+                    wasCancelled: false
+                )
+            }
         }
 
         let computedWidth: CGFloat
@@ -79,7 +152,11 @@ struct ArithmeticTextLineBreaker {
         } else {
             computedHeight = 0
         }
-        return CGSize(width: ceil(computedWidth), height: ceil(computedHeight))
+        return LayoutOutcome(
+            size: CGSize(width: ceil(computedWidth), height: ceil(computedHeight)),
+            requiresTextKitFallback: layoutState.requiresTextKitFallback,
+            wasCancelled: false
+        )
     }
 
     private static func layoutParagraph(
@@ -88,8 +165,11 @@ struct ArithmeticTextLineBreaker {
         addsTerminalLine: Bool,
         preparedText: ArithmeticTextCalculator.PreparedText,
         constrainedToWidth maxWidth: CGFloat,
-        layoutState: inout LayoutState
-    ) {
+        layoutState: inout LayoutState,
+        stopWhenTextKitFallbackIsRequired: Bool,
+        shouldCancel: (() -> Bool)?,
+        onOversizedLine: (() -> Void)?
+    ) -> Bool {
         let paragraph = ArithmeticTextCalculator.Paragraph(
             chunkRange: rawParagraph.chunkRange,
             firstLineHeadIndent: boundedLayoutDimension(rawParagraph.firstLineHeadIndent),
@@ -123,12 +203,13 @@ struct ArithmeticTextLineBreaker {
                 layoutState.totalHeight,
                 paragraph.paragraphSpacingAfter
             )
-            return
+            return true
         }
 
         var lineState = LineState()
 
         for chunkIndex in paragraph.chunkRange {
+            guard shouldCancel?() != true else { return false }
             let chunk = preparedText.chunks[chunkIndex]
             let index = chunk.segmentIndex
             let width = preparedText.widths[index]
@@ -138,6 +219,9 @@ struct ArithmeticTextLineBreaker {
             let ctFont = preparedText.ctFonts[index]
             let kind = preparedText.kinds[index]
             let height = preparedText.heights[index]
+            let baselineOffset = preparedText.baselineOffsets[index]
+            let containsRequestedFontRun = preparedText.containsRequestedFontRuns[index]
+            let containsVisibleCharacter = preparedText.containsVisibleCharacters[index]
             let currentIndent = indent(for: lineState.lineCount, in: paragraph)
             let availableWidth = maxWidth - currentIndent
 
@@ -151,13 +235,22 @@ struct ArithmeticTextLineBreaker {
                     lineState: &lineState,
                     contributesToUsedRect: contributesToUsedRect
                 )
+                if stopWhenTextKitFallbackIsRequired,
+                   layoutState.requiresTextKitFallback {
+                    return true
+                }
                 continue
             }
 
             if kind == .softHyphen {
                 lineState.pendingDiscretionaryHyphenWidth =
                     lineState.currentLineAdvance + lineEndPaintAdvance
-                lineState.currentLineHeight = max(lineState.currentLineHeight, height)
+                lineState.pendingDiscretionaryHyphenContainsRequestedFontRun =
+                    containsRequestedFontRun
+                lineState.include(
+                    height: height,
+                    baselineOffset: baselineOffset
+                )
                 continue
             }
 
@@ -175,6 +268,10 @@ struct ArithmeticTextLineBreaker {
                     showsDiscretionaryHyphen: true,
                     contributesToUsedRect: availableWidth > 0
                 )
+                if stopWhenTextKitFallbackIsRequired,
+                   layoutState.requiresTextKitFallback {
+                    return true
+                }
 
                 if kind.isSpace {
                     continue
@@ -183,38 +280,72 @@ struct ArithmeticTextLineBreaker {
                 let nextIndent = indent(for: lineState.lineCount, in: paragraph)
                 let nextAvailableWidth = maxWidth - nextIndent
                 if let ctFont, kind == .text, width > nextAvailableWidth, !segmentText.isEmpty {
-                    appendOversizedTextSegment(
+                    guard appendOversizedTextSegment(
                         text: segmentText,
                         ctFont: ctFont,
                         height: height,
+                        baselineOffset: baselineOffset,
                         paragraph: paragraph,
                         maxWidth: maxWidth,
                         layoutState: &layoutState,
-                        lineState: &lineState
-                    )
+                        lineState: &lineState,
+                        stopWhenTextKitFallbackIsRequired:
+                            stopWhenTextKitFallbackIsRequired,
+                        shouldCancel: shouldCancel,
+                        onOversizedLine: onOversizedLine
+                    ) else { return false }
+                    if stopWhenTextKitFallbackIsRequired,
+                       layoutState.requiresTextKitFallback {
+                        return true
+                    }
                 } else {
                     lineState.currentLineAdvance = width
                     lineState.currentLineFitWidth = lineEndFitAdvance
                     lineState.currentLinePaintWidth = lineEndPaintAdvance
-                    lineState.currentLineHeight = height
+                    lineState.include(
+                        height: height,
+                        baselineOffset: baselineOffset,
+                        containsVisibleShapedContent: kind == .text
+                            && containsVisibleCharacter,
+                        containsRequestedVisibleGlyph: kind == .text
+                            && containsRequestedFontRun
+                    )
                 }
             } else if let ctFont, nextLineFitWidth > availableWidth, kind == .text, !segmentText.isEmpty {
                 lineState.pendingDiscretionaryHyphenWidth = nil
-                appendOversizedTextSegment(
+                lineState.pendingDiscretionaryHyphenContainsRequestedFontRun = false
+                guard appendOversizedTextSegment(
                     text: segmentText,
                     ctFont: ctFont,
                     height: height,
+                    baselineOffset: baselineOffset,
                     paragraph: paragraph,
                     maxWidth: maxWidth,
                     layoutState: &layoutState,
-                    lineState: &lineState
-                )
+                    lineState: &lineState,
+                    stopWhenTextKitFallbackIsRequired:
+                        stopWhenTextKitFallbackIsRequired,
+                    shouldCancel: shouldCancel,
+                    onOversizedLine: onOversizedLine
+                ) else { return false }
+                if stopWhenTextKitFallbackIsRequired,
+                   layoutState.requiresTextKitFallback {
+                    return true
+                }
             } else {
                 lineState.currentLineAdvance = nextLineAdvance
                 lineState.currentLineFitWidth = nextLineFitWidth
                 lineState.currentLinePaintWidth = nextLinePaintWidth
-                lineState.currentLineHeight = max(lineState.currentLineHeight, height)
+                lineState.include(
+                    height: height,
+                    baselineOffset: baselineOffset,
+                    containsVisibleShapedContent: kind == .text
+                        && containsVisibleCharacter,
+                    containsRequestedVisibleGlyph: kind == .text
+                        && containsRequestedFontRun
+                )
                 lineState.pendingDiscretionaryHyphenWidth = nil
+                lineState.pendingDiscretionaryHyphenContainsRequestedFontRun = false
             }
         }
 
@@ -247,6 +378,7 @@ struct ArithmeticTextLineBreaker {
             layoutState.totalHeight,
             paragraph.paragraphSpacingAfter
         )
+        return true
     }
 
     private static func paragraphEndsInHardBreak(
@@ -291,6 +423,20 @@ struct ArithmeticTextLineBreaker {
     ) {
         let currentIndent = indent(for: lineState.lineCount, in: paragraph)
         let availableWidth = maxWidth - currentIndent
+        let paintsDiscretionaryHyphen = showsDiscretionaryHyphen
+            && (lineState.pendingDiscretionaryHyphenWidth ?? .greatestFiniteMagnitude)
+                <= max(availableWidth, 0)
+        let lineContainsVisibleShapedContent = lineState.containsVisibleShapedContent
+            || paintsDiscretionaryHyphen
+        let lineContainsRequestedFontRun = lineState.containsRequestedVisibleGlyph
+            || (paintsDiscretionaryHyphen
+                && lineState.pendingDiscretionaryHyphenContainsRequestedFontRun)
+        let paintsFallbackDiscretionaryHyphen = paintsDiscretionaryHyphen
+            && !lineState.pendingDiscretionaryHyphenContainsRequestedFontRun
+        if (lineContainsVisibleShapedContent && !lineContainsRequestedFontRun)
+            || paintsFallbackDiscretionaryHyphen {
+            layoutState.requiresTextKitFallback = true
+        }
         let lineStartY = layoutState.totalHeight
         layoutState.totalHeight = addingLayoutDimensions(
             layoutState.totalHeight,
@@ -313,8 +459,9 @@ struct ArithmeticTextLineBreaker {
         lineState.currentLineAdvance = 0
         lineState.currentLineFitWidth = 0
         lineState.currentLinePaintWidth = 0
-        lineState.currentLineHeight = 0
+        lineState.resetLineMetrics()
         lineState.pendingDiscretionaryHyphenWidth = nil
+        lineState.pendingDiscretionaryHyphenContainsRequestedFontRun = false
         lineState.lineCount += 1
     }
 
@@ -355,36 +502,77 @@ struct ArithmeticTextLineBreaker {
         text: String,
         ctFont: CTFont,
         height: CGFloat,
+        baselineOffset: CGFloat,
         paragraph: ArithmeticTextCalculator.Paragraph,
         maxWidth: CGFloat,
         layoutState: inout LayoutState,
-        lineState: inout LineState
-    ) {
+        lineState: inout LineState,
+        stopWhenTextKitFallbackIsRequired: Bool,
+        shouldCancel: (() -> Bool)?,
+        onOversizedLine: (() -> Void)?
+    ) -> Bool {
         let attributes: [NSAttributedString.Key: Any] = [
             NSAttributedString.Key(kCTFontAttributeName as String): ctFont
         ]
         let attributedText = NSAttributedString(string: text, attributes: attributes)
-        let typesetter = CTTypesetterCreateWithAttributedString(attributedText)
+        let typesetter = CoreTextLayoutSafetyGate.withLock {
+            CTTypesetterCreateWithAttributedString(attributedText)
+        }
         let nsText = text as NSString
         var start = 0
 
         while start < nsText.length {
+            guard shouldCancel?() != true else { return false }
+
             let currentIndent = indent(for: lineState.lineCount, in: paragraph)
             let availableWidth = max(maxWidth - currentIndent, 0)
-            var count = CTTypesetterSuggestClusterBreak(typesetter, start, Double(availableWidth))
-
-            if count <= 0 {
-                count = nsText.rangeOfComposedCharacterSequence(at: start).length
+            let forcedClusterLength = nsText.rangeOfComposedCharacterSequence(at: start).length
+            let measurement = CoreTextLayoutSafetyGate.withLock {
+                let suggestedCount = CTTypesetterSuggestClusterBreak(
+                    typesetter,
+                    start,
+                    Double(availableWidth)
+                )
+                let count = suggestedCount > 0 ? suggestedCount : forcedClusterLength
+                let line = CTTypesetterCreateLine(
+                    typesetter,
+                    CFRange(location: start, length: count)
+                )
+                let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+                let lineRange = NSRange(location: start, length: count)
+                return (
+                    count: count,
+                    width: lineWidth,
+                    containsVisibleCharacter: ArithmeticTextMeasurer.containsVisibleCharacter(
+                        in: nsText,
+                        range: lineRange
+                    ),
+                    containsRequestedFontRun:
+                        ArithmeticTextMeasurer.requestedFontSuppliesVisibleGlyph(
+                            in: line,
+                            string: nsText,
+                            requestedFont: ctFont,
+                            sourceRange: lineRange
+                        )
+                )
             }
 
-            let line = CTTypesetterCreateLine(typesetter, CFRange(location: start, length: count))
-            let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+            // This callback is intentionally outside the process-wide gate. It
+            // is nil in production and gives concurrency/cancellation tests a
+            // deterministic checkpoint between oversized slices.
+            onOversizedLine?()
+            guard shouldCancel?() != true else { return false }
 
-            lineState.currentLineAdvance = lineWidth
-            lineState.currentLineFitWidth = lineWidth
-            lineState.currentLinePaintWidth = lineWidth
-            lineState.currentLineHeight = max(lineState.currentLineHeight, height)
-            start += count
+            lineState.currentLineAdvance = measurement.width
+            lineState.currentLineFitWidth = measurement.width
+            lineState.currentLinePaintWidth = measurement.width
+            lineState.include(
+                height: height,
+                baselineOffset: baselineOffset,
+                containsVisibleShapedContent: measurement.containsVisibleCharacter,
+                containsRequestedVisibleGlyph: measurement.containsRequestedFontRun
+            )
+            start += measurement.count
 
             if start < nsText.length {
                 commitCurrentLine(
@@ -395,7 +583,12 @@ struct ArithmeticTextLineBreaker {
                     lineState: &lineState,
                     contributesToUsedRect: availableWidth > 0
                 )
+                if stopWhenTextKitFallbackIsRequired,
+                   layoutState.requiresTextKitFallback {
+                    return true
+                }
             }
         }
+        return true
     }
 }

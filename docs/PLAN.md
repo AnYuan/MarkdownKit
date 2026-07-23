@@ -41,7 +41,7 @@ package/build checks, macOS and iOS public API checks, provenance, fast and iOS 
 documentation freshness, visual and determinism snapshots, and benchmarks; `verify_all.sh --full`
 alone is not release validation.
 
-The iOS release gate is deliberately two-part: 725 app-less XCTest tests exercise Mermaid's
+The iOS release gate is deliberately two-part: 746 app-less XCTest tests exercise Mermaid's
 queue/cache/cancellation state machine through a deterministic image driver, then a separately
 assembled SwiftUI Simulator app proves that a Mermaid fence can traverse public `MarkdownView`
 and its registry-backed real-WebKit adapter.
@@ -287,15 +287,36 @@ discoverable tests, unchanged macOS/iOS public APIs, both snapshot contracts,
 725 iOS tests plus the app-hosted WebKit smoke, and all 13 isolated Release
 workloads. Final review found no remaining material issue.
 
+P14.17 extends the same arithmetic preparation and line-breaking model to
+strict builder-backed pure-text list and blockquote shapes while failing closed
+for unsupported structure, attributed profiles, resource descendants, and
+width-specific fallback-only lines. Attributed-run boundaries that split an
+extended grapheme are rejected on both platforms, and U+0009 rejects arithmetic
+routing because its advance is position-dependent. Non-cacheable font point
+sizes fail closed before integer key conversion, and painted fallback-provided
+soft hyphens fail closed even on mixed requested/fallback lines. Five clean isolated Release
+processes produced median cold/width-sweep avg/p95 values of 5.81/5.94ms and
+0.362/0.367ms for nested unordered lists, 6.56/6.67ms and 0.358/0.361ms for
+nested ordered lists, 8.46/8.72ms and 0.226/0.230ms for task lists, and
+6.20/6.31ms and 0.774/0.790ms for multi-paragraph blockquotes. Every fixture
+independently meets its frozen cold and width-sweep ceilings. The temporary
+benchmark never entered the unchanged 13-workload canonical list and was
+removed after the final measurement. Solver-owned arithmetic outcomes stop as
+soon as a concrete-width line requires TextKit; the direct arithmetic layout
+contract still computes complete geometry.
+
 The remaining findings fall into four groups:
 1. **Streaming structure**: the whole document is still re-parsed on every text change; when the relevant syntax *is* present, Details/Diagram/Math still walk the AST separately (Math three times); Mermaid re-runs `mermaid.initialize` per render and caches intermediate streamed sources; the MathJax engine is cold per solver instance.
 2. **Cold layout taxes**: Direct `ArithmeticTextCalculator` callers still build
    the complete attributed-run cache key, but the attempted solver fingerprint
    namespace was not worth its duplicate cache complexity. The larger remaining
    costs are one global TextKit lock with fresh per-call stack construction
-   (P14.8 disproved the tested reuse designs), wider list/blockquote arithmetic
-   routing that remains deliberately deferred to P14.17 pending builder-backed
-   oracle and benefit evidence, and repeated cold list-prefix measurement.
+   (P14.8 disproved the tested reuse designs) and repeated cold list-prefix
+   measurement, which remains independently deferred to P14.16. Coordinator
+   cancellation checks arithmetic line breaking between chunks and oversized-
+   token slices, but a cold unique oversized token is synchronously shaped as a
+   complete token under the global CoreText gate; `solveCancellable` cannot
+   observe cancellation until the enclosing `prepare(...)` returns.
 3. **UI**: macOS main-thread `ensureLayout` per item configure.
 4. **Hygiene**: the cache-reuse requirement for one-shot
    `MarkdownKitEngine.layout` hosts is undocumented.

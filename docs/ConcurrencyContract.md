@@ -1,4 +1,4 @@
-# MarkdownKit Concurrency Contract (2026-07-21)
+# MarkdownKit Concurrency Contract (2026-07-23)
 
 This document defines the current thread/actor boundaries for parsing, layout, web rendering, host extension points, and UI mounting.
 
@@ -63,7 +63,7 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 5. `MathWarningSuppressorTests` validates suppression actor semantics.
 6. `SnapshotTests` and `DiagramSnapshotTests` validate end-to-end rendering stability.
 7. `InlineFormattingLayoutTests` validates math fallback behavior when conversion fails.
-8. `ConcurrencyStressTests` validates multi-task LayoutSolver/LayoutCache safety and parser thread safety. `DiagramLayoutTests` separately locks public total-result cancellation, coordinator-cancellable resource short-circuiting, staged-cache rollback, staged duplicate reuse, and successful child/root publication.
+8. `ConcurrencyStressTests` validates multi-task LayoutSolver/LayoutCache safety, parser thread safety, serialized cold CoreText/TextKit fallback work, recursive attachment-driven re-entry, and oversized-token slice checkpoints. `DiagramLayoutTests` separately locks public total-result cancellation, coordinator-cancellable resource short-circuiting, staged-cache rollback, staged duplicate reuse, and successful child/root publication.
 9. `ImageResourceLoader` owns one reusable delegate transport per loader. Concurrent tasks are isolated by URL-session task identifier; response headers are validated before body acceptance, and Foundation-delivered `Data` chunks are checked before append against the configured cap. Cancellation claims one terminal continuation, cancels the underlying task, and ignores late callbacks. `ImageResourceLoaderTests` validates these contracts with injected `URLProtocol` responses plus local fixtures and does not depend on the public network. `ImageAttachmentBuilderTests` validates bounded decode and cache isolation, while `InlineFormattingLayoutTests` verifies sync fallback cannot poison a later async attachment layout.
 10. `scripts/verify_ios.sh` separately assembles the SwiftPM demo executable as
     a signed Simulator app and requires exactly one success marker after a
@@ -83,4 +83,8 @@ This document defines the current thread/actor boundaries for parsing, layout, w
 5. Cancellation is cooperative. Synchronous highlighting, measurement, decoding,
    and custom adapter implementations cannot be preempted while running; a
    canceled coordinator solve stops at the first checkpoint after that in-flight
-   work or await returns.
+   work or await returns. Arithmetic line breaking checks between prepared chunks
+   and oversized-token slices, but a cold unique oversized token is synchronously
+   shaped as a complete token under the global CoreText safety gate;
+   `solveCancellable` cannot observe cancellation until the enclosing
+   `prepare(...)` returns.

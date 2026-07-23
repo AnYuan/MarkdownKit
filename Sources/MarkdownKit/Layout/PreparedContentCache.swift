@@ -331,6 +331,18 @@ final class PreparedContentCache: @unchecked Sendable {
         )
         preparedCost = saturatingAdd(
             preparedCost,
+            saturatingMul(pt.baselineOffsets.count, MemoryLayout<CGFloat>.stride)
+        )
+        preparedCost = saturatingAdd(
+            preparedCost,
+            saturatingMul(pt.containsRequestedFontRuns.count, MemoryLayout<Bool>.stride)
+        )
+        preparedCost = saturatingAdd(
+            preparedCost,
+            saturatingMul(pt.containsVisibleCharacters.count, MemoryLayout<Bool>.stride)
+        )
+        preparedCost = saturatingAdd(
+            preparedCost,
             saturatingMul(pt.chunks.count, MemoryLayout<ArithmeticTextCalculator.Chunk>.stride)
         )
         preparedCost = saturatingAdd(

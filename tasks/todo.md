@@ -1288,10 +1288,55 @@ benefits already reduced by earlier items).
   unordered, and task-list construction independently from prepared-cache hits;
   if material, add a small builder-owned bounded exact-prefix/font cache while
   preserving platform measurement behavior and list indentation.
-- [ ] P14.17 `perf: route pure-text lists and blockquotes through arithmetic`
+- [x] P14.17 `perf: route pure-text lists and blockquotes through arithmetic`
   After P14.15 proves the paragraph model independently, add exact builder-backed
   list/quote TextKit oracle matrices and isolated cold/width-sweep benchmarks.
   Enable arithmetic plans for pure-text ListNode/BlockQuoteNode across
   async/cancellable/sync and prepared-cache miss/hit only when nested/task lists
   and multi-paragraph quotes meet frozen benefit thresholds; resource descendants
   and unsupported scripts remain on TextKit.
+  - [x] P14.17-A add a temporary noncanonical isolated Release harness and record
+    five exact `7e13c14` processes before production changes. The four fixtures
+    are deeply nested unordered lists, deeply nested ordered lists, 120-item task
+    lists, and one 160-paragraph blockquote; each records a cold solve and a
+    persistent nine-width sweep. The temporary suite is not added to the 13
+    canonical benchmark IDs and must be removed before commit.
+  - [x] P14.17-B add independent builder-backed TextKit oracle matrices for
+    nested/ordered/task lists, multi-paragraph and list-containing blockquotes,
+    all three solver modes, prepared-cache miss/hit, unsupported scripts,
+    resource descendants, and platform-specific thematic breaks.
+  - [x] P14.17-C enable arithmetic only at the shared classification/routing
+    boundary, retain TextKit for unsupported profiles and descendants whose
+    builder output requires unmodeled TextKit behavior, reject split extended
+    graphemes on every platform, position-dependent U+0009 tabs, non-cacheable
+    font point sizes, and painted fallback-provided soft hyphens, and preserve
+    cache and cancellation contracts without executor-specific branches.
+  - [x] P14.17-D record five post-change processes, require every fixture to
+    satisfy its frozen cold and width-sweep ceilings independently, remove the
+    temporary benchmark, then complete repository gates, review, docs, atomic
+    commit, and push.
+
+  P14.17-A frozen medians and ceilings (avg/p95, milliseconds): nested unordered
+  cold `7.06/8.50` with ceilings `8.06/9.50`, width `34.00/40.30` with ceilings
+  `20.40/24.18`; nested ordered cold `11.95/13.60` with ceilings `13.15/14.96`,
+  width `36.18/42.11` with ceilings `21.71/25.27`; task list cold `9.55/10.23`
+  with ceilings `10.55/11.25`, width `42.62/48.68` with ceilings `25.57/29.21`;
+  multi-paragraph blockquote cold `9.90/12.14` with ceilings `10.90/13.35`,
+  width `77.22/88.84` with ceilings `46.33/53.30`. Width ceilings require at
+  least 40% improvement (`post <= pre * 0.60`); cold ceilings allow at most
+  `max(pre * 1.10, pre + 1ms)`. No fixture may borrow another fixture's gain.
+
+  P14.17-D final five-process medians (avg/p95, milliseconds): nested unordered
+  cold `5.81/5.94`, width `0.362/0.367`; nested ordered cold `6.56/6.67`, width
+  `0.358/0.361`; task list cold `8.46/8.72`, width `0.226/0.230`;
+  multi-paragraph blockquote cold `6.20/6.31`, width `0.774/0.790`. Every
+  fixture independently passes all four frozen ceilings. The five recorded
+  Release processes used the rebuilt post-review test bundle; the temporary
+  noncanonical benchmark was then removed and the canonical workload list
+  remains 13. Cancellable line breaking checks between chunks and oversized-
+  token slices; a cold unique oversized token is synchronously shaped as a
+  complete token under the global CoreText gate, and `solveCancellable` cannot
+  observe cancellation until the enclosing `prepare(...)` returns. Solver-owned
+  arithmetic outcomes stop at the first width-specific TextKit fallback before
+  invoking TextKit, while direct arithmetic layout retains complete-size
+  semantics.

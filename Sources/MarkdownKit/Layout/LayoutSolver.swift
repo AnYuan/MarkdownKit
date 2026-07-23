@@ -210,11 +210,15 @@ public final class LayoutSolver: @unchecked Sendable {
         work.append(contentsOf: node.children)
     }
 
-    /// Classifies a prepared-cache miss in one traversal. Resource-bearing
-    /// subtrees remain uncached, while code/details descendants only disable
-    /// arithmetic routing because their attributed output is still width-free.
-    private func classifyPreparedNode(_ node: MarkdownNode) -> PreparedNodeClassification {
-        var supportsArithmeticLayout = node is ParagraphNode || node is HeaderNode
+    /// Classifies a prepared-cache miss. Resource-bearing subtrees remain
+    /// uncached, while code/details descendants only disable arithmetic routing
+    /// because their attributed output is still width-free.
+    private func classifyPreparedNode(
+        _ node: MarkdownNode,
+        structuralArithmeticSupport: Bool? = nil
+    ) -> PreparedNodeClassification {
+        var supportsArithmeticLayout = structuralArithmeticSupport
+            ?? Self.supportsArithmeticLayoutStructure(node)
         var work: [MarkdownNode] = []
         appendPreparedClassificationChildren(of: node, to: &work)
 
@@ -228,7 +232,13 @@ public final class LayoutSolver: @unchecked Sendable {
                     supportsArithmeticLayout: false
                 )
             }
-            if current is CodeBlockNode || current is DetailsNode {
+            if current is CodeBlockNode ||
+                current is DetailsNode ||
+                current is ThematicBreakNode {
+                supportsArithmeticLayout = false
+            }
+            if supportsArithmeticLayout,
+               !Self.isModeledArithmeticDescendant(current) {
                 supportsArithmeticLayout = false
             }
             appendPreparedClassificationChildren(of: current, to: &work)
@@ -274,6 +284,56 @@ public final class LayoutSolver: @unchecked Sendable {
         return size
     }
 
+    /// Resolves a width-independent arithmetic plan at one concrete width. A
+    /// wrapped line whose visible glyphs all came from fallback fonts is routed
+    /// through TextKit because AppKit's line-box metrics for that shape depend on
+    /// process-global fallback state.
+    private func sizeFromArithmeticPlan(
+        _ prepared: ArithmeticTextCalculator.PreparedText,
+        attributedString: NSAttributedString,
+        constrainedToWidth maxWidth: CGFloat
+    ) -> CGSize {
+        let outcome = arithmeticCalculator.layoutOutcome(
+            prepared: prepared,
+            constrainedToWidth: maxWidth,
+            stopWhenTextKitFallbackIsRequired: true
+        )
+        precondition(!outcome.wasCancelled)
+        if outcome.requiresTextKitFallback {
+            return textCalculator.calculateSize(
+                for: attributedString,
+                constrainedToWidth: maxWidth
+            )
+        }
+        return outcome.size
+    }
+
+    /// Cancellable counterpart used only by the coordinator path. Ordinary
+    /// async and synchronous solves remain total even when their enclosing Task
+    /// is cancelled; only `solveCancellable` may abandon partial geometry.
+    private func sizeFromArithmeticPlanCancellable(
+        _ prepared: ArithmeticTextCalculator.PreparedText,
+        attributedString: NSAttributedString,
+        constrainedToWidth maxWidth: CGFloat
+    ) -> CGSize? {
+        let outcome = arithmeticCalculator.layoutOutcome(
+            prepared: prepared,
+            constrainedToWidth: maxWidth,
+            stopWhenTextKitFallbackIsRequired: true,
+            shouldCancel: { Task<Never, Never>.isCancelled }
+        )
+        guard !outcome.wasCancelled, !Task.isCancelled else { return nil }
+        if outcome.requiresTextKitFallback {
+            let size = textCalculator.calculateSize(
+                for: attributedString,
+                constrainedToWidth: maxWidth
+            )
+            guard !Task.isCancelled else { return nil }
+            return size
+        }
+        return outcome.size
+    }
+
     /// Computes the size from a cached payload without re-running the builder,
     /// profile, or ArithmeticTextCalculator.prepare.
     private func sizeFromPreparedPayload(
@@ -282,7 +342,11 @@ public final class LayoutSolver: @unchecked Sendable {
     ) -> CGSize {
         switch payload.measurementPlan {
         case .arithmetic(let prepared):
-            return arithmeticCalculator.layout(prepared: prepared, constrainedToWidth: maxWidth)
+            return sizeFromArithmeticPlan(
+                prepared,
+                attributedString: payload.attributedString,
+                constrainedToWidth: maxWidth
+            )
         case .textKit:
             return textCalculator.calculateSize(for: payload.attributedString, constrainedToWidth: maxWidth)
         case .codeBlockInset:
@@ -298,6 +362,40 @@ public final class LayoutSolver: @unchecked Sendable {
     ) -> ShallowLayoutOutput {
         ShallowLayoutOutput(
             size: sizeFromPreparedPayload(payload, constrainedToWidth: maxWidth),
+            attributedString: payload.attributedString
+        )
+    }
+
+    private func outputFromPreparedPayloadCancellable(
+        _ payload: PreparedContentCache.Payload,
+        constrainedToWidth maxWidth: CGFloat
+    ) -> ShallowLayoutOutput? {
+        guard !Task.isCancelled else { return nil }
+        let size: CGSize
+        switch payload.measurementPlan {
+        case .arithmetic(let prepared):
+            guard let arithmeticSize = sizeFromArithmeticPlanCancellable(
+                prepared,
+                attributedString: payload.attributedString,
+                constrainedToWidth: maxWidth
+            ) else {
+                return nil
+            }
+            size = arithmeticSize
+        case .textKit:
+            size = textCalculator.calculateSize(
+                for: payload.attributedString,
+                constrainedToWidth: maxWidth
+            )
+        case .codeBlockInset:
+            size = codeBlockInsetSize(
+                for: payload.attributedString,
+                constrainedToWidth: maxWidth
+            )
+        }
+        guard !Task.isCancelled else { return nil }
+        return ShallowLayoutOutput(
+            size: size,
             attributedString: payload.attributedString
         )
     }
@@ -597,8 +695,10 @@ public final class LayoutSolver: @unchecked Sendable {
             let isEligible = isOrdinaryEligibleRoot(node)
             let prepKey = isEligible ? PreparedContentCache.Key(node: node, variantHash: cacheVariantHash) : nil
             if let prepKey, let hit = preparedBatch.get(prepKey) {
-                guard !Task.isCancelled else { return nil }
-                return outputFromPreparedPayload(hit, constrainedToWidth: maxWidth)
+                return outputFromPreparedPayloadCancellable(
+                    hit,
+                    constrainedToWidth: maxWidth
+                )
             }
             guard let attrStr = await builder.buildStringCancellable(
                 for: node,
@@ -615,8 +715,12 @@ public final class LayoutSolver: @unchecked Sendable {
                         attributedString: attrStr,
                         supportsArithmeticLayout: classification.supportsArithmeticLayout
                     )
-                    let output = outputFromPreparedPayload(payload, constrainedToWidth: maxWidth)
-                    guard !Task.isCancelled else { return nil }
+                    guard let output = outputFromPreparedPayloadCancellable(
+                        payload,
+                        constrainedToWidth: maxWidth
+                    ) else {
+                        return nil
+                    }
                     preparedBatch.stage(payload, for: prepKey)
                     return output
                 }
@@ -727,16 +831,22 @@ public final class LayoutSolver: @unchecked Sendable {
         case let .codeBlock(codeBlock):
             let key = PreparedContentCache.Key(node: codeBlock, variantHash: cacheVariantHash)
             if let hit = preparedBatch.get(key) {
-                guard !Task.isCancelled else { return nil }
-                return outputFromPreparedPayload(hit, constrainedToWidth: maxWidth)
+                return outputFromPreparedPayloadCancellable(
+                    hit,
+                    constrainedToWidth: maxWidth
+                )
             }
             let attrStr = builder.buildCodeBlockAttributedString(from: codeBlock)
             guard !Task.isCancelled else { return nil }
             let payload = PreparedContentCache.Payload(
                 attributedString: attrStr, measurementPlan: .codeBlockInset
             )
-            let output = outputFromPreparedPayload(payload, constrainedToWidth: maxWidth)
-            guard !Task.isCancelled else { return nil }
+            guard let output = outputFromPreparedPayloadCancellable(
+                payload,
+                constrainedToWidth: maxWidth
+            ) else {
+                return nil
+            }
             preparedBatch.stage(payload, for: key)
             return output
         }
@@ -752,8 +862,12 @@ public final class LayoutSolver: @unchecked Sendable {
         switch measurement {
         case .standard:
             if shouldUseArithmeticLayout(for: node, styledString: attributedString) {
-                size = arithmeticCalculator.calculateSize(
-                    for: attributedString,
+                let prepared = arithmeticCalculator.prepare(
+                    attributedString: attributedString
+                )
+                size = sizeFromArithmeticPlan(
+                    prepared,
+                    attributedString: attributedString,
                     constrainedToWidth: maxWidth
                 )
             } else {
@@ -776,14 +890,36 @@ public final class LayoutSolver: @unchecked Sendable {
         measurement: TextMeasurement
     ) -> ShallowLayoutOutput? {
         guard !Task.isCancelled else { return nil }
-        let output = makeTextOutput(
-            attributedString: attributedString,
-            node: node,
-            constrainedToWidth: maxWidth,
-            measurement: measurement
-        )
+        let size: CGSize
+        switch measurement {
+        case .standard:
+            if shouldUseArithmeticLayout(for: node, styledString: attributedString) {
+                let prepared = arithmeticCalculator.prepare(
+                    attributedString: attributedString
+                )
+                guard !Task.isCancelled,
+                      let arithmeticSize = sizeFromArithmeticPlanCancellable(
+                        prepared,
+                        attributedString: attributedString,
+                        constrainedToWidth: maxWidth
+                      ) else {
+                    return nil
+                }
+                size = arithmeticSize
+            } else {
+                size = textCalculator.calculateSize(
+                    for: attributedString,
+                    constrainedToWidth: maxWidth
+                )
+            }
+        case .codeBlockInset:
+            size = codeBlockInsetSize(
+                for: attributedString,
+                constrainedToWidth: maxWidth
+            )
+        }
         guard !Task.isCancelled else { return nil }
-        return output
+        return ShallowLayoutOutput(size: size, attributedString: attributedString)
     }
 
     private func makeLayoutResult(
@@ -879,33 +1015,66 @@ public final class LayoutSolver: @unchecked Sendable {
     }
 
     private func isPureTextBlock(_ node: MarkdownNode) -> Bool {
-        // Only route paragraph and header nodes for now
-        guard node is ParagraphNode || node is HeaderNode else {
-            return false
+        guard Self.supportsArithmeticLayoutStructure(node) else { return false }
+        return classifyPreparedNode(
+            node,
+            structuralArithmeticSupport: true
+        ).supportsArithmeticLayout
+    }
+
+    /// Width-independent builder shapes whose paragraph/list semantics are
+    /// modeled by `ArithmeticTextCalculator`. This predicate is shared by the
+    /// prepared-cache and uncached routing paths; malformed or newly introduced
+    /// container shapes fail closed to TextKit.
+    static func supportsArithmeticLayoutStructure(_ node: MarkdownNode) -> Bool {
+        if node is ParagraphNode || node is HeaderNode {
+            return true
         }
-        
-        var hasAttachments = false
-        
-        func traverse(_ n: MarkdownNode) {
-            if hasAttachments { return }
-            
-            // If we find any of these, we must use TextKit for accurate layout
-            if n is ImageNode || 
-               n is MathNode || 
-               n is DiagramNode || 
-               n is TableNode || 
-               n is CodeBlockNode ||
-               n is DetailsNode {
-                hasAttachments = true
-                return
-            }
-            
-            for child in n.children {
-                traverse(child)
+
+        if let quote = node as? BlockQuoteNode {
+            return !quote.children.isEmpty
+                && quote.children.allSatisfy { $0 is ParagraphNode }
+        }
+
+        guard let rootList = node as? ListNode else { return false }
+        var pendingLists = [rootList]
+
+        while let list = pendingLists.popLast() {
+            guard !list.children.isEmpty else { return false }
+
+            for child in list.children {
+                guard let item = child as? ListItemNode,
+                      item.children.count == 1 || item.children.count == 2,
+                      item.children[0] is ParagraphNode else {
+                    return false
+                }
+
+                if item.children.count == 2 {
+                    guard let nestedList = item.children[1] as? ListNode else {
+                        return false
+                    }
+                    pendingLists.append(nestedList)
+                }
             }
         }
-        
-        traverse(node)
-        return !hasAttachments
+
+        return true
+    }
+
+    /// Exact node vocabulary whose builder output is represented by the
+    /// arithmetic text model. Public/custom and newly introduced node types
+    /// fail closed until their attributed output has explicit oracle coverage.
+    private static func isModeledArithmeticDescendant(_ node: MarkdownNode) -> Bool {
+        node is ParagraphNode
+            || node is HeaderNode
+            || node is ListNode
+            || node is ListItemNode
+            || node is BlockQuoteNode
+            || node is TextNode
+            || node is EmphasisNode
+            || node is StrongNode
+            || node is StrikethroughNode
+            || node is InlineCodeNode
+            || node is LinkNode
     }
 }

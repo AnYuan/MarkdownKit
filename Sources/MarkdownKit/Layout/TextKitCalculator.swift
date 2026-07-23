@@ -11,7 +11,21 @@ import UIKit
 import AppKit
 #endif
 
-import os
+/// Serializes CoreText/TextKit operations that may populate process-global
+/// glyph-fallback dictionaries. Those dictionaries have historically crashed
+/// when independent layout paths resolved fallback fonts concurrently.
+enum CoreTextLayoutSafetyGate {
+    // TextKit can synchronously call host attachment code while laying out.
+    // A host callback may perform a nested layout on the same thread, so the
+    // process-wide serialization gate must be recursive as well as exclusive.
+    private static let layoutLock = NSRecursiveLock()
+
+    static func withLock<Result>(_ body: () throws -> Result) rethrows -> Result {
+        layoutLock.lock()
+        defer { layoutLock.unlock() }
+        return try body()
+    }
+}
 
 /// A strictly background-queue-only utility class that calculates the bounding sizes
 /// of `NSAttributedString` blocks before they are ever mounted to the main thread UI.
@@ -19,11 +33,7 @@ import os
 /// On AppKit we intentionally mirror the `NSTextView` renderer with TextKit 1 so
 /// complex attributed content such as `NSTextTable` measures the same way it draws.
 final class TextKitCalculator {
-    
-    // CoreText's internal glyph fallback dictionaries randomly fail under high concurrency
-    // so we serialize the actual layout fragment pipeline to maintain safety.
-    private static nonisolated(unsafe) var layoutLock = os_unfair_lock_s()
-    
+
     init() {}
     
     /// Calculates the exact bounding size for a given attributed string constrained to a width.
@@ -37,15 +47,13 @@ final class TextKitCalculator {
     func calculateSize(for attributedString: NSAttributedString, constrainedToWidth maxWidth: CGFloat) -> CGSize {
         guard attributedString.length > 0 else { return .zero }
 
-        // Force layout resolution inside a safety lock to avoid CoreText NSFont proxy crashes.
-        os_unfair_lock_lock(&Self.layoutLock)
-        defer { os_unfair_lock_unlock(&Self.layoutLock) }
-
-        #if canImport(AppKit) && !targetEnvironment(macCatalyst)
-        return calculateSizeAppKit(for: attributedString, constrainedToWidth: maxWidth)
-        #else
-        return calculateSizeTextKit1(for: attributedString, constrainedToWidth: maxWidth)
-        #endif
+        return CoreTextLayoutSafetyGate.withLock {
+            #if canImport(AppKit) && !targetEnvironment(macCatalyst)
+            calculateSizeAppKit(for: attributedString, constrainedToWidth: maxWidth)
+            #else
+            calculateSizeTextKit1(for: attributedString, constrainedToWidth: maxWidth)
+            #endif
+        }
     }
 }
 
