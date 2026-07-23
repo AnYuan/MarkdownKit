@@ -18,6 +18,22 @@ struct ArithmeticTextMeasurer {
         let pointSizeMilli: Int
     }
 
+    private struct ParagraphUTF16Range {
+        let contentRange: NSRange
+        let separatorRange: NSRange?
+        let styleSourceLocation: Int
+        let emptyLineFontSourceLocation: Int
+    }
+
+    private struct ParagraphMetrics {
+        let firstLineHeadIndent: CGFloat
+        let headIndent: CGFloat
+        let paragraphSpacingBefore: CGFloat
+        let paragraphSpacingAfter: CGFloat
+        let lineHeightMultiple: CGFloat
+        let emptyLineHeight: CGFloat
+    }
+
     /// Bounded, lock-owned width cache keyed by a structured `Hashable` type.
     ///
     /// Replaces the former `NSCache<NSString, NSNumber>`: no per-lookup string
@@ -190,29 +206,118 @@ struct ArithmeticTextMeasurer {
     }
 
     private static let cachedWidths = WidthCache(capacity: 50_000, observesMemoryPressure: true)
+    #if canImport(AppKit)
+    private static let cachedDefaultLineHeights = DefaultLineHeightCache(capacity: 256)
+    #endif
 
     static func prepare(attributedString: NSAttributedString) -> ArithmeticTextCalculator.PreparedText {
         var preparedText = ArithmeticTextCalculator.PreparedText()
         let fullString = attributedString.string
         let fullNSString = fullString as NSString
         let utf16Characters = Array(fullString.utf16)
-        let fullRange = NSRange(location: 0, length: attributedString.length)
-        var capturedParagraphStyle = false
 
-        attributedString.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
-            guard let font = attributes[.font] as? Font else { return }
-            prepareRun(
-                attributes: attributes,
-                range: range,
+        if !utf16Characters.isEmpty,
+           !utf16Characters.contains(where: isParagraphSeparator) {
+            prepareParagraph(
+                ParagraphUTF16Range(
+                    contentRange: NSRange(location: 0, length: utf16Characters.count),
+                    separatorRange: nil,
+                    styleSourceLocation: 0,
+                    emptyLineFontSourceLocation: 0
+                ),
+                attributedString: attributedString,
                 fullString: fullNSString,
                 utf16: utf16Characters,
-                font: font,
-                preparedText: &preparedText,
-                capturedParagraphStyle: &capturedParagraphStyle
+                preparedText: &preparedText
+            )
+            return preparedText
+        }
+
+        prepareParagraphs(
+            in: fullNSString,
+            attributedString: attributedString,
+            utf16: utf16Characters,
+            preparedText: &preparedText
+        )
+
+        return preparedText
+    }
+
+    private static func isParagraphSeparator(_ character: unichar) -> Bool {
+        switch character {
+        case 0x000A, 0x000D, 0x2029:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func prepareParagraph(
+        _ paragraph: ParagraphUTF16Range,
+        attributedString: NSAttributedString,
+        fullString: NSString,
+        utf16: [unichar],
+        preparedText: inout ArithmeticTextCalculator.PreparedText
+    ) {
+        let paragraphStartChunk = preparedText.chunks.count
+        var resolvedMetrics: ParagraphMetrics?
+
+        if paragraph.contentRange.length > 0 {
+            attributedString.enumerateAttributes(in: paragraph.contentRange, options: []) { attributes, range, _ in
+                let metrics = resolvedMetrics ?? paragraphMetrics(
+                    for: paragraph,
+                    styleAttributes: attributes,
+                    fontAttributes: paragraph.emptyLineFontSourceLocation == paragraph.styleSourceLocation
+                        ? attributes
+                        : attributedString.attributes(
+                            at: paragraph.emptyLineFontSourceLocation,
+                            effectiveRange: nil
+                        )
+                )
+                resolvedMetrics = metrics
+                prepareRun(
+                    attributes: attributes,
+                    range: range,
+                    fullString: fullString,
+                    utf16: utf16,
+                    paragraphLineHeightMultiple: metrics.lineHeightMultiple,
+                    cachedLineHeight: range.location == paragraph.contentRange.location
+                        ? metrics.emptyLineHeight
+                        : nil,
+                    preparedText: &preparedText
+                )
+            }
+        }
+
+        let metrics = resolvedMetrics ?? paragraphMetrics(for: paragraph, in: attributedString)
+
+        if let separatorRange = paragraph.separatorRange {
+            let separatorAttributes = attributedString.attributes(at: separatorRange.location, effectiveRange: nil)
+            let separatorFont = font(from: separatorAttributes)
+            preparedText.append(
+                width: 0,
+                kind: .hardBreak,
+                height: layoutLineHeight(
+                    for: separatorFont,
+                    lineHeightMultiple: metrics.lineHeightMultiple
+                )
             )
         }
 
-        return preparedText
+        let paragraphEntry = ArithmeticTextCalculator.Paragraph(
+            chunkRange: paragraphStartChunk..<preparedText.chunks.count,
+            firstLineHeadIndent: metrics.firstLineHeadIndent,
+            headIndent: metrics.headIndent,
+            paragraphSpacingBefore: metrics.paragraphSpacingBefore,
+            paragraphSpacingAfter: metrics.paragraphSpacingAfter,
+            emptyLineHeight: metrics.emptyLineHeight
+        )
+        preparedText.paragraphs.append(paragraphEntry)
+
+        if preparedText.paragraphs.count == 1 {
+            preparedText.headIndent = metrics.headIndent
+            preparedText.firstLineHeadIndent = metrics.firstLineHeadIndent
+        }
     }
 
     private static func prepareRun(
@@ -220,38 +325,22 @@ struct ArithmeticTextMeasurer {
         range: NSRange,
         fullString: NSString,
         utf16: [unichar],
-        font: Font,
-        preparedText: inout ArithmeticTextCalculator.PreparedText,
-        capturedParagraphStyle: inout Bool
+        paragraphLineHeightMultiple: CGFloat,
+        cachedLineHeight: CGFloat?,
+        preparedText: inout ArithmeticTextCalculator.PreparedText
     ) {
-        let fontCacheKey = FontCacheKey(
-            fontName: font.fontName,
-            pointSizeMilli: Int((font.pointSize * 1000).rounded())
-        )
+        let font = font(from: attributes)
+        let fontCacheKey = fontCacheKey(for: font)
         let ctFont = ctFont(from: font)
-        #if canImport(UIKit)
-        let lineHeightMetric = font.lineHeight
-        #elseif canImport(AppKit)
-        let lineHeightMetric = font.ascender - font.descender + font.leading
-        #endif
-        var lineHeight = lineHeightMetric
+        let lineHeight = cachedLineHeight
+            ?? layoutLineHeight(
+                for: font,
+                lineHeightMultiple: paragraphLineHeightMultiple
+            )
 
-        if let paragraphStyle = attributes[.paragraphStyle] as? NSParagraphStyle {
-            let multiplier = paragraphStyle.lineHeightMultiple
-            if multiplier > 0 {
-                lineHeight *= multiplier
-            }
-
-            if !capturedParagraphStyle {
-                preparedText.headIndent = paragraphStyle.headIndent
-                preparedText.firstLineHeadIndent = paragraphStyle.firstLineHeadIndent
-                capturedParagraphStyle = true
-            }
-        }
-
-        let discretionaryHyphenWidth = measureTextWidth("-", ctFont: ctFont, fontKey: fontCacheKey)
-        var glyphs = [CGGlyph](repeating: 0, count: range.length)
-        var advances = [CGSize](repeating: .zero, count: range.length)
+        let runStartSegmentIndex = preparedText.widths.count
+        var glyphs: [CGGlyph] = []
+        var advances: [CGSize] = []
         var scanner = ArithmeticTextScanner(utf16: utf16, range: range)
 
         while let span = scanner.next() {
@@ -271,6 +360,7 @@ struct ArithmeticTextMeasurer {
                         ctFont: ctFont,
                         fontKey: fontCacheKey,
                         lineHeight: lineHeight,
+                        scratchCapacity: range.length,
                         glyphs: &glyphs,
                         advances: &advances,
                         preparedText: &preparedText
@@ -285,11 +375,18 @@ struct ArithmeticTextMeasurer {
                     ctFont: ctFont,
                     fontKey: fontCacheKey,
                     lineHeight: lineHeight,
+                    scratchCapacity: range.length,
                     glyphs: &glyphs,
                     advances: &advances,
                     preparedText: &preparedText
                 )
             case .softHyphen:
+                let discretionaryHyphenWidth = discretionaryHyphenAdvance(
+                    preparedText: preparedText,
+                    runStartSegmentIndex: runStartSegmentIndex,
+                    ctFont: ctFont,
+                    fontKey: fontCacheKey
+                )
                 preparedText.append(
                     width: 0,
                     kind: .softHyphen,
@@ -303,6 +400,199 @@ struct ArithmeticTextMeasurer {
         }
     }
 
+    private static func prepareParagraphs(
+        in string: NSString,
+        attributedString: NSAttributedString,
+        utf16: [unichar],
+        preparedText: inout ArithmeticTextCalculator.PreparedText
+    ) {
+        let stringLength = string.length
+        guard stringLength > 0 else { return }
+
+        var nextParagraphLocation = 0
+        var lastSeparatorRange: NSRange?
+        var lastStyleSourceLocation = 0
+
+        while nextParagraphLocation < stringLength {
+            var paragraphStart = 0
+            var paragraphEnd = 0
+            var contentsEnd = 0
+            string.getParagraphStart(
+                &paragraphStart,
+                end: &paragraphEnd,
+                contentsEnd: &contentsEnd,
+                for: NSRange(location: nextParagraphLocation, length: 0)
+            )
+
+            let contentRange = NSRange(
+                location: paragraphStart,
+                length: contentsEnd - paragraphStart
+            )
+            let separatorRange = contentsEnd < paragraphEnd
+                ? NSRange(location: contentsEnd, length: paragraphEnd - contentsEnd)
+                : nil
+            let styleSourceLocation = contentRange.length > 0
+                ? contentRange.location
+                : (separatorRange?.location ?? contentRange.location)
+
+            prepareParagraph(
+                ParagraphUTF16Range(
+                    contentRange: contentRange,
+                    separatorRange: separatorRange,
+                    styleSourceLocation: styleSourceLocation,
+                    emptyLineFontSourceLocation: styleSourceLocation
+                ),
+                attributedString: attributedString,
+                fullString: string,
+                utf16: utf16,
+                preparedText: &preparedText
+            )
+
+            lastSeparatorRange = separatorRange
+            lastStyleSourceLocation = styleSourceLocation
+            nextParagraphLocation = paragraphEnd
+        }
+
+        if let lastSeparatorRange, nextParagraphLocation == stringLength {
+            prepareParagraph(
+                ParagraphUTF16Range(
+                    contentRange: NSRange(location: stringLength, length: 0),
+                    separatorRange: nil,
+                    styleSourceLocation: lastStyleSourceLocation,
+                    emptyLineFontSourceLocation: NSMaxRange(lastSeparatorRange) - 1
+                ),
+                attributedString: attributedString,
+                fullString: string,
+                utf16: utf16,
+                preparedText: &preparedText
+            )
+        }
+    }
+
+    private static func paragraphMetrics(
+        for paragraph: ParagraphUTF16Range,
+        in attributedString: NSAttributedString
+    ) -> ParagraphMetrics {
+        let styleAttributes = attributedString.attributes(
+            at: paragraph.styleSourceLocation,
+            effectiveRange: nil
+        )
+        let fontAttributes = paragraph.emptyLineFontSourceLocation == paragraph.styleSourceLocation
+            ? styleAttributes
+            : attributedString.attributes(
+                at: paragraph.emptyLineFontSourceLocation,
+                effectiveRange: nil
+            )
+
+        return paragraphMetrics(
+            for: paragraph,
+            styleAttributes: styleAttributes,
+            fontAttributes: fontAttributes
+        )
+    }
+
+    private static func paragraphMetrics(
+        for paragraph: ParagraphUTF16Range,
+        styleAttributes: [NSAttributedString.Key: Any],
+        fontAttributes: [NSAttributedString.Key: Any]
+    ) -> ParagraphMetrics {
+        let paragraphStyle = styleAttributes[.paragraphStyle] as? NSParagraphStyle
+        let lineHeightMultiple = effectiveLineHeightMultiple(from: paragraphStyle)
+        let emptyLineFont = font(from: fontAttributes)
+
+        return ParagraphMetrics(
+            firstLineHeadIndent: nonnegativeFiniteMetric(paragraphStyle?.firstLineHeadIndent),
+            headIndent: nonnegativeFiniteMetric(paragraphStyle?.headIndent),
+            paragraphSpacingBefore: nonnegativeFiniteMetric(paragraphStyle?.paragraphSpacingBefore),
+            paragraphSpacingAfter: paragraph.separatorRange == nil
+                ? 0
+                : nonnegativeFiniteMetric(paragraphStyle?.paragraphSpacing),
+            lineHeightMultiple: lineHeightMultiple,
+            emptyLineHeight: layoutLineHeight(
+                for: emptyLineFont,
+                lineHeightMultiple: lineHeightMultiple
+            )
+        )
+    }
+
+    private static func nonnegativeFiniteMetric(_ value: CGFloat?) -> CGFloat {
+        guard let value, value.isFinite, value > 0 else { return 0 }
+        return value
+    }
+
+    private static func effectiveLineHeightMultiple(from paragraphStyle: NSParagraphStyle?) -> CGFloat {
+        let multiple = paragraphStyle?.lineHeightMultiple ?? 0
+        return multiple.isFinite && multiple > 0 ? multiple : 1
+    }
+
+    private static func font(from attributes: [NSAttributedString.Key: Any]) -> Font {
+        (attributes[.font] as? Font) ?? Font.systemFont(ofSize: Font.systemFontSize)
+    }
+
+    private static func fontCacheKey(for font: Font) -> FontCacheKey {
+        FontCacheKey(
+            fontName: font.fontName,
+            pointSizeMilli: Int((font.pointSize * 1000).rounded())
+        )
+    }
+
+    private static func layoutLineHeight(
+        for font: Font,
+        lineHeightMultiple: CGFloat
+    ) -> CGFloat {
+        #if canImport(UIKit)
+        let baseLineHeight = font.lineHeight
+        #elseif canImport(AppKit)
+        let baseLineHeight = defaultLineHeight(for: font)
+        #endif
+        return baseLineHeight * lineHeightMultiple
+    }
+
+    #if canImport(AppKit)
+    private final class DefaultLineHeightCache: @unchecked Sendable {
+        private let capacity: Int
+        private let lock = NSLock()
+        private var storage: [Font: CGFloat] = [:]
+        private var ring: [Font] = []
+        private var writeIndex = 0
+
+        init(capacity: Int) {
+            self.capacity = max(0, capacity)
+        }
+
+        func value(for font: Font) -> CGFloat {
+            lock.lock()
+            if let cachedHeight = storage[font] {
+                lock.unlock()
+                return cachedHeight
+            }
+            lock.unlock()
+
+            let measuredHeight = NSLayoutManager().defaultLineHeight(for: font)
+            guard capacity > 0 else { return measuredHeight }
+
+            lock.lock()
+            defer { lock.unlock() }
+            if let cachedHeight = storage[font] {
+                return cachedHeight
+            }
+            if ring.count < capacity {
+                ring.append(font)
+            } else {
+                storage.removeValue(forKey: ring[writeIndex])
+                ring[writeIndex] = font
+                writeIndex = (writeIndex + 1) % capacity
+            }
+            storage[font] = measuredHeight
+            return measuredHeight
+        }
+    }
+
+    private static func defaultLineHeight(for font: Font) -> CGFloat {
+        cachedDefaultLineHeights.value(for: font)
+    }
+    #endif
+
     private static func appendMeasuredSegment(
         range: NSRange,
         kind: ArithmeticTextCalculator.SegmentKind,
@@ -311,6 +601,7 @@ struct ArithmeticTextMeasurer {
         ctFont: CTFont,
         fontKey: FontCacheKey,
         lineHeight: CGFloat,
+        scratchCapacity: Int,
         glyphs: inout [CGGlyph],
         advances: inout [CGSize],
         preparedText: inout ArithmeticTextCalculator.PreparedText
@@ -328,6 +619,11 @@ struct ArithmeticTextMeasurer {
                 preparedText: &preparedText
             )
             return
+        }
+
+        if glyphs.isEmpty {
+            glyphs = [CGGlyph](repeating: 0, count: scratchCapacity)
+            advances = [CGSize](repeating: .zero, count: scratchCapacity)
         }
 
         utf16.withUnsafeBufferPointer { buffer in
@@ -397,6 +693,31 @@ struct ArithmeticTextMeasurer {
             text: text
         )
         cachedWidths.insert(width, for: key)
+    }
+
+    private static func discretionaryHyphenAdvance(
+        preparedText: ArithmeticTextCalculator.PreparedText,
+        runStartSegmentIndex: Int,
+        ctFont: CTFont,
+        fontKey: FontCacheKey
+    ) -> CGFloat {
+        let fallbackWidth = measureTextWidth("-", ctFont: ctFont, fontKey: fontKey)
+        guard let precedingIndex = preparedText.widths.indices.last,
+              precedingIndex >= runStartSegmentIndex,
+              preparedText.kinds[precedingIndex] == .text,
+              !preparedText.segmentTexts[precedingIndex].isEmpty else {
+            return fallbackWidth
+        }
+
+        let shapedText = preparedText.segmentTexts[precedingIndex] + "-"
+        let attributes: [NSAttributedString.Key: Any] = [
+            NSAttributedString.Key(kCTFontAttributeName as String): ctFont
+        ]
+        let line = CTLineCreateWithAttributedString(
+            NSAttributedString(string: shapedText, attributes: attributes)
+        )
+        let shapedWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        return max(0, shapedWidth - preparedText.widths[precedingIndex])
     }
 
     private static func measureTextWidth(_ text: String, ctFont: CTFont, fontKey: FontCacheKey) -> CGFloat {

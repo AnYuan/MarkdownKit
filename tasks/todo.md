@@ -924,9 +924,9 @@ Each item is one atomic commit validated with the P01 isolated Release
 harness plus `bash scripts/verify_fast.sh`. Quoted timings from the review
 were measured on the pre-P01 Debug harness; re-measure against the current
 Release baseline before and after each item. Suggested order: quick wins
-(P14.1, P14.2, P14.11–P14.13) → P14.3 → P14.7 → P14.8 → P14.15 → P14.16 →
-P14.5 → P14.6 → P14.10 → P14.14 → P14.4 last (largest scope, benefits already
-reduced by earlier items).
+(P14.1, P14.2, P14.11–P14.13) → P14.3 → P14.7 → P14.8 → P14.15 → P14.17 →
+P14.16 → P14.5 → P14.6 → P14.10 → P14.14 → P14.4 last (largest scope,
+benefits already reduced by earlier items).
 
 ### Cold layout quick wins
 - [x] P14.1 `perf: make accessibility metadata lazy` → closed as disproven;
@@ -1241,16 +1241,57 @@ reduced by earlier items).
   per call with zero cross-call reuse. Document that streaming hosts must
   reuse parser/solver/cache, or expose the coordinator's persisted-cache
   pattern as a supported API.
-- [ ] P14.15 `perf: model paragraph boundaries before wider arithmetic routing`
-  A router-only ListNode/BlockQuoteNode expansion is unsafe: `PreparedText`
-  currently stores one global indent pair, captures only the first paragraph
-  style, does not reset first-line indentation after a paragraph break, and
-  does not model paragraph spacing. Add exact TextKit oracle matrices first,
-  then represent per-paragraph indents/spacing and enable pure-text list/quote
-  arithmetic only if isolated cold/width-sweep evidence meets frozen thresholds.
+- [x] P14.15 `fix: model paragraph boundaries in arithmetic layout`
+  `PreparedText` now stores an internal paragraph record with chunk range,
+  per-paragraph first/subsequent-line indents, before/after spacing, and
+  empty-line height while preserving the existing segment/chunk contracts.
+  Routing remains paragraph/header-only; P14.17 owns any wider list/blockquote
+  routing.
+  - [x] P14.15-A record five exact `9f53d9e` isolated Release processes for the
+    existing prepared-content cold/width/rebuild workload and freeze a maximum
+    10% median regression ceiling for the richer payload. Median averages were
+    56.68ms cold-first, 34.10ms width-sweep, and 128.0ms rebuild-sweep; final
+    medians must be <=62.35ms, <=37.51ms, and <=140.8ms. Median p95 values were
+    58.71ms, 36.97ms, and 131.8ms; final p95 medians must be <=64.58ms,
+    <=40.67ms, and <=144.98ms.
+  - [x] P14.15-B preserve CRLF as one separator, first-line reset per paragraph,
+    empty/trailing paragraph line boxes, paragraph spacing, mixed-font line
+    height, trailing-space paint, soft hyphen, and oversized-token behavior.
+    Twenty-one TextKit-oracle tests preserve CRLF grouping, U+2028
+    intra-paragraph breaks, U+2029/newline resets, per-paragraph first-line
+    state, empty/terminal line boxes, separator-font semantics, spacing, mixed
+    fonts, trailing-space paint, soft hyphens, oversized tokens, finite
+    geometry, and used-rect bounds.
+  - [x] P14.15-C add independent TextKit oracles for per-paragraph indents,
+    before/after spacing, empty/trailing paragraphs, CRLF, mixed styles/fonts,
+    and cache-key separation; include the paragraph array in prepared-cache
+    retained-cost accounting. Exact cache identity covers both spacing fields
+    and font point size, including sub-millipoint distinctions, while retained-
+    cost accounting includes `Paragraph` stride storage. The final paragraph/
+    calculator/cache packet passes all 92 focused tests.
+  - [x] P14.15-D complete review, post-change evidence, every repository gate,
+    atomic commit, and push. Five final isolated Release processes produced
+    cold-first avg/p95 medians of 56.56/58.68ms, width-sweep medians of
+    33.11/33.99ms, and rebuild-sweep medians of 130.9/137.9ms, all below the
+    frozen ceilings. Review found and fixed AppKit default-line-height and
+    production prepared-cache collisions for sub-millipoint fonts with distinct
+    line heights; final read-only review found no remaining material issue.
+    Final validation passes package describe/build, 10 public API smokes,
+    provenance, 92 focused tests, 661 fast tests / 680 discoverable tests,
+    unchanged macOS API (453 symbols / 599 relationships), unchanged iOS APIs
+    on both Simulator architectures (454 / 610), both four-test snapshot
+    contracts, exactly 725 iOS XCTest tests plus one app-hosted real-WebKit
+    Mermaid smoke, and all 13 isolated Release workloads.
 - [ ] P14.16 `perf: cache list-item prefix widths if cold evidence justifies it`
   `AttributedStringBuilder.listItemPrefixWidth` calls
   `NSString.size(withAttributes:)` once per list item. Benchmark cold ordered,
   unordered, and task-list construction independently from prepared-cache hits;
   if material, add a small builder-owned bounded exact-prefix/font cache while
   preserving platform measurement behavior and list indentation.
+- [ ] P14.17 `perf: route pure-text lists and blockquotes through arithmetic`
+  After P14.15 proves the paragraph model independently, add exact builder-backed
+  list/quote TextKit oracle matrices and isolated cold/width-sweep benchmarks.
+  Enable arithmetic plans for pure-text ListNode/BlockQuoteNode across
+  async/cancellable/sync and prepared-cache miss/hit only when nested/task lists
+  and multi-paragraph quotes meet frozen benefit thresholds; resource descendants
+  and unsupported scripts remain on TextKit.

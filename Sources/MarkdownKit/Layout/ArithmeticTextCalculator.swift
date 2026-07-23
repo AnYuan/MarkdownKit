@@ -33,31 +33,40 @@ final class ArithmeticTextCalculator {
         }
     }
 
+    private struct PreparedTextParagraphStyleKey: Hashable {
+        let lineHeightMultiple: CGFloat
+        let headIndent: CGFloat
+        let firstLineHeadIndent: CGFloat
+        let paragraphSpacing: CGFloat
+        let paragraphSpacingBefore: CGFloat
+    }
+
     private struct PreparedTextRunKey: Hashable {
         let location: Int
         let length: Int
         let fontName: String
-        let pointSizeMilli: Int
-        let lineHeightMultipleMilli: Int
-        let headIndentMilli: Int
-        let firstLineHeadIndentMilli: Int
+        let pointSize: CGFloat
+        let paragraphStyleIndex: Int
     }
 
     private struct PreparedTextCacheKey: Hashable {
         let string: String
         let localeIdentifier: String
+        let paragraphStyles: [PreparedTextParagraphStyleKey]
         let runs: [PreparedTextRunKey]
     }
 
     /// NSObject wrapper around `PreparedTextCacheKey` so it can be used as `NSCache` key.
     private final class PreparedTextCacheKeyObject: NSObject {
         let value: PreparedTextCacheKey
+        private let cachedHash: Int
 
         init(_ value: PreparedTextCacheKey) {
             self.value = value
+            self.cachedHash = value.hashValue
         }
 
-        override var hash: Int { value.hashValue }
+        override var hash: Int { cachedHash }
 
         override func isEqual(_ object: Any?) -> Bool {
             (object as? PreparedTextCacheKeyObject)?.value == value
@@ -136,6 +145,15 @@ final class ArithmeticTextCalculator {
         let segmentIndex: Int
     }
 
+    struct Paragraph {
+        let chunkRange: Range<Int>
+        let firstLineHeadIndent: CGFloat
+        let headIndent: CGFloat
+        let paragraphSpacingBefore: CGFloat
+        let paragraphSpacingAfter: CGFloat
+        let emptyLineHeight: CGFloat
+    }
+
     /// Structure of Arrays (SoA) representing the segmented text for extremely fast iteration.
     struct PreparedText {
         var widths: [CGFloat] = []
@@ -154,6 +172,7 @@ final class ArithmeticTextCalculator {
         var chunks: [Chunk] = []
         var headIndent: CGFloat = 0
         var firstLineHeadIndent: CGFloat = 0
+        var paragraphs: [Paragraph] = []
 
         mutating func append(
             width: CGFloat,
@@ -256,7 +275,7 @@ final class ArithmeticTextCalculator {
     /// Prepares a pure-text attributed string into a width-independent structure-of-arrays payload.
     func prepare(attributedString: NSAttributedString) -> PreparedText {
         guard attributedString.length > 0 else { return PreparedText() }
-        let cacheKey = preparedTextCacheKey(for: attributedString)
+        let cacheKey = PreparedTextCacheKeyObject(preparedTextCacheKey(for: attributedString))
         if let cachedPreparedText = Self.cachedPreparedText(for: cacheKey) {
             return cachedPreparedText
         }
@@ -271,9 +290,8 @@ final class ArithmeticTextCalculator {
         ArithmeticTextLineBreaker.layout(prepared: preparedText, constrainedToWidth: maxWidth)
     }
 
-    private static func cachedPreparedText(for key: PreparedTextCacheKey) -> PreparedText? {
-        let keyObject = PreparedTextCacheKeyObject(key)
-        if let wrapper = cachedPreparedTexts.object(forKey: keyObject) {
+    private static func cachedPreparedText(for key: PreparedTextCacheKeyObject) -> PreparedText? {
+        if let wrapper = cachedPreparedTexts.object(forKey: key) {
             #if DEBUG
             testCounterLock.lock()
             preparedTextCacheHits += 1
@@ -289,9 +307,8 @@ final class ArithmeticTextCalculator {
         return nil
     }
 
-    private static func storePreparedText(_ preparedText: PreparedText, for key: PreparedTextCacheKey) {
-        let keyObject = PreparedTextCacheKeyObject(key)
-        cachedPreparedTexts.setObject(PreparedTextWrapper(preparedText), forKey: keyObject)
+    private static func storePreparedText(_ preparedText: PreparedText, for key: PreparedTextCacheKeyObject) {
+        cachedPreparedTexts.setObject(PreparedTextWrapper(preparedText), forKey: key)
     }
 
     private static func requiresTextKitFallback(for scalar: UnicodeScalar) -> Bool {
@@ -307,22 +324,38 @@ final class ArithmeticTextCalculator {
     }
 
     private func preparedTextCacheKey(for attributedString: NSAttributedString) -> PreparedTextCacheKey {
+        var paragraphStyles: [PreparedTextParagraphStyleKey] = []
         var runs: [PreparedTextRunKey] = []
+        paragraphStyles.reserveCapacity(1)
+        runs.reserveCapacity(min(attributedString.length, 8))
+        var hasLastParagraphStyle = false
+        var lastParagraphStyle: NSParagraphStyle?
+        var lastParagraphStyleIndex = 0
         let fullRange = NSRange(location: 0, length: attributedString.length)
 
         attributedString.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
             let font = attributes[.font] as? Font
             let paragraphStyle = attributes[.paragraphStyle] as? NSParagraphStyle
+            let paragraphStyleIndex: Int
+
+            if hasLastParagraphStyle, paragraphStyle === lastParagraphStyle {
+                paragraphStyleIndex = lastParagraphStyleIndex
+            } else {
+                let paragraphStyleKey = Self.preparedParagraphStyleKey(for: paragraphStyle)
+                paragraphStyleIndex = paragraphStyles.count
+                paragraphStyles.append(paragraphStyleKey)
+                hasLastParagraphStyle = true
+                lastParagraphStyle = paragraphStyle
+                lastParagraphStyleIndex = paragraphStyleIndex
+            }
 
             runs.append(
                 PreparedTextRunKey(
                     location: range.location,
                     length: range.length,
                     fontName: font?.fontName ?? "",
-                    pointSizeMilli: Self.milliUnits(for: font?.pointSize ?? 0),
-                    lineHeightMultipleMilli: Self.milliUnits(for: paragraphStyle?.lineHeightMultiple ?? 0),
-                    headIndentMilli: Self.milliUnits(for: paragraphStyle?.headIndent ?? 0),
-                    firstLineHeadIndentMilli: Self.milliUnits(for: paragraphStyle?.firstLineHeadIndent ?? 0)
+                    pointSize: font?.pointSize ?? 0,
+                    paragraphStyleIndex: paragraphStyleIndex
                 )
             )
         }
@@ -330,11 +363,36 @@ final class ArithmeticTextCalculator {
         return PreparedTextCacheKey(
             string: attributedString.string,
             localeIdentifier: Locale.current.identifier,
+            paragraphStyles: paragraphStyles,
             runs: runs
         )
     }
 
-    private static func milliUnits(for value: CGFloat) -> Int {
-        Int((value * 1000).rounded())
+    private static func preparedParagraphStyleKey(
+        for paragraphStyle: NSParagraphStyle?
+    ) -> PreparedTextParagraphStyleKey {
+        PreparedTextParagraphStyleKey(
+            lineHeightMultiple: normalizedLineHeightMultiple(
+                paragraphStyle?.lineHeightMultiple
+            ),
+            headIndent: normalizedParagraphMetric(paragraphStyle?.headIndent),
+            firstLineHeadIndent: normalizedParagraphMetric(
+                paragraphStyle?.firstLineHeadIndent
+            ),
+            paragraphSpacing: normalizedParagraphMetric(paragraphStyle?.paragraphSpacing),
+            paragraphSpacingBefore: normalizedParagraphMetric(
+                paragraphStyle?.paragraphSpacingBefore
+            )
+        )
+    }
+
+    private static func normalizedParagraphMetric(_ value: CGFloat?) -> CGFloat {
+        guard let value, value.isFinite, value > 0 else { return 0 }
+        return value
+    }
+
+    private static func normalizedLineHeightMultiple(_ value: CGFloat?) -> CGFloat {
+        guard let value, value.isFinite, value > 0 else { return 1 }
+        return value
     }
 }

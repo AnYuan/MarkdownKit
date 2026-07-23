@@ -41,7 +41,7 @@ package/build checks, macOS and iOS public API checks, provenance, fast and iOS 
 documentation freshness, visual and determinism snapshots, and benchmarks; `verify_all.sh --full`
 alone is not release validation.
 
-The iOS release gate is deliberately two-part: 703 app-less XCTest tests exercise Mermaid's
+The iOS release gate is deliberately two-part: 725 app-less XCTest tests exercise Mermaid's
 queue/cache/cancellation state machine through a deterministic image driver, then a separately
 assembled SwiftUI Simulator app proves that a Mermaid fence can traverse public `MarkdownView`
 and its registry-backed real-WebKit adapter.
@@ -176,6 +176,7 @@ Phase C note: this coordinator/details regression fix does **not** claim the sep
 3. `LayoutSolver` gates arithmetic routing through a prepared-text profile so unsupported scripts and attachment-heavy content continue to use `TextKitCalculator`.
 4. Oracle coverage now exists for both arithmetic-parity text cases and complex-script fallback cases against `TextKitCalculator`.
 5. The refreshed arithmetic benchmark snapshot is published in `docs/BENCHMARK_BASELINE.md`, and the macOS table/task-list snapshot suite is back to green after the follow-up spacing fix and reference refresh.
+6. Prepared arithmetic content now models paragraph boundaries explicitly with per-paragraph chunk ranges, first/subsequent-line indents, spacing, and empty-line height while preserving CRLF, U+2028/U+2029, separator-font, soft-hyphen, oversized-token, and used-rect behavior.
 
 ## Phase 14: Performance Review Backlog (post-v0.4.0 whole-repo review, 2026-07-19)
 **Goal**: Track the remaining findings from the 2026-07-19 whole-repo performance review that are not already covered by the Phase 13 Evidence-Driven Performance Wave (`tasks/todo.md`).
@@ -270,15 +271,31 @@ deltas fell, but TextKit mutation/detachment cost outweighed one-shot stack
 construction. Review corrected a non-independent experimental oracle, then all
 source, test, and temporary benchmark changes were removed.
 
+P14.15 makes arithmetic prepared content paragraph-aware: each paragraph owns
+its chunk range, first/subsequent-line indents, spacing, and empty-line height,
+while CRLF, U+2028/U+2029, separator-font, trailing-space, soft-hyphen,
+oversized-token, and finite used-rect behavior remain aligned with TextKit.
+Review found and fixed both an AppKit default-line-height cache collision and a
+prepared-cache collision between font sizes with distinct line heights; exact
+font-size and paragraph-metric identities now preserve those payloads. A
+single-paragraph streaming path, leading-attribute reuse, and cache-miss-only
+CoreText scratch allocation keep the richer model within its frozen budget.
+Five final isolated Release processes produced median avg/p95 values of
+56.56/58.68ms cold-first, 33.11/33.99ms width-sweep, and 130.9/137.9ms
+rebuild-sweep. Final validation passes 92 focused tests, 661 fast tests, 680
+discoverable tests, unchanged macOS/iOS public APIs, both snapshot contracts,
+725 iOS tests plus the app-hosted WebKit smoke, and all 13 isolated Release
+workloads. Final review found no remaining material issue.
+
 The remaining findings fall into four groups:
 1. **Streaming structure**: the whole document is still re-parsed on every text change; when the relevant syntax *is* present, Details/Diagram/Math still walk the AST separately (Math three times); Mermaid re-runs `mermaid.initialize` per render and caches intermediate streamed sources; the MathJax engine is cold per solver instance.
 2. **Cold layout taxes**: Direct `ArithmeticTextCalculator` callers still build
    the complete attributed-run cache key, but the attempted solver fingerprint
    namespace was not worth its duplicate cache complexity. The larger remaining
    costs are one global TextKit lock with fresh per-call stack construction
-   (P14.8 disproved the tested reuse designs), an arithmetic model that cannot
-   yet represent per-paragraph list/quote indents and spacing, and repeated
-   cold list-prefix measurement.
+   (P14.8 disproved the tested reuse designs), wider list/blockquote arithmetic
+   routing that remains deliberately deferred to P14.17 pending builder-backed
+   oracle and benefit evidence, and repeated cold list-prefix measurement.
 3. **UI**: macOS main-thread `ensureLayout` per item configure.
 4. **Hygiene**: the cache-reuse requirement for one-shot
    `MarkdownKitEngine.layout` hosts is undocumented.

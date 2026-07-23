@@ -484,6 +484,42 @@ final class PreparedContentCacheTests: XCTestCase {
         XCTAssertGreaterThan(cost20, cost5)
     }
 
+    func testArithmeticCostIncludesParagraphStorage() {
+        let str = NSAttributedString(string: "t")
+        let withoutParagraphs = preparedText(segments: 1)
+        var withParagraphs = withoutParagraphs
+        withParagraphs.paragraphs = [
+            ArithmeticTextCalculator.Paragraph(
+                chunkRange: 0..<1,
+                firstLineHeadIndent: 0,
+                headIndent: 0,
+                paragraphSpacingBefore: 0,
+                paragraphSpacingAfter: 0,
+                emptyLineHeight: 14
+            ),
+            ArithmeticTextCalculator.Paragraph(
+                chunkRange: 1..<1,
+                firstLineHeadIndent: 0,
+                headIndent: 0,
+                paragraphSpacingBefore: 0,
+                paragraphSpacingAfter: 0,
+                emptyLineHeight: 14
+            )
+        ]
+
+        let withoutParagraphCost = Cache.estimateCostForTesting(
+            Payload(attributedString: str, measurementPlan: .arithmetic(withoutParagraphs))
+        )
+        let withParagraphCost = Cache.estimateCostForTesting(
+            Payload(attributedString: str, measurementPlan: .arithmetic(withParagraphs))
+        )
+
+        XCTAssertEqual(
+            withParagraphCost - withoutParagraphCost,
+            2 * MemoryLayout<ArithmeticTextCalculator.Paragraph>.stride
+        )
+    }
+
     func testCodeBlockInsetAndTextKitHaveEqualCostForSameString() {
         let str = NSAttributedString(string: "var x = 1")
         let textKitCost = Cache.estimateCostForTesting(

@@ -8,13 +8,25 @@ import CoreText
 
 struct ArithmeticTextLineBreaker {
 
-    private struct State {
+    /// Keeps arithmetic geometry inside a finite Core Graphics coordinate range.
+    /// Values above this point are not meaningful display dimensions and can
+    /// otherwise overflow while paragraph spacing and line heights accumulate.
+    private static let maximumLayoutDimension = CGFloat(Int32.max)
+
+    private struct LayoutState {
+        var totalHeight: CGFloat = 0
+        var minComputedX: CGFloat?
+        var maxComputedX: CGFloat?
+        var minComputedY: CGFloat?
+        var maxComputedY: CGFloat?
+    }
+
+    private struct LineState {
         var currentLineAdvance: CGFloat = 0
         var currentLineFitWidth: CGFloat = 0
         var currentLinePaintWidth: CGFloat = 0
         var currentLineHeight: CGFloat = 0
-        var totalHeight: CGFloat = 0
-        var maxComputedWidth: CGFloat = 0
+        var pendingDiscretionaryHyphenWidth: CGFloat?
         var lineCount = 0
     }
 
@@ -22,11 +34,102 @@ struct ArithmeticTextLineBreaker {
         prepared preparedText: ArithmeticTextCalculator.PreparedText,
         constrainedToWidth maxWidth: CGFloat
     ) -> CGSize {
-        guard !preparedText.widths.isEmpty else { return .zero }
+        guard !preparedText.chunks.isEmpty || !preparedText.paragraphs.isEmpty else { return .zero }
 
-        var state = State()
+        let constrainedWidth = boundedLayoutDimension(maxWidth)
 
-        for chunk in preparedText.chunks {
+        let paragraphs = preparedText.paragraphs.isEmpty
+            ? [
+                ArithmeticTextCalculator.Paragraph(
+                    chunkRange: 0..<preparedText.chunks.count,
+                    firstLineHeadIndent: preparedText.firstLineHeadIndent,
+                    headIndent: preparedText.headIndent,
+                    paragraphSpacingBefore: 0,
+                    paragraphSpacingAfter: 0,
+                    emptyLineHeight: 0
+                )
+            ]
+            : preparedText.paragraphs
+
+        var layoutState = LayoutState()
+
+        for (paragraphIndex, paragraph) in paragraphs.enumerated() {
+            layoutParagraph(
+                paragraph,
+                isFirstParagraph: paragraphIndex == 0,
+                addsTerminalLine: paragraphIndex == paragraphs.count - 1
+                    && paragraphEndsInHardBreak(paragraph, preparedText: preparedText),
+                preparedText: preparedText,
+                constrainedToWidth: constrainedWidth,
+                layoutState: &layoutState
+            )
+        }
+
+        let computedWidth: CGFloat
+        if let minComputedX = layoutState.minComputedX,
+           let maxComputedX = layoutState.maxComputedX {
+            computedWidth = max(0, maxComputedX - minComputedX)
+        } else {
+            computedWidth = 0
+        }
+        let computedHeight: CGFloat
+        if let minComputedY = layoutState.minComputedY,
+           let maxComputedY = layoutState.maxComputedY {
+            computedHeight = max(0, maxComputedY - minComputedY)
+        } else {
+            computedHeight = 0
+        }
+        return CGSize(width: ceil(computedWidth), height: ceil(computedHeight))
+    }
+
+    private static func layoutParagraph(
+        _ rawParagraph: ArithmeticTextCalculator.Paragraph,
+        isFirstParagraph: Bool,
+        addsTerminalLine: Bool,
+        preparedText: ArithmeticTextCalculator.PreparedText,
+        constrainedToWidth maxWidth: CGFloat,
+        layoutState: inout LayoutState
+    ) {
+        let paragraph = ArithmeticTextCalculator.Paragraph(
+            chunkRange: rawParagraph.chunkRange,
+            firstLineHeadIndent: boundedLayoutDimension(rawParagraph.firstLineHeadIndent),
+            headIndent: boundedLayoutDimension(rawParagraph.headIndent),
+            paragraphSpacingBefore: rawParagraph.paragraphSpacingBefore,
+            paragraphSpacingAfter: rawParagraph.paragraphSpacingAfter,
+            emptyLineHeight: rawParagraph.emptyLineHeight
+        )
+
+        if !isFirstParagraph {
+            layoutState.totalHeight = addingLayoutDimensions(
+                layoutState.totalHeight,
+                paragraph.paragraphSpacingBefore
+            )
+        }
+
+        guard !paragraph.chunkRange.isEmpty else {
+            let lineStartY = layoutState.totalHeight
+            layoutState.totalHeight = addingLayoutDimensions(
+                layoutState.totalHeight,
+                paragraph.emptyLineHeight
+            )
+            recordUsedRect(
+                x: paragraph.firstLineHeadIndent,
+                width: 0,
+                minY: lineStartY,
+                maxY: layoutState.totalHeight,
+                layoutState: &layoutState
+            )
+            layoutState.totalHeight = addingLayoutDimensions(
+                layoutState.totalHeight,
+                paragraph.paragraphSpacingAfter
+            )
+            return
+        }
+
+        var lineState = LineState()
+
+        for chunkIndex in paragraph.chunkRange {
+            let chunk = preparedText.chunks[chunkIndex]
             let index = chunk.segmentIndex
             let width = preparedText.widths[index]
             let lineEndFitAdvance = preparedText.lineEndFitAdvances[index]
@@ -35,104 +138,227 @@ struct ArithmeticTextLineBreaker {
             let ctFont = preparedText.ctFonts[index]
             let kind = preparedText.kinds[index]
             let height = preparedText.heights[index]
-            let currentIndent = state.lineCount == 0 ? preparedText.firstLineHeadIndent : preparedText.headIndent
+            let currentIndent = indent(for: lineState.lineCount, in: paragraph)
             let availableWidth = maxWidth - currentIndent
 
             if chunk.kind == .hardBreak {
-                state.totalHeight += max(state.currentLineHeight, height)
-                let committedPaintWidth = committedLinePaintWidth(state, availableWidth: availableWidth)
-                let visibleLineWidth = committedPaintWidth > 0 ? committedPaintWidth + currentIndent : 0
-                state.maxComputedWidth = max(state.maxComputedWidth, visibleLineWidth)
-                state.currentLineAdvance = 0
-                state.currentLineFitWidth = 0
-                state.currentLinePaintWidth = 0
-                state.currentLineHeight = 0
-                state.lineCount += 1
+                let contributesToUsedRect = lineState.currentLineHeight == 0 || availableWidth > 0
+                commitCurrentLine(
+                    paragraph: paragraph,
+                    lineHeightFallback: lineState.currentLineHeight > 0 ? 0 : height,
+                    constrainedToWidth: maxWidth,
+                    layoutState: &layoutState,
+                    lineState: &lineState,
+                    contributesToUsedRect: contributesToUsedRect
+                )
                 continue
             }
 
-            let nextLineAdvance = state.currentLineAdvance + width
-            let nextLineFitWidth = state.currentLineAdvance + lineEndFitAdvance
-            let nextLinePaintWidth = state.currentLineAdvance + lineEndPaintAdvance
+            if kind == .softHyphen {
+                lineState.pendingDiscretionaryHyphenWidth =
+                    lineState.currentLineAdvance + lineEndPaintAdvance
+                lineState.currentLineHeight = max(lineState.currentLineHeight, height)
+                continue
+            }
 
-            if nextLineFitWidth > availableWidth && state.currentLineAdvance > 0 {
-                state.totalHeight += state.currentLineHeight
-                let committedPaintWidth = committedLinePaintWidth(state, availableWidth: availableWidth)
-                state.maxComputedWidth = max(state.maxComputedWidth, committedPaintWidth + currentIndent)
+            let nextLineAdvance = lineState.currentLineAdvance + width
+            let nextLineFitWidth = lineState.currentLineAdvance + lineEndFitAdvance
+            let nextLinePaintWidth = lineState.currentLineAdvance + lineEndPaintAdvance
 
-                state.lineCount += 1
+            if nextLineFitWidth > availableWidth && lineState.currentLineAdvance > 0 {
+                commitCurrentLine(
+                    paragraph: paragraph,
+                    lineHeightFallback: lineState.currentLineHeight,
+                    constrainedToWidth: maxWidth,
+                    layoutState: &layoutState,
+                    lineState: &lineState,
+                    showsDiscretionaryHyphen: true,
+                    contributesToUsedRect: availableWidth > 0
+                )
+
                 if kind.isSpace {
-                    state.currentLineAdvance = 0
-                    state.currentLineFitWidth = 0
-                    state.currentLinePaintWidth = 0
-                    state.currentLineHeight = 0
+                    continue
+                }
+
+                let nextIndent = indent(for: lineState.lineCount, in: paragraph)
+                let nextAvailableWidth = maxWidth - nextIndent
+                if let ctFont, kind == .text, width > nextAvailableWidth, !segmentText.isEmpty {
+                    appendOversizedTextSegment(
+                        text: segmentText,
+                        ctFont: ctFont,
+                        height: height,
+                        paragraph: paragraph,
+                        maxWidth: maxWidth,
+                        layoutState: &layoutState,
+                        lineState: &lineState
+                    )
                 } else {
-                    let nextIndent = state.lineCount == 0 ? preparedText.firstLineHeadIndent : preparedText.headIndent
-                    let nextAvailableWidth = maxWidth - nextIndent
-                    if let ctFont, kind == .text && width > nextAvailableWidth && !segmentText.isEmpty {
-                        state.currentLineAdvance = 0
-                        state.currentLineFitWidth = 0
-                        state.currentLinePaintWidth = 0
-                        state.currentLineHeight = 0
-                        appendOversizedTextSegment(
-                            text: segmentText,
-                            ctFont: ctFont,
-                            height: height,
-                            preparedText: preparedText,
-                            maxWidth: maxWidth,
-                            state: &state
-                        )
-                    } else {
-                        state.currentLineAdvance = width
-                        state.currentLineFitWidth = lineEndFitAdvance
-                        state.currentLinePaintWidth = lineEndPaintAdvance
-                        state.currentLineHeight = height
-                    }
+                    lineState.currentLineAdvance = width
+                    lineState.currentLineFitWidth = lineEndFitAdvance
+                    lineState.currentLinePaintWidth = lineEndPaintAdvance
+                    lineState.currentLineHeight = height
                 }
             } else if let ctFont, nextLineFitWidth > availableWidth, kind == .text, !segmentText.isEmpty {
+                lineState.pendingDiscretionaryHyphenWidth = nil
                 appendOversizedTextSegment(
                     text: segmentText,
                     ctFont: ctFont,
                     height: height,
-                    preparedText: preparedText,
+                    paragraph: paragraph,
                     maxWidth: maxWidth,
-                    state: &state
+                    layoutState: &layoutState,
+                    lineState: &lineState
                 )
             } else {
-                state.currentLineAdvance = nextLineAdvance
-                state.currentLineFitWidth = nextLineFitWidth
-                state.currentLinePaintWidth = nextLinePaintWidth
-                state.currentLineHeight = max(state.currentLineHeight, height)
+                lineState.currentLineAdvance = nextLineAdvance
+                lineState.currentLineFitWidth = nextLineFitWidth
+                lineState.currentLinePaintWidth = nextLinePaintWidth
+                lineState.currentLineHeight = max(lineState.currentLineHeight, height)
+                lineState.pendingDiscretionaryHyphenWidth = nil
             }
         }
 
-        if state.currentLineAdvance > 0 || state.totalHeight == 0 {
-            let currentIndent = state.lineCount == 0 ? preparedText.firstLineHeadIndent : preparedText.headIndent
-            let availableWidth = maxWidth - currentIndent
-            state.totalHeight += state.currentLineHeight
-            let committedPaintWidth = committedLinePaintWidth(state, availableWidth: availableWidth)
-            let visibleLineWidth = committedPaintWidth > 0 ? committedPaintWidth + currentIndent : 0
-            state.maxComputedWidth = max(state.maxComputedWidth, visibleLineWidth)
+        if lineState.currentLineHeight > 0 {
+            let currentIndent = indent(for: lineState.lineCount, in: paragraph)
+            commitCurrentLine(
+                paragraph: paragraph,
+                lineHeightFallback: lineState.currentLineHeight,
+                constrainedToWidth: maxWidth,
+                layoutState: &layoutState,
+                lineState: &lineState,
+                contributesToUsedRect: maxWidth - currentIndent > 0
+            )
         }
 
-        return CGSize(width: ceil(state.maxComputedWidth), height: floor(state.totalHeight))
+        if addsTerminalLine,
+           let finalChunkIndex = paragraph.chunkRange.last {
+            let finalChunk = preparedText.chunks[finalChunkIndex]
+            commitCurrentLine(
+                paragraph: paragraph,
+                lineHeightFallback: preparedText.heights[finalChunk.segmentIndex],
+                constrainedToWidth: maxWidth,
+                layoutState: &layoutState,
+                lineState: &lineState,
+                contributesToUsedRect: true
+            )
+        }
+
+        layoutState.totalHeight = addingLayoutDimensions(
+            layoutState.totalHeight,
+            paragraph.paragraphSpacingAfter
+        )
     }
 
-    // TextKit retains fitting trailing separators, but clips their overhang at the line fragment.
-    private static func committedLinePaintWidth(_ state: State, availableWidth: CGFloat) -> CGFloat {
-        guard state.currentLinePaintWidth > state.currentLineFitWidth else {
-            return state.currentLinePaintWidth
+    private static func paragraphEndsInHardBreak(
+        _ paragraph: ArithmeticTextCalculator.Paragraph,
+        preparedText: ArithmeticTextCalculator.PreparedText
+    ) -> Bool {
+        guard let finalChunkIndex = paragraph.chunkRange.last else { return false }
+        return preparedText.chunks[finalChunkIndex].kind == .hardBreak
+    }
+
+    // TextKit retains fitting trailing separators, but clips all paint at the line fragment.
+    private static func committedLinePaintWidth(
+        _ state: LineState,
+        availableWidth: CGFloat,
+        showsDiscretionaryHyphen: Bool
+    ) -> CGFloat {
+        let clippedAvailableWidth = max(availableWidth, 0)
+        var paintWidth = state.currentLinePaintWidth
+        if showsDiscretionaryHyphen,
+           let discretionaryWidth = state.pendingDiscretionaryHyphenWidth,
+           discretionaryWidth <= clippedAvailableWidth {
+            paintWidth = max(paintWidth, discretionaryWidth)
         }
-        return min(state.currentLinePaintWidth, max(availableWidth, state.currentLineFitWidth))
+        return min(max(paintWidth, 0), clippedAvailableWidth)
+    }
+
+    private static func indent(
+        for lineCount: Int,
+        in paragraph: ArithmeticTextCalculator.Paragraph
+    ) -> CGFloat {
+        lineCount == 0 ? paragraph.firstLineHeadIndent : paragraph.headIndent
+    }
+
+    private static func commitCurrentLine(
+        paragraph: ArithmeticTextCalculator.Paragraph,
+        lineHeightFallback: CGFloat,
+        constrainedToWidth maxWidth: CGFloat,
+        layoutState: inout LayoutState,
+        lineState: inout LineState,
+        showsDiscretionaryHyphen: Bool = false,
+        contributesToUsedRect: Bool = true
+    ) {
+        let currentIndent = indent(for: lineState.lineCount, in: paragraph)
+        let availableWidth = maxWidth - currentIndent
+        let lineStartY = layoutState.totalHeight
+        layoutState.totalHeight = addingLayoutDimensions(
+            layoutState.totalHeight,
+            max(lineState.currentLineHeight, lineHeightFallback)
+        )
+        if contributesToUsedRect {
+            let committedPaintWidth = committedLinePaintWidth(
+                lineState,
+                availableWidth: availableWidth,
+                showsDiscretionaryHyphen: showsDiscretionaryHyphen
+            )
+            recordUsedRect(
+                x: currentIndent,
+                width: committedPaintWidth,
+                minY: lineStartY,
+                maxY: layoutState.totalHeight,
+                layoutState: &layoutState
+            )
+        }
+        lineState.currentLineAdvance = 0
+        lineState.currentLineFitWidth = 0
+        lineState.currentLinePaintWidth = 0
+        lineState.currentLineHeight = 0
+        lineState.pendingDiscretionaryHyphenWidth = nil
+        lineState.lineCount += 1
+    }
+
+    private static func recordUsedRect(
+        x: CGFloat,
+        width: CGFloat,
+        minY: CGFloat,
+        maxY: CGFloat,
+        layoutState: inout LayoutState
+    ) {
+        let boundedX = boundedLayoutDimension(x)
+        let boundedWidth = boundedLayoutDimension(width)
+        let boundedMinY = boundedLayoutDimension(minY)
+        let boundedMaxY = boundedLayoutDimension(maxY)
+        let maxX = addingLayoutDimensions(boundedX, boundedWidth)
+        layoutState.minComputedX = min(layoutState.minComputedX ?? boundedX, boundedX)
+        layoutState.maxComputedX = max(layoutState.maxComputedX ?? maxX, maxX)
+        layoutState.minComputedY = min(layoutState.minComputedY ?? boundedMinY, boundedMinY)
+        layoutState.maxComputedY = max(layoutState.maxComputedY ?? boundedMaxY, boundedMaxY)
+    }
+
+    private static func boundedLayoutDimension(_ value: CGFloat) -> CGFloat {
+        guard value > 0 else { return 0 }
+        guard value < maximumLayoutDimension else { return maximumLayoutDimension }
+        return value
+    }
+
+    private static func addingLayoutDimensions(_ lhs: CGFloat, _ rhs: CGFloat) -> CGFloat {
+        let boundedLHS = boundedLayoutDimension(lhs)
+        let boundedRHS = boundedLayoutDimension(rhs)
+        guard boundedLHS < maximumLayoutDimension - boundedRHS else {
+            return maximumLayoutDimension
+        }
+        return boundedLHS + boundedRHS
     }
 
     private static func appendOversizedTextSegment(
         text: String,
         ctFont: CTFont,
         height: CGFloat,
-        preparedText: ArithmeticTextCalculator.PreparedText,
+        paragraph: ArithmeticTextCalculator.Paragraph,
         maxWidth: CGFloat,
-        state: inout State
+        layoutState: inout LayoutState,
+        lineState: inout LineState
     ) {
         let attributes: [NSAttributedString.Key: Any] = [
             NSAttributedString.Key(kCTFontAttributeName as String): ctFont
@@ -143,7 +369,7 @@ struct ArithmeticTextLineBreaker {
         var start = 0
 
         while start < nsText.length {
-            let currentIndent = state.lineCount == 0 ? preparedText.firstLineHeadIndent : preparedText.headIndent
+            let currentIndent = indent(for: lineState.lineCount, in: paragraph)
             let availableWidth = max(maxWidth - currentIndent, 0)
             var count = CTTypesetterSuggestClusterBreak(typesetter, start, Double(availableWidth))
 
@@ -154,20 +380,21 @@ struct ArithmeticTextLineBreaker {
             let line = CTTypesetterCreateLine(typesetter, CFRange(location: start, length: count))
             let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
 
-            state.currentLineAdvance = lineWidth
-            state.currentLineFitWidth = lineWidth
-            state.currentLinePaintWidth = lineWidth
-            state.currentLineHeight = max(state.currentLineHeight, height)
+            lineState.currentLineAdvance = lineWidth
+            lineState.currentLineFitWidth = lineWidth
+            lineState.currentLinePaintWidth = lineWidth
+            lineState.currentLineHeight = max(lineState.currentLineHeight, height)
             start += count
 
             if start < nsText.length {
-                state.totalHeight += state.currentLineHeight
-                state.maxComputedWidth = max(state.maxComputedWidth, state.currentLinePaintWidth + currentIndent)
-                state.lineCount += 1
-                state.currentLineAdvance = 0
-                state.currentLineFitWidth = 0
-                state.currentLinePaintWidth = 0
-                state.currentLineHeight = 0
+                commitCurrentLine(
+                    paragraph: paragraph,
+                    lineHeightFallback: height,
+                    constrainedToWidth: maxWidth,
+                    layoutState: &layoutState,
+                    lineState: &lineState,
+                    contributesToUsedRect: availableWidth > 0
+                )
             }
         }
     }

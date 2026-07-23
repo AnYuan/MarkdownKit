@@ -293,7 +293,7 @@ final class PreparedContentCache: @unchecked Sendable {
     // MARK: - Cost estimation
 
     /// Deterministic byte estimate for `payload`. Never enumerates attributed runs.
-    /// Always positive: a fixed entry overhead plus proportional string and segment storage.
+    /// Always positive: a fixed entry overhead plus proportional string, segment, and paragraph storage.
     private static func estimateCost(for payload: Payload) -> Int {
         // Conservatively cover character storage plus fonts, colors, paragraph
         // styles, and highlighted attribute-run overhead without enumerating runs.
@@ -332,6 +332,10 @@ final class PreparedContentCache: @unchecked Sendable {
         preparedCost = saturatingAdd(
             preparedCost,
             saturatingMul(pt.chunks.count, MemoryLayout<ArithmeticTextCalculator.Chunk>.stride)
+        )
+        preparedCost = saturatingAdd(
+            preparedCost,
+            saturatingMul(pt.paragraphs.count, MemoryLayout<ArithmeticTextCalculator.Paragraph>.stride)
         )
         return saturatingAdd(base, preparedCost)
     }

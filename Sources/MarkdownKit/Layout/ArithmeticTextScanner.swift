@@ -55,18 +55,18 @@ struct ArithmeticTextScanner: IteratorProtocol {
                 }
                 advancePastMarker()
                 return marker
-            } else if Self.isHardBreak(character) {
+            } else if let hardBreakLength = Self.hardBreakLength(utf16: utf16, index: index, rangeEnd: rangeEnd) {
                 let marker = Span(
                     kind: .hardBreak,
-                    range: NSRange(location: index, length: 1)
+                    range: NSRange(location: index, length: hardBreakLength)
                 )
                 if segmentStart < index {
                     let span = currentSpan(endingAt: index)
-                    advancePastMarker()
+                    advancePastMarker(length: hardBreakLength)
                     pendingMarker = marker
                     return span
                 }
-                advancePastMarker()
+                advancePastMarker(length: hardBreakLength)
                 return marker
             } else {
                 let isSpace = Self.isBreakableSpace(character)
@@ -98,13 +98,27 @@ struct ArithmeticTextScanner: IteratorProtocol {
     }
 
     private mutating func advancePastMarker() {
-        index += 1
+        advancePastMarker(length: 1)
+    }
+
+    private mutating func advancePastMarker(length: Int) {
+        index += length
         segmentStart = index
         currentSegmentIsSpace = false
     }
 
-    private static func isHardBreak(_ character: unichar) -> Bool {
-        character == 0x000A || character == 0x000D || character == 0x2028 || character == 0x2029
+    private static func hardBreakLength(utf16: [unichar], index: Int, rangeEnd: Int) -> Int? {
+        switch utf16[index] {
+        case 0x000D:
+            if index + 1 < rangeEnd, utf16[index + 1] == 0x000A {
+                return 2
+            }
+            return 1
+        case 0x000A, 0x2028, 0x2029:
+            return 1
+        default:
+            return nil
+        }
     }
 
     private static func isBreakableSpace(_ character: unichar) -> Bool {
